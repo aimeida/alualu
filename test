@@ -1,0 +1,20 @@
+## g++ -I../libraries trybam.cpp -lz -o trybam
+##../debug/trybam /nfs/gpfs/data/Results/GWS/AODNCUD/AODNCUD.bam outputs/AODNCUD
+
+binpath='/nfs_mount/bioinfo/users/yuq/work/Alu/stat/alu/debug/'
+
+input1='/nfs_mount/bioinfo/users/yuq/work/Alu/inputs/'
+input2='/nfs/gpfs/data/Results/GWS/'
+out1='/nfs_mount/bioinfo/users/yuq/work/Alu/stat/alu/output_test/'
+out2='/nfs_mount/bioinfo/users/yuq/work/Alu/outputs/'
+
+file1=${input2}'AODNCUD/AODNCUD.bam'
+
+
+if [ $1 -eq "1" ]
+then
+    ${binpath}trybam ${file1} ${out1}tmp_trybam
+elif [ $1 -eq "2" ]
+then
+    ${binpath}alu_delete ${input1}config.properties ${file1} ${out1}tmp_delete
+fi
