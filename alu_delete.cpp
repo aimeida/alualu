@@ -13,14 +13,26 @@ int main( int argc, char* argv[] )
   string bai_input = bam_input + ".bai";  
 
   int chrn = read_config<int>(config_file, "chrn");
-  cout << int_to_string(chrn) << endl;
   string file_fa = read_config<string>(config_file, "file_fa_prefix") + int_to_string(chrn) + ".fa";
   string file_alupos = read_config<string>(config_file, "file_alupos_prefix") + int_to_string(chrn);
 
+  cout << int_to_string(chrn) << endl;
   cout << "file_alupos " << file_alupos << endl;
-  cout << bam_input << endl;
-  cout << bam_output << endl;
 
+//  // Open BGZF Stream for reading.
+//  seqan::Stream<seqan::Bgzf> inStream;
+//  if (!open(inStream, bam_input.c_str(), "r")) {
+//    std::cerr << "ERROR: Could not open " << bam_input << " for reading.\n";
+//    return 1;
+//  }
+//
+//  // Read BAI index.
+//  seqan::BamIndex<seqan::Bai> baiIndex;
+//  if (read(baiIndex, bai_input.c_str()) != 0){
+//    cerr << "ERROR: Could not read BAI index file " << bai_input << endl;
+//    return 1;
+//  }
+  
   // Open input stream, BamStream can read SAM and BAM files.  
   seqan::BamStream bamStreamIn(bam_input.c_str());
   seqan::BamStream bamStreamOut(bam_output.c_str(), seqan::BamStream::WRITE);
@@ -28,8 +40,8 @@ int main( int argc, char* argv[] )
   seqan::BamAlignmentRecord record;
 
   int count_i = 0;
-  // while (!atEnd(bamStreamIn)) {
-  while (count_i++ < 1000) {
+  while (!atEnd(bamStreamIn)) {
+    if (count_i++ > 1000) break;
     readRecord(record, bamStreamIn);
     if ( (not hasFlagDuplicate(record)) and (not hasFlagUnmapped(record)) and (not hasFlagQCNoPass(record)) ) {
       writeRecord(bamStreamOut, record);
@@ -38,13 +50,15 @@ int main( int argc, char* argv[] )
   }
   seqan::flush(bamStreamOut);
   seqan::close(bamStreamOut);
-  //exit(0);  
 
-  // what happened in the following ???
+  cout << "file_alupos:done  " << file_alupos << endl;
+  ProbByQuantile *prob_quantile = new ProbByQuantile(read_config<string>(config_file, "file_dist"));
 
-//  ProbByQuantile *prob_quantile = new ProbByQuantile(read_config<string>(config_file, "file.dist"));
-//  cout << "prob " << prob_quantile->prob_inputlen(100) << endl;
-//  delete prob_quantile;
+  //////// fix me 
+  ////////../libraries/seqan/basic/basic_exception.h:236 FAILED!  (Uncaught exception of type St11logic_error: basic_string::_S_construct NULL not valid)
+  
+  cout << "prob " << prob_quantile->prob_inputlen(100) << endl;
+  delete prob_quantile;
 
   return 0;
 
