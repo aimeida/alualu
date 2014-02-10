@@ -1,21 +1,16 @@
 // template used in header filer, to avoid linking error
 //template <typename Type> Type read_config(string config_file, string key);
 
-template <typename Type>
-Type read_config(string config_file, string key){
-  string _key;
-  Type _value;
-  ifstream fin( config_file.c_str());
-  if (!fin) 
-    try {
-      throw 1;    
-    } catch(int e) {
-      cout << "config_file not exists!!!" << endl;
-    }   
-  while (fin >> _key >> _value) 
-    if (_key == key) return _value;
-  fin.close();  
-  return (Type) 0;
+string read_config(string config_file, string key);
+
+class AluRefPos
+{
+  int flanking;
+  queue<int> beginP, endP;
+ public:
+  AluRefPos(string file_alupos, int i);
+  int updatePos(int &beginPos, int &endPos);
+  ~AluRefPos(void);
 };
 
 void printtest();

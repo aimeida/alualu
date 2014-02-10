@@ -2,6 +2,7 @@
 #define COMMON_H
 
 #include <map>
+#include <queue>
 #include <vector>
 #include <cstdlib>
 #include <string>
