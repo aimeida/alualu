@@ -1,5 +1,5 @@
 #include "common.h"
-#include "read_files.h"
+#include "utils.h"
 
 string read_config(string config_file, string key){
   string _key, _value;
@@ -56,6 +56,23 @@ int AluRefPos::updatePos(int &beginPos, int &endPos){
 AluRefPos::~AluRefPos(void){
 }
 
-
-void printtest(){  cout << "print test \n" ;} 
+void insertLen_of_nonUniq_mapping(vector<int> &starts_ends, vector<int> &reads_insert_len) {
+  // starts_ends = [start_0, end_0, start_1, end_1, start_2, end_2 ....]
+  vector <int> pre_ends;
+  vector <int>::iterator vi, pi;
+  int cur_begin, cur_end, insert_len;
+  vi = starts_ends.begin();
+  pre_ends.push_back(*(++vi));
+  vi++;
+  while ( vi != starts_ends.end() ) {
+    cur_begin = *vi++;
+    cur_end = *vi++; 
+    for (pi = pre_ends.begin(); pi != pre_ends.end(); pi++) {
+      insert_len = cur_begin - *pi;
+      if (insert_len > 0) reads_insert_len.push_back(insert_len);
+    }
+    pre_ends.push_back(cur_end);
+  }
+  pre_ends.clear();    
+}
 

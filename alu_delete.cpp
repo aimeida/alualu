@@ -2,7 +2,7 @@
 #include <seqan/bam_io.h>
 #include "common.h"
 #include "diststat.h"
-#include "read_files.h"
+#include "utils.h"
 
 int main( int argc, char* argv[] )
 {
@@ -32,6 +32,7 @@ int main( int argc, char* argv[] )
     cerr << "ERROR: Could not read BAI index file " << bai_input << endl;
     return 1;
   }
+
   // Setup name store, cache, and BAM I/O context.
   typedef seqan::StringSet<seqan::CharString> TNameStore;
   typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
@@ -41,8 +42,6 @@ int main( int argc, char* argv[] )
   TBamIOContext   context(nameStore, nameStoreCache);
   seqan::BamHeader header;
   seqan::BamAlignmentRecord record;
-
-
   if (readRecord(header, context, inStream, seqan::Bam()) != 0) {
     cerr << "ERROR: Could not read header from BAM file " << bam_input << "\n";
     return 1;
@@ -53,24 +52,24 @@ int main( int argc, char* argv[] )
     cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
     return 1;
   }
-  
-  AluRefPos *alurefpos = new AluRefPos(file_alupos, alu_flank);
-  int beginPos = 0, endPos = 0;  
 
-  ////seqan::BamStream bamStreamOut(bam_output.c_str(), seqan::BamStream::WRITE);
-  ////writeRecord(bamStreamOut, record);
+  EmpiricalPdf *empiricalpdf = new EmpiricalPdf(read_config(config_file, "file_dist"));  
+  AluRefPos *alurefpos = new AluRefPos(file_alupos, alu_flank);
   ofstream bamStreamOut(bam_output.c_str());
   for (int count_loci = 0; count_loci < 2; count_loci++) {
+    int beginPos = 0, endPos = 0;      
     if (!alurefpos->updatePos(beginPos, endPos)) continue;
-    cerr << "read pos " << beginPos << " " << endPos << endl;
-
     bool hasAlignments = false;
     if (!jumpToRegion(inStream, hasAlignments, context, rID, beginPos, endPos, baiIndex)) {
       std::cerr << "ERROR: Could not jump to " << beginPos << ":" << endPos << "\n";
       return 1;
     }
     if (!hasAlignments) continue;    
-    int reads_num = 0;  
+    int reads_num = 0;
+    vector<int> tmp_vec;
+    ReadsPosStore reads_pos; 
+    ReadsPosStore::iterator ri;    
+    //cerr << "read pos " << beginPos << " " << endPos << endl;    
     while (!atEnd(inStream)) {
       if (readRecord(record, context, inStream, seqan::Bam()) != 0) {
 	std::cerr << "ERROR: Could not read record from BAM file.\n";
@@ -81,25 +80,38 @@ int main( int argc, char* argv[] )
       // If we are left of the selected posi2tion then we skip this record.
       if (record.beginPos < beginPos) continue;      
       if ( (not hasFlagDuplicate(record)) and (not hasFlagUnmapped(record)) and (not hasFlagQCNoPass(record)) ) {	
-	write2(bamStreamOut, record, context, seqan::Sam());
-	//cout << record.tLen << " ==? "<< length(record.seq) << endl;
-	reads_num++ ;
+	//write2(bamStreamOut, record, context, seqan::Sam());
+	reads_num ++;
+	string record_qName = toCString(record.qName);
+	if ( (ri = reads_pos.find(record_qName)) == reads_pos.end() ) { 
+	  tmp_vec.push_back(record.beginPos);
+	  tmp_vec.push_back(record.beginPos + length(record.seq));
+	  reads_pos[record_qName].swap(tmp_vec);	  
+	} else {
+	  (ri->second).push_back(record.beginPos);
+	  (ri->second).push_back(record.beginPos + length(record.seq));	
+	}
       }
     }    
     float mean_coverage = 120.* reads_num / (endPos - beginPos);
-    if (mean_coverage > coverage_max) continue; // skip high coverage region
-    cout << "reads num: " << reads_num << ", mean coverage: " << mean_coverage << "/" << coverage_max << endl;
+    if (mean_coverage > coverage_max) continue; // skip high coverage region    
+    cerr << "mean coverage: " << mean_coverage << "/" << coverage_max << endl;
+    vector<int> reads_insert_len;
+    float log_p[] = { 0, 0, 0 };
+    genotype_prob(reads_insert_len, reads_pos, endPos - beginPos, log_p);
   }
   
   delete alurefpos;
   bamStreamOut.close();
   seqan::close(inStream);
 
-  cout << "file_alupos:done  " << file_alupos << endl;
-  ProbByQuantile *prob_quantile = new ProbByQuantile(read_config(config_file, "file_dist"));
-  cout << "prob " << prob_quantile->prob_inputlen(100) << endl;
-  delete prob_quantile;
 
+
+  //cout << empiricalpdf->pdf_obs(100) << endl;
+  //cout << empiricalpdf->pdf_obs(50) << endl;
+  delete empiricalpdf;
+  cout << "file_alupos:done  " << file_alupos << endl;
+  
   return 0;
 
 }
