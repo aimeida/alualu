@@ -1,16 +1,15 @@
 // read distribution of insert length, etc
 #include "common.h"
 
-class ProbByQuantile
+class EmpiricalPdf
 {
-  vector<int> prob_vec; 
+  map<int, float> prob_vec; 
+  int min_len, max_len, bin_width;
+  float min_prob;
  public:
-  ProbByQuantile(string quantile_file){ 
-    cout << "build dist from file:" << quantile_file << endl;
-    prob_vec.push_back(1);
-  }
-  float prob_inputlen(int inputlen) {
-    if (inputlen > 1000) return 1.;
-    return 0.8;
-  }  
+  EmpiricalPdf(string pdf_file);
+  float pdf_obs(int insertlen);
 };
+
+void genotype_prob(vector<int> &reads_insert_len, ReadsPosStore &reads_pos, int alu_len, float *log_p);
+void normalize_prob(float *log_p);

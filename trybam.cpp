@@ -14,7 +14,6 @@ int main( int argc, char* argv[] )
   seqan::BamStream bamStreamIn(argv[1]);
   // Open output stream, "-" means stdin on if reading, else stdout.
   seqan::BamStream bamStreamOut(argv[2], seqan::BamStream::WRITE);
-  // Copy header.  The header is automatically written out before the first record.
   bamStreamOut.header = bamStreamIn.header;
 
   seqan::BamAlignmentRecord record;
@@ -22,10 +21,9 @@ int main( int argc, char* argv[] )
   int i = 0;
   while ( i++ < 10 ){
     readRecord(record, bamStreamIn);
-    //if( (not hasFlagDuplicate( record ) ) and (hasFlagUnmapped( record ) or hasFlagNextUnmapped( record )) and (not hasFlagSecondary( record )) and (not hasFlagQCNoPass(record)) )
-    writeRecord(bamStreamOut, record);
+    if( (not hasFlagDuplicate( record ) ) and (hasFlagUnmapped( record ) or hasFlagNextUnmapped( record )) and (not hasFlagSecondary( record )) and (not hasFlagQCNoPass(record)) )
+      continue;
   }
   
-  return 0;
-
+  return 0;  
 }
