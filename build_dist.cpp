@@ -82,6 +82,7 @@ int main( int argc, char* argv[] )
   int idx_pn;
   seqan::lexicalCast2(idx_pn, argv[5]);
   
+
   ifstream fin( pn_file.c_str());
   string pn;
   int i = 0;
