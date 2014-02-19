@@ -8,18 +8,30 @@ int main( int argc, char* argv[] )
 {
   if (argc < 2) exit(1);
   string config_file = argv[1];
-  string bam_input = argv[2];
-  string bam_output = argv[3];
-  string bai_input = bam_input + ".bai";  
+  int idx_pn;  
+  seqan::lexicalCast2(idx_pn, argv[2]);
+  string chrn = argv[3];
+  string path_output = argv[4];
 
-  string chrx = read_config(config_file, "chr");
   int coverage_max, alu_flank;
+  string pn, bam_input, bai_input;
+  ifstream fin;
   seqan::lexicalCast2(coverage_max, (read_config(config_file, "coverage_max")));
   seqan::lexicalCast2(alu_flank, (read_config(config_file, "alu_flank")));
   
-  string file_fa = read_config(config_file, "file_fa_prefix") + chrx + ".fa";
-  string file_alupos = read_config(config_file, "file_alupos_prefix") + chrx;
-  
+  fin.open(read_config(config_file, "file_pn").c_str());
+  int i = 0;
+  while (fin >> pn) {
+    if (i++ == idx_pn ) {
+      cerr << "reading pn: " << pn << "..................\n";
+      bam_input = read_config(config_file, "file_bam_prefix") + pn + "/" + pn + ".bam";
+      bai_input = bam_input + ".bai";  
+      break;
+    }
+  }
+  fin.close();  
+  ofstream fout((path_output + pn).c_str()); 
+      
   // Open BGZF Stream for reading.
   seqan::Stream<seqan::Bgzf> inStream;
   if (!open(inStream, bam_input.c_str(), "r")) {
@@ -46,72 +58,89 @@ int main( int argc, char* argv[] )
     cerr << "ERROR: Could not read header from BAM file " << bam_input << "\n";
     return 1;
   }  
-  // Translate from reference name to rID.
-  int rID = 0;
-  if (!getIdByName(nameStore, chrx, rID, nameStoreCache)) {
-    cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
-    return 1;
+
+  map <string, EmpiricalPdf *> empiricalpdf_rg;
+  string rg;
+  string file_dist_prefix = read_config(config_file, "file_dist_prefix");
+  fin.open(( file_dist_prefix + "RG." + pn) .c_str());
+  while (fin >> rg) {
+    empiricalpdf_rg[rg] = new EmpiricalPdf( file_dist_prefix + pn + ".count." + rg + "." + read_config(config_file, "pdf_param") );
+    cerr << rg << " " << empiricalpdf_rg[rg]->pdf_obs(300) << endl;
+  }
+  fin.close();
+
+  map <string, vector<int> > insertlen_rg;
+  double *log_p = new double[3];
+  unsigned idx_rg;
+  int aluBegin, aluEnd;      
+
+  vector<string> chrns;
+  if (chrn != "chr0") {
+    chrns.push_back(chrn);
+  } else {
+    for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   }
 
-  EmpiricalPdf *empiricalpdf = new EmpiricalPdf(read_config(config_file, "file_dist"));  
-  AluRefPos *alurefpos = new AluRefPos(file_alupos, alu_flank);
-  ofstream bamStreamOut(bam_output.c_str());
-  for (int count_loci = 0; count_loci < 2; count_loci++) {
-    int beginPos = 0, endPos = 0;      
-    if (!alurefpos->updatePos(beginPos, endPos)) continue;
-    bool hasAlignments = false;
-    if (!jumpToRegion(inStream, hasAlignments, context, rID, beginPos, endPos, baiIndex)) {
-      std::cerr << "ERROR: Could not jump to " << beginPos << ":" << endPos << "\n";
+  for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
+    string chrx = *ci;
+    // Translate from reference name to rID.
+    ////string file_fa = read_config(config_file, "file_fa_prefix") + chrx + ".fa";
+    string file_alupos = read_config(config_file, "file_alupos_prefix") + chrx;
+    AluRefPos *alurefpos = new AluRefPos(file_alupos);
+    int rID = 0;
+    if (!getIdByName(nameStore, chrx, rID, nameStoreCache)) {
+      cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
       return 1;
     }
-    if (!hasAlignments) continue;    
-    int reads_num = 0;
-    vector<int> tmp_vec;
-    ReadsPosStore reads_pos; 
-    ReadsPosStore::iterator ri;    
-    //cerr << "read pos " << beginPos << " " << endPos << endl;    
-    while (!atEnd(inStream)) {
-      if (readRecord(record, context, inStream, seqan::Bam()) != 0) {
-	std::cerr << "ERROR: Could not read record from BAM file.\n";
-	exit(0);
-      }     
-      // If we are on the next reference or at the end already then we stop.
-      if (record.rID != rID || record.beginPos >= endPos) break;
-      // If we are left of the selected posi2tion then we skip this record.
-      if (record.beginPos < beginPos) continue;      
-      if ( (not hasFlagDuplicate(record)) and (not hasFlagUnmapped(record)) and (not hasFlagQCNoPass(record)) ) {	
-	//write2(bamStreamOut, record, context, seqan::Sam());
-	reads_num ++;
-	string record_qName = toCString(record.qName);
-	if ( (ri = reads_pos.find(record_qName)) == reads_pos.end() ) { 
-	  tmp_vec.push_back(record.beginPos);
-	  tmp_vec.push_back(record.beginPos + length(record.seq));
-	  reads_pos[record_qName].swap(tmp_vec);	  
-	} else {
-	  (ri->second).push_back(record.beginPos);
-	  (ri->second).push_back(record.beginPos + length(record.seq));	
-	}
+    
+    for (int count_loci = 0; ; count_loci++) {
+      if (!alurefpos->updatePos(aluBegin, aluEnd)) break;
+      bool hasAlignments = false;
+      if (!jumpToRegion(inStream, hasAlignments, context, rID, aluBegin - alu_flank, aluEnd + alu_flank, baiIndex)) {
+	std::cerr << "ERROR: Could not jump to " << aluBegin << ":" << aluEnd << "\n";
+	continue;
       }
-    }    
-    float mean_coverage = 120.* reads_num / (endPos - beginPos);
-    if (mean_coverage > coverage_max) continue; // skip high coverage region    
-    cerr << "mean coverage: " << mean_coverage << "/" << coverage_max << endl;
-    vector<int> reads_insert_len;
-    float log_p[] = { 0, 0, 0 };
-    genotype_prob(reads_insert_len, reads_pos, endPos - beginPos, log_p);
+      if (aluBegin < 0 or !hasAlignments) continue;    
+      int reads_cov = 0;    
+      //cerr << "check alu pos " << aluBegin << " ...... " << aluEnd << endl;    
+      insertlen_rg.clear(); 
+      while (!atEnd(inStream)) {
+	assert (!readRecord(record, context, inStream, seqan::Bam())); 
+	if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
+	if (record.beginPos < aluBegin - alu_flank) continue;            
+	if ((not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) ) {
+	  if ( record.beginPos >= record.pNext ) continue;  // ==> hasFlagFirst(record) 	
+	  reads_cov ++;
+	  if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads
+	  seqan::BamTagsDict tags(record.tags);
+	  if (!findTagKey(idx_rg, tags, "RG")) continue;
+	  rg = toCString(getTagValue(tags, idx_rg));	
+	  map <string, vector<int> >::iterator itr;
+	  if ( (itr = insertlen_rg.find(rg)) == insertlen_rg.end()) {
+	    insertlen_rg[rg].push_back(abs(record.tLen));
+	  } else {
+	    (itr->second).push_back(abs(record.tLen));
+	  }
+	}         
+      }
+      float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
+      if (mean_coverage > coverage_max) continue; // skip high coverage region    
+      // cerr << "mean coverage: " << mean_coverage << "/" << coverage_max << endl;
+      if (genotype_prob(insertlen_rg, empiricalpdf_rg, aluEnd - aluBegin, log_p)) {
+	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
+	for (int i = 0; i < 3; i++)  fout << log_p[i] << " " ;
+	fout << endl;      
+      }
+    }
+    delete alurefpos;
+    cerr << "file_alupos:done  " << file_alupos << endl;  
   }
-  
-  delete alurefpos;
-  bamStreamOut.close();
-  seqan::close(inStream);
-
-
-
-  //cout << empiricalpdf->pdf_obs(100) << endl;
-  //cout << empiricalpdf->pdf_obs(50) << endl;
-  delete empiricalpdf;
-  cout << "file_alupos:done  " << file_alupos << endl;
-  
-  return 0;
-
+    
+  delete log_p;
+  for (map <string, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
+    delete ri->second;
+  //bamStreamOut.close();
+  fout.close();
+  seqan::close(inStream);  
+  return 0;  
 }

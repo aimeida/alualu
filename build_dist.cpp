@@ -1,4 +1,5 @@
 // build distribution file based on flow cells (reading group)
+//#define USING_MAIN_1
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
 #include "common.h"
@@ -24,7 +25,7 @@ void write_counts(map <seqan::CharString, map<int, int> > &rg_lenCounts, string 
   }
 }
 
-void read_pn(string &rg_lenCounts_file, string &bamInput_file, string &chrx){
+void read_pn_chr(string &rg_lenCounts_file, string &bamInput_file, string &chrx){
   typedef seqan::StringSet<seqan::CharString> TNameStore;
   typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
   typedef seqan::BamIOContext<TNameStore>     TBamIOContext;  
@@ -38,11 +39,8 @@ void read_pn(string &rg_lenCounts_file, string &bamInput_file, string &chrx){
   readRecord(header, context, inStream, seqan::Bam());
   seqan::close(inStream);
   int rID = 0;
-  if(!getIdByName(nameStore, chrx, rID, nameStoreCache)) {
+  if(!getIdByName(nameStore, chrx, rID, nameStoreCache)) 
     cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
-  }
-  //cerr << "rID " << rID << endl;
-  
   seqan::BamStream bamStreamIn(bamInput_file.c_str());
   map <seqan::CharString, map<int, int> > rg_lenCounts; // strata by reading group 
   size_t i = 0;
@@ -51,7 +49,6 @@ void read_pn(string &rg_lenCounts_file, string &bamInput_file, string &chrx){
   while (!atEnd(bamStreamIn)) {
     readRecord(record, bamStreamIn);
     if (record.rID != rID) {
-      //      continue;
       if (!i) continue;
       else break;
     }
@@ -71,7 +68,51 @@ void read_pn(string &rg_lenCounts_file, string &bamInput_file, string &chrx){
   write_counts(rg_lenCounts, rg_lenCounts_file); 
 }
 
+void read_pn(string &rg_lenCounts_file, string &bamInput_file){
+  seqan::BamAlignmentRecord record;  
+  seqan::BamStream bamStreamIn(bamInput_file.c_str());
+  map <seqan::CharString, map<int, int> > rg_lenCounts; // strata by reading group 
+  size_t i = 0;
+  unsigned idx_RG;
+  while (!atEnd(bamStreamIn)) {
+    readRecord(record, bamStreamIn);
+    //if (i++ > 50000 ) break;    
+    if ((not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) ) {
+      if (hasFlagFirst(record)) continue; // look at only one end of the pair      
+      seqan::BamTagsDict tags(record.tags);
+      if (!findTagKey(idx_RG, tags, "RG")) continue;
+      seqan::CharString rg = getTagValue(tags, idx_RG);
+      addKey(rg_lenCounts[rg], abs(record.tLen));    
+    }    
+  }  
+  seqan::close(bamStreamIn);
+  write_counts(rg_lenCounts, rg_lenCounts_file); 
+}
 
+
+void write_pdf(string &f_count, string &f_prob, int len_min, int len_max, int bin_width){
+  int insertlen, count, counts = 0;
+  map <int, int> bin_counts;
+  ifstream fin(f_count.c_str());
+  while (fin >> insertlen >> count) {
+    if (insertlen < len_min) continue;
+    if (insertlen >= len_max) break;    
+    int id_bin = (insertlen - len_min)/bin_width;
+    addKey(bin_counts, id_bin, count);
+    counts += count;
+  }
+  fin.close();
+
+  int half_bin_width = bin_width / 2;
+  ofstream fout(f_prob.c_str());
+  for (map<int, int>::iterator bc = bin_counts.begin(); bc != bin_counts.end(); bc++)
+    fout << len_min + (bc->first) * bin_width + half_bin_width << " " << (bc->second) / (float)counts << endl;
+  fout.close();
+  cerr << "written into " << f_prob << endl;
+}
+
+
+#ifdef USING_MAIN_1
 int main( int argc, char* argv[] )
 {
   if (argc < 2) exit(1);
@@ -79,21 +120,46 @@ int main( int argc, char* argv[] )
   string bam_in_path = argv[2];
   string out_path = argv[3];
   string chrx = argv[4]; 
-  int idx_pn;
+  int idx_pn;  // start from 0, run diff pn parallel 
   seqan::lexicalCast2(idx_pn, argv[5]);
   
-
   ifstream fin( pn_file.c_str());
-  string pn;
+  string pn, rg_lenCounts_file, bamInput_file;
   int i = 0;
   while (fin >> pn) {
     if (i == idx_pn ) {
       cerr << "reading pn: " << pn << "..................\n";
-      string rg_lenCounts_file = out_path + pn + ".count." + chrx + "."; /* + RG*/
-      string bamInput_file = bam_in_path + pn + "/" + pn + ".bam";
-      read_pn(rg_lenCounts_file, bamInput_file, chrx);
+      bamInput_file = bam_in_path + pn + "/" + pn + ".bam";
+      if (chrx != "chr0") {
+	rg_lenCounts_file = out_path + pn + ".count." + chrx + "."; /* + RG*/
+	read_pn_chr(rg_lenCounts_file, bamInput_file, chrx);
+      } else {
+	rg_lenCounts_file = out_path + pn + ".count."; /* + RG*/
+	read_pn(rg_lenCounts_file, bamInput_file);
+      }
+      fin.close();  
+      break;
     }
     i++;
   }
-  fin.close();  
+  return 0;
 }
+
+#else
+int main( int argc, char* argv[] )
+{
+  int len_min = 100, len_max = 1000, bin_width = 5; 
+  string f_count = argv[1];
+  string f_prob = argv[2];
+  if (argc > 3) { 
+    seqan::lexicalCast2(len_min, argv[3]);
+    seqan::lexicalCast2(len_max, argv[4]);
+    seqan::lexicalCast2(bin_width, argv[5]);
+  }
+  cerr << "reading " << f_count << endl;
+  cerr << "write " << f_prob << endl;
+  write_pdf(f_count, f_prob, len_min, len_max, bin_width);
+  
+}
+#endif
+
