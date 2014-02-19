@@ -3,30 +3,6 @@
 #include "common.h"
 #include "utils.h"
 
-template <class K, class V> 
-void addKey(map <K,V> &m, K key, int cnt=1)
-{
-  typename map <K,V>::iterator it;
-  if ((it=m.find(key)) == m.end()) {
-    m[key] = cnt;
-  } else (it->second) += cnt;
-}
-
-template <class K, class V>
-void print_map(map <K,V> &m) 
-{
-  typename map <K,V>::iterator it;
-  for (it = m.begin(); it != m.end(); it++) cerr << it->first << " " << it->second << endl;  
-}
-
-template <class K>
-void print_vec(vector <K> &m) 
-{
-  typename vector <K>::iterator it;
-  for (it = m.begin(); it != m.end(); it++) cerr << *it << " ";
-  cerr << endl;
-}
-
 void combine_multi(vector <string> &pns, string &file_delete_multi_prefix, string &f_out, string chrx){
   string _chrx, tmp1, tmp2;
   double p0, p1, p2;
