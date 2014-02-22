@@ -3,6 +3,7 @@
 #include "common.h"
 #include "diststat.h"
 #include "utils.h"
+#include <boost/timer.hpp>
 
 int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chrns, string &path_output, string &pn, string &file_dist_prefix, string &pdf_param, string &file_alupos_prefix, int coverage_max, int alu_flank){  
   ofstream fout((path_output + pn).c_str()); 
