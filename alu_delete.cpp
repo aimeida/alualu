@@ -3,6 +3,7 @@
 #include "common.h"
 #include "diststat.h"
 #include "utils.h"
+#include <sys/time.h>
 #include <boost/timer.hpp>
 
 int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chrns, string &path_output, string &pn, string &file_dist_prefix, string &pdf_param, string &file_alupos_prefix, int coverage_max, int alu_flank){  
@@ -48,7 +49,7 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
   unsigned idx_rg;
   int aluBegin, aluEnd;      
 
-
+  boost::timer clocki;    
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrx = *ci;
     string file_alupos = file_alupos_prefix + chrx;
@@ -58,8 +59,9 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
       cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
       return 1;
     }
-    
+
     for (int count_loci = 0; ; count_loci++) {
+
       bool hasAlignments = false;
       if (!alurefpos->updatePos(aluBegin, aluEnd)) break;
       if (aluBegin < 0 ) continue;
@@ -69,18 +71,21 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
       }
       if (!hasAlignments) {
 	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 2 2 2\n";
-	continue;
+	break;
       }
+
+      float max_cov = coverage_max * (aluEnd - aluBegin + alu_flank) / (float)(length(record.seq) * 2.);      
       int reads_cov = 0;    
       insertlen_rg.clear(); 
+      //clocki.restart();
       while (!atEnd(inStream)) {
 	assert (!readRecord(record, context, inStream, seqan::Bam())); 
 	if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
 	if (record.beginPos < aluBegin - alu_flank) continue;            
 	if ((not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) ) {
 	  if ( record.beginPos >= record.pNext ) continue;  // ==> hasFlagFirst(record) 	
-	  reads_cov ++;
-	  if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads
+	  if ( ++reads_cov > max_cov) break;
+	  if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads	  
 	  seqan::BamTagsDict tags(record.tags);
 	  if (!findTagKey(idx_rg, tags, "RG")) continue;
 	  rg = toCString(getTagValue(tags, idx_rg));	
@@ -89,15 +94,16 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
 	    insertlen_rg[rg].push_back(abs(record.tLen));
 	  } else {
 	    (itr->second).push_back(abs(record.tLen));
-	  }
-	}         
+	  }	  
+ 	}        
       }
-      float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
-      if (mean_coverage > coverage_max) { // skip high coverage region    
-	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 3 3 " << mean_coverage << endl;
+
+      if ( reads_cov >= max_cov) { // skip high coverage region
+	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 3 3 " << coverage_max << endl;
 	continue;
       }
-      // cerr << "mean coverage: " << mean_coverage << "/" << coverage_max << endl;
+      
+      //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      
       genotype_prob(insertlen_rg, empiricalpdf_rg, aluEnd - aluBegin, log_p);
       fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
       for (int i = 0; i < 3; i++)  fout << log_p[i] << " " ;
