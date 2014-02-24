@@ -141,7 +141,8 @@ int main( int argc, char* argv[] )
   int i = 0;
   while (fin >> pn) {
     if (i++ == idx_pn ) {
-      cerr << "reading pn: " << pn << "..................\n";
+      cerr << "reading pn: " << i << " " << pn << "..................\n";
+      //cerr.flush();
       bam_input = read_config(config_file, "file_bam_prefix") + pn + "/" + pn + ".bam";
       bai_input = bam_input + ".bai";  
       break;

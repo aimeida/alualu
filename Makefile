@@ -17,6 +17,9 @@ TRYBAM_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(TRYBAM_FILES_CPP))
 ALU_DELETE_FILES_CPP = utils.cpp alu_delete.cpp common.cpp diststat.cpp
 ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
 
+ALU_MULTI_FILES_CPP = alu_multi.cpp common.cpp utils.cpp
+ALU_MULTI_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_MULTI_FILES_CPP)) 
+
 ALU_NOW_FILES_CPP = alu_now.cpp common.cpp utils.cpp
 ALU_NOW_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_NOW_FILES_CPP)) 
 
@@ -39,6 +42,9 @@ $(OD)/%.o : %.cpp
 
 $(OD)/alu_delete: $(OD) $(ALU_DELETE_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_DELETE_FILES_O)
+
+$(OD)/alu_multi: $(OD) $(ALU_MULTI_FILES_O) 	
+	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_MULTI_FILES_O)	
 
 $(OD)/alu_now: $(OD) $(ALU_NOW_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_NOW_FILES_O)
