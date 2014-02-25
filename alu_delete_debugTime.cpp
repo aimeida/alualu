@@ -71,42 +71,48 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
       }
       if (!hasAlignments) {
 	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 2 2 2\n";
-	break;
+	continue;
       }
-
       int reads_cov = 0;    
+      int debug_cov = 0;
       insertlen_rg.clear(); 
-      //clocki.restart();
+
+      clocki.restart();
       while (!atEnd(inStream)) {
 	assert (!readRecord(record, context, inStream, seqan::Bam())); 
 	if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
+	debug_cov ++;
+	if (record.beginPos < aluBegin - alu_flank) cerr << record.beginPos << " " ;
 	if (record.beginPos < aluBegin - alu_flank) continue;            
-	if ((not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) ) {
-	  if ( record.beginPos >= record.pNext ) continue;  // ==> hasFlagFirst(record) 	
-	  reads_cov ++;
-	  if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads	  
-	  seqan::BamTagsDict tags(record.tags);
-	  if (!findTagKey(idx_rg, tags, "RG")) continue;
-	  rg = toCString(getTagValue(tags, idx_rg));	
-	  map <string, vector<int> >::iterator itr;
-	  if ( (itr = insertlen_rg.find(rg)) == insertlen_rg.end()) {
-	    insertlen_rg[rg].push_back(abs(record.tLen));
-	  } else {
-	    (itr->second).push_back(abs(record.tLen));
-	  }	  
- 	}        
+//	if ((not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) ) {
+//	  if ( record.beginPos >= record.pNext ) continue;  // ==> hasFlagFirst(record) 	
+	reads_cov ++;
+//	  if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads
+
+//	  seqan::BamTagsDict tags(record.tags);
+//	  if (!findTagKey(idx_rg, tags, "RG")) continue;
+//	  rg = toCString(getTagValue(tags, idx_rg));	
+//	  map <string, vector<int> >::iterator itr;
+//	  if ( (itr = insertlen_rg.find(rg)) == insertlen_rg.end()) {
+//	    insertlen_rg[rg].push_back(abs(record.tLen));
+//	  } else {
+//	    (itr->second).push_back(abs(record.tLen));
+//	  }
+
+// 	}         
       }
-      
+
       float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
-      if (mean_coverage > coverage_max) { 
+      cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<" " << debug_cov <<  endl;
+      if (mean_coverage > coverage_max) { // skip high coverage region    
 	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 3 3 " << mean_coverage << endl;
 	continue;
       }
-      //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      
-      genotype_prob(insertlen_rg, empiricalpdf_rg, aluEnd - aluBegin, log_p);
-      fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
-      for (int i = 0; i < 3; i++)  fout << log_p[i] << " " ;
-      fout << endl;
+//      // cerr << "mean coverage: " << mean_coverage << "/" << coverage_max << endl;
+//      genotype_prob(insertlen_rg, empiricalpdf_rg, aluEnd - aluBegin, log_p);
+//      fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
+//      for (int i = 0; i < 3; i++)  fout << log_p[i] << " " ;
+//      fout << endl;
     }
     delete alurefpos;
     cerr << "file_alupos:done  " << file_alupos << endl;  
@@ -140,10 +146,8 @@ int main( int argc, char* argv[] )
   int i = 0;
   while (fin >> pn) {
     if (i++ == idx_pn ) {
-      cerr << "reading pn: " << i << " " << pn << "..................\n";
-      /// old bam files in /nfs/gpfs/data/Results/GWS/
-      //bam_input = read_config(config_file, "file_bam_prefix") + pn + "/" + pn + ".bam";
-      bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+      cerr << "reading pn: " << pn << "..................\n";
+      bam_input = read_config(config_file, "file_bam_prefix") + pn + "/" + pn + ".bam";
       bai_input = bam_input + ".bai";  
       break;
     }
