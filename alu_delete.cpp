@@ -61,7 +61,6 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
     }
 
     for (int count_loci = 0; ; count_loci++) {
-
       bool hasAlignments = false;
       if (!alurefpos->updatePos(aluBegin, aluEnd)) break;
       if (aluBegin < 0 ) continue;
@@ -70,13 +69,14 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
 	continue;
       }
       if (!hasAlignments) {
-	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 2 2 2\n";
-	break;
+	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 2 2 2 0\n";
+	continue;
       }
-
+      
       int reads_cov = 0;    
+
       insertlen_rg.clear(); 
-      //clocki.restart();
+      clocki.restart();
       while (!atEnd(inStream)) {
 	assert (!readRecord(record, context, inStream, seqan::Bam())); 
 	if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
@@ -99,14 +99,14 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
       
       float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
       if (mean_coverage > coverage_max) { 
-	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 3 3 " << mean_coverage << endl;
+	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 3 3 3 " << mean_coverage << endl;
 	continue;
       }
       //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      
       genotype_prob(insertlen_rg, empiricalpdf_rg, aluEnd - aluBegin, log_p);
       fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
       for (int i = 0; i < 3; i++)  fout << log_p[i] << " " ;
-      fout << endl;
+      fout << mean_coverage << endl;
     }
     delete alurefpos;
     cerr << "file_alupos:done  " << file_alupos << endl;  
@@ -142,7 +142,7 @@ int main( int argc, char* argv[] )
     if (i++ == idx_pn ) {
       cerr << "reading pn: " << i << " " << pn << "..................\n";
       /// old bam files in /nfs/gpfs/data/Results/GWS/
-      //bam_input = read_config(config_file, "file_bam_prefix") + pn + "/" + pn + ".bam";
+      //bam_input = read_config(config_file, "old_bam_prefix") + pn + "/" + pn + ".bam";
       bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
       bai_input = bam_input + ".bai";  
       break;
