@@ -1,5 +1,18 @@
-#include "common.h"
 #include "utils.h"
+
+string get_pn(string pn_file, int idx_pn){
+  ifstream fin( pn_file.c_str());
+  string pn;
+  int i = 0;
+  while (fin >> pn) {
+    if (i == idx_pn ) {
+      fin.close();  
+      return pn;
+    }
+    i++;
+  }
+  return "na";
+}
 
 string read_config(string config_file, string key){
   string _key, _value;
@@ -23,10 +36,53 @@ string read_config(string config_file, string key){
   }     
 }
 
+void print_cigar(seqan::String<seqan::CigarElement<> > &cigar, int len_cigar) {
+  for (int li = 0; li < len_cigar; li++) cerr << cigar[li].operation << cigar[li].count; 
+}
+
+void fasta_seq(string fa_input, string chrx, int beginPos, int endPos, seqan::CharString &seq){
+  seqan::FaiIndex faiIndex;
+  assert (!read(faiIndex, fa_input.c_str()) );
+  unsigned idx = 0;
+  assert (getIdByName(faiIndex, chrx, idx));
+  assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
+}
+
+bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region) { // flank_region = 0, print this read; otherwise, print its pair
+  int that_begin = this_pos - max(flank_region, 10); 
+  int that_end = this_pos + max(flank_region, 10);
+  TNameStore      nameStore;
+  TNameStoreCache nameStoreCache(nameStore);
+  TBamIOContext   context(nameStore, nameStoreCache);
+  seqan::BamHeader header;
+  seqan::BamAlignmentRecord record;  
+  seqan::Stream<seqan::Bgzf> inStream;  
+  open(inStream, bam_input.c_str(), "r");
+  seqan::BamIndex<seqan::Bai> baiIndex;
+  assert( !read(baiIndex, bai_input.c_str())) ;
+  int rID;
+  assert ( !readRecord(header, context, inStream, seqan::Bam()) ); // do i need this ??
+  assert ( getIdByName(nameStore, chrx, rID, nameStoreCache) );
+  bool hasAlignments = false;
+  jumpToRegion(inStream, hasAlignments, context, rID, that_begin, that_end, baiIndex);
+  if (!hasAlignments) return false;
+  while (!atEnd(inStream)) {
+    assert (!readRecord(record, context, inStream, seqan::Bam())); 
+    if (record.rID != rID || record.beginPos >= that_end) break;
+    if (record.beginPos < that_begin) continue;
+    if (record.qName == this_qName) {
+      if ((flank_region > 0 and record.beginPos != this_pos) or (flank_region == 0) ) {
+	cerr << flank_region << " " <<  record.beginPos << " " << this_pos << endl;
+	that_record = record;
+	return true;
+      }
+    }
+  }
+  return false;
+}
+
 ///// 1-based to 0-based.
-////if (!seqan::lexicalCast2(beginPos, beginP) || beginPos <= 0) {
-AluRefPos::AluRefPos(string file_alupos, int i) {
-  flanking = i;
+AluRefPos::AluRefPos(string file_alupos) {
   ifstream fin( file_alupos.c_str());
   if (!fin) 
     try {
@@ -45,12 +101,12 @@ AluRefPos::AluRefPos(string file_alupos, int i) {
 }
 
 int AluRefPos::updatePos(int &beginPos, int &endPos){
-  beginPos = beginP.front() - flanking;
-  endPos = endP.front() + flanking;
+  if (!beginP.size()) return 0;
+  beginPos = beginP.front();
+  endPos = endP.front();
   beginP.pop();
   endP.pop();
-  //cerr << "debug!! " << beginPos + flanking << endl;  
-  return beginPos > 0 ? 1 : 0;
+  return 1;
 }  
 
 AluRefPos::~AluRefPos(void){

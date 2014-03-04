@@ -6,6 +6,67 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
+// if this read is counted in calculating coverage
+bool QC_left_read(  seqan::BamAlignmentRecord &record){ 
+  return (not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) and (record.beginPos < record.pNext);
+}
+
+int check_region(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int aluBegin, int aluEnd, int alu_flank, map <string, vector<int> > &insertlen_rg, ofstream &fout, int coverage_max) {
+  bool hasAlignments = false;
+  if (aluBegin <= alu_flank  or !jumpToRegion(inStream, hasAlignments, context, rID, aluBegin-alu_flank, aluEnd-alu_flank, baiIndex)) return 0;
+  if (!hasAlignments) return 0;
+  int reads_cov = 0, reads_cross = 0, reads_mid = 0;        
+  int read_len_round = 0;
+  seqan::BamAlignmentRecord record;
+  unsigned idx_rg;
+  map <string, vector<int> >::iterator itr;
+  while (!atEnd(inStream)) {
+    assert (!readRecord(record, context, inStream, seqan::Bam())); 
+    if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
+    if (record.beginPos < aluBegin - alu_flank) continue;            
+    if (!QC_left_read(record)) continue;    
+    reads_cov ++;
+    read_len_round = (length(record.seq) / 10) * 10;  // always larger than 100, even with soft clipping
+    if ( ( record.beginPos + read_len_round > aluBegin ) and  (record.pNext <= aluEnd) ) {
+      reads_mid ++;
+      if (length(record.cigar)==0) 
+	cerr << "mid " << chrx << " " << aluBegin << " " << aluEnd << " " << record.qName << " " << record.beginPos << " " << record.pNext << " " << length(record.cigar) << "\n";
+      cerr.flush();
+      continue;
+    }
+    
+    int len_cigar = length(record.cigar);
+    if (len_cigar > 1 ) {
+      if (record.cigar[0].operation == 'S' or record.cigar[len_cigar-1].operation =='S') {
+	if (length(record.cigar)==0) 
+	  cerr << "soft " << chrx << " " << aluBegin << " " << aluEnd << " " << record.qName << " " << record.beginPos << " " << record.pNext << " "  << length(record.cigar) << endl;
+	cerr.flush();
+      }
+    }
+
+    //cerr << "cigar " << length(record.cigar) << endl;
+    //cerr << "cigar " << record.cigar[0].operation << endl;
+
+    /*
+    if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads	  
+    seqan::BamTagsDict tags(record.tags);
+    assert (findTagKey(idx_rg, tags, "RG"));
+    string rg = toCString(getTagValue(tags, idx_rg));	
+    if ( (itr = insertlen_rg.find(rg)) == insertlen_rg.end()) {
+      insertlen_rg[rg].push_back(abs(record.tLen));
+    } else {
+	(itr->second).push_back(abs(record.tLen));
+    }	  
+    */  
+  }
+  
+  //if (reads_cov > 2) cerr << " ## " << reads_cov << " " << reads_mid << endl;
+
+  //float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
+  //if ( (reads_cov <= 2) or (mean_coverage > coverage_max) ) return 0;
+  return 0;
+}
+
 int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chrns, string &path_output, string &pn, string &file_dist_prefix, string &pdf_param, string &file_alupos_prefix, int coverage_max, int alu_flank){  
   ofstream fout((path_output + pn).c_str()); 
   // Open BGZF Stream for reading.
@@ -21,10 +82,6 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
     return 1;
   }
 
-  // Setup name store, cache, and BAM I/O context.
-  typedef seqan::StringSet<seqan::CharString> TNameStore;
-  typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
-  typedef seqan::BamIOContext<TNameStore>     TBamIOContext;
   TNameStore      nameStore;
   TNameStoreCache nameStoreCache(nameStore);
   TBamIOContext   context(nameStore, nameStoreCache);
@@ -44,11 +101,8 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
     empiricalpdf_rg[rg] = new EmpiricalPdf( file_dist_prefix + pn + ".count." + rg + "." + pdf_param );
   fin.close();
 
-  map <string, vector<int> > insertlen_rg;
   float *log_p = new float[3];
-  unsigned idx_rg;
   int aluBegin, aluEnd;      
-
   boost::timer clocki;    
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrx = *ci;
@@ -59,54 +113,22 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
       cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
       return 1;
     }
-
+    map <string, vector<int> > insertlen_rg;
     for (int count_loci = 0; ; count_loci++) {
-      bool hasAlignments = false;
       if (!alurefpos->updatePos(aluBegin, aluEnd)) break;
-      if (aluBegin < 0 ) continue;
-      if (!jumpToRegion(inStream, hasAlignments, context, rID, aluBegin - alu_flank, aluEnd + alu_flank, baiIndex)) {
-	std::cerr << "ERROR: Could not jump to " << aluBegin << ":" << aluEnd << "\n";
-	continue;
-      }
-      if (!hasAlignments) {
-	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 2 2 2 0\n";
-	continue;
-      }
-      
-      int reads_cov = 0;    
-
-      insertlen_rg.clear(); 
       clocki.restart();
-      while (!atEnd(inStream)) {
-	assert (!readRecord(record, context, inStream, seqan::Bam())); 
-	if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
-	if (record.beginPos < aluBegin - alu_flank) continue;            
-	if ((not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) ) {
-	  if ( record.beginPos >= record.pNext ) continue;  // ==> hasFlagFirst(record) 	
-	  reads_cov ++;
-	  if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads	  
-	  seqan::BamTagsDict tags(record.tags);
-	  if (!findTagKey(idx_rg, tags, "RG")) continue;
-	  rg = toCString(getTagValue(tags, idx_rg));	
-	  map <string, vector<int> >::iterator itr;
-	  if ( (itr = insertlen_rg.find(rg)) == insertlen_rg.end()) {
-	    insertlen_rg[rg].push_back(abs(record.tLen));
-	  } else {
-	    (itr->second).push_back(abs(record.tLen));
-	  }	  
- 	}        
-      }
-      
-      float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
-      if (mean_coverage > coverage_max) { 
-	fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " 3 3 3 " << mean_coverage << endl;
-	continue;
-      }
-      //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      
+      insertlen_rg.clear();
+      int int_err = check_region(chrx, inStream, baiIndex, context, rID, aluBegin, aluEnd, alu_flank, insertlen_rg, fout, coverage_max);
+      if (int_err < 0) cerr << chrx << " " <<  aluBegin << " " <<  aluEnd << "\n";
+
+
+      /*
       genotype_prob(insertlen_rg, empiricalpdf_rg, aluEnd - aluBegin, log_p);
       fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
       for (int i = 0; i < 3; i++)  fout << log_p[i] << " " ;
       fout << mean_coverage << endl;
+      */
+      //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      
     }
     delete alurefpos;
     cerr << "file_alupos:done  " << file_alupos << endl;  
@@ -131,24 +153,15 @@ int main( int argc, char* argv[] )
   string path_output = argv[4];
 
   int coverage_max, alu_flank;
-  string pn, bam_input, bai_input;
-
   seqan::lexicalCast2(coverage_max, (read_config(config_file, "coverage_max")));
   seqan::lexicalCast2(alu_flank, (read_config(config_file, "alu_flank")));
   
-  ifstream fin(read_config(config_file, "file_pn").c_str());
-  int i = 0;
-  while (fin >> pn) {
-    if (i++ == idx_pn ) {
-      cerr << "reading pn: " << i << " " << pn << "..................\n";
-      /// old bam files in /nfs/gpfs/data/Results/GWS/
-      //bam_input = read_config(config_file, "old_bam_prefix") + pn + "/" + pn + ".bam";
-      bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
-      bai_input = bam_input + ".bai";  
-      break;
-    }
-  }
-  fin.close();  
+  string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
+  cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
+  /// old bam files in /nfs/gpfs/data/Results/GWS/
+  //bam_input = read_config(config_file, "old_bam_prefix") + pn + "/" + pn + ".bam";
+  string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+  string bai_input = bam_input + ".bai";  
 
   vector<string> chrns;
   if (chrn != "chr0") {
