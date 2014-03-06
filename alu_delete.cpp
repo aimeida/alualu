@@ -6,17 +6,38 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
-// if this read is counted in calculating coverage
-bool QC_left_read(  seqan::BamAlignmentRecord &record){ 
-  return (not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) and (record.beginPos < record.pNext);
+#define CROSS_BP 5
+#define PNEXT_BP 10 // pNext and breakpoint
+#define CLIP_BP 5  // min length to be called soft clip 
+#define BAD_READ -1
+#define UNKNOW_READ 0
+#define CROSS_READ 1  // read without deletion
+#define CLIP_READ 2 
+
+int cross_pos(seqan::BamAlignmentRecord & record, int align_len, int begin_del, int end_del){
+  if (( record.beginPos <= begin_del - CROSS_BP) and ( record.beginPos + align_len >= begin_del + CROSS_BP )) return CROSS_READ;
+  if (( record.beginPos <= end_del - CROSS_BP) and ( record.beginPos + align_len >= end_del + CROSS_BP )) return CROSS_READ;
+  if (( record.pNext <= begin_del - CROSS_BP) and ( record.pNext + PNEXT_BP > begin_del)) return CROSS_READ;
+  if (( record.pNext <= end_del - CROSS_BP) and ( record.pNext + PNEXT_BP > end_del)) return CROSS_READ;
+  return UNKNOW_READ; // check ?
+}
+
+int clip_pos(int beginPos, int endPos, int begin_del, int end_del, seqan::BamAlignmentRecord & record){
+  if ( abs(beginPos-begin_del) < CROSS_BP ) return CROSS_READ;
+  if ( abs(endPos-end_del) < CROSS_BP ) return CROSS_READ; 
+  //chr1 6018867 6019167 6018782 6018867 M85S16 8:110:3182:21081
+  if ( (abs(endPos-begin_del) < CROSS_BP) and has_soft_last(record, CLIP_BP) ) return CLIP_READ;
+  if ( (abs(beginPos-end_del) < CROSS_BP) and has_soft_first(record, CLIP_BP) ) return CLIP_READ;
+  return UNKNOW_READ;  // check why so maorny -1 ?
 }
 
 int check_region(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int aluBegin, int aluEnd, int alu_flank, map <string, vector<int> > &insertlen_rg, ofstream &fout, int coverage_max) {
   bool hasAlignments = false;
   if (aluBegin <= alu_flank  or !jumpToRegion(inStream, hasAlignments, context, rID, aluBegin-alu_flank, aluEnd-alu_flank, baiIndex)) return 0;
   if (!hasAlignments) return 0;
-  int reads_cov = 0, reads_cross = 0, reads_mid = 0;        
-  int read_len_round = 0;
+  int reads_cov = 0;
+  set <seqan::CharString> med_del;  // reads with deletion, 0.999 sure
+  set <seqan::CharString> uden_del; // reads without deletion, 0.999 sure
   seqan::BamAlignmentRecord record;
   unsigned idx_rg;
   map <string, vector<int> >::iterator itr;
@@ -24,30 +45,47 @@ int check_region(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamI
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
     if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
     if (record.beginPos < aluBegin - alu_flank) continue;            
-    if (!QC_left_read(record)) continue;    
-    reads_cov ++;
-    read_len_round = (length(record.seq) / 10) * 10;  // always larger than 100, even with soft clipping
-    if ( ( record.beginPos + read_len_round > aluBegin ) and  (record.pNext <= aluEnd) ) {
-      reads_mid ++;
-      if (length(record.cigar)==0) 
-	cerr << "mid " << chrx << " " << aluBegin << " " << aluEnd << " " << record.qName << " " << record.beginPos << " " << record.pNext << " " << length(record.cigar) << "\n";
-      cerr.flush();
+    if (!QC_read(record)) continue;    
+    if (left_read(record)) reads_cov ++;  
+
+    if ( (med_del.find(record.qName)!=med_del.end()) or (uden_del.find(record.qName)!=uden_del.end()) ) continue;    
+    int read_len = length(record.seq);
+    int align_len = getAlignmentLengthInRef(record);
+    if ( cross_pos( record, align_len, aluBegin, aluEnd) == CROSS_READ) {
+      uden_del.insert(record.qName);
       continue;
     }
-    
-    int len_cigar = length(record.cigar);
-    if (len_cigar > 1 ) {
-      if (record.cigar[0].operation == 'S' or record.cigar[len_cigar-1].operation =='S') {
-	if (length(record.cigar)==0) 
-	  cerr << "soft " << chrx << " " << aluBegin << " " << aluEnd << " " << record.qName << " " << record.beginPos << " " << record.pNext << " "  << length(record.cigar) << endl;
-	cerr.flush();
-      }
+    int status_del = clip_pos( record.beginPos, record.beginPos + align_len, aluBegin, aluEnd, record);
+    if (status_del == CROSS_READ) {
+      uden_del.insert(record.qName);
+      continue;      
     }
 
-    //cerr << "cigar " << length(record.cigar) << endl;
-    //cerr << "cigar " << record.cigar[0].operation << endl;
+    //    chr1 7960397 7960634 7960635 7960716 S20M81 7:55:17103:13566 7960461
+    if (status_del == CLIP_READ) {
+      med_del.insert(record.qName);
+      cerr << "clip " << " " <<  chrx << " " << aluBegin << " " << aluEnd << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record) << " ";
+      print_cigar(record);
+      cerr << " " << record.qName << " " << record.pNext << "\n";                    
+      continue;      
+    }
+  
+    if (status_del == BAD_READ) {
+      cerr << "clip " << " " <<  chrx << " " << aluBegin << " " << aluEnd << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record) << " ";
+      print_cigar(record);
+      cerr << " " << record.qName << " " << record.pNext << "\n";                    
+    } 
+    
+  }
+  // first check if it cross 2 regions.
+       
+//    if (length(record.cigar)==0) 
+//      cerr << chrx << " " << aluBegin << " " << aluEnd << " " << record.qName << " " << record.beginPos << " " << record.pNext << " " << length(record.cigar) << "\n";    
+//if (record.cigar[0].operation == 'S' or record.cigar[len_cigar-1].operation =='S') {
+  
+  //cerr << "cigar " << record.cigar[0].operation << endl;
 
-    /*
+  /*
     if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads	  
     seqan::BamTagsDict tags(record.tags);
     assert (findTagKey(idx_rg, tags, "RG"));
@@ -58,15 +96,13 @@ int check_region(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamI
 	(itr->second).push_back(abs(record.tLen));
     }	  
     */  
-  }
   
-  //if (reads_cov > 2) cerr << " ## " << reads_cov << " " << reads_mid << endl;
-
+  //if (reads_cov > 2) cerr << " ## " << reads_cov << " " << reads_mid << endl; 
   //float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
   //if ( (reads_cov <= 2) or (mean_coverage > coverage_max) ) return 0;
   return 0;
 }
-
+  
 int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chrns, string &path_output, string &pn, string &file_dist_prefix, string &pdf_param, string &file_alupos_prefix, int coverage_max, int alu_flank){  
   ofstream fout((path_output + pn).c_str()); 
   // Open BGZF Stream for reading.
