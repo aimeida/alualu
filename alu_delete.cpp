@@ -6,8 +6,10 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
+#define LOG_RATIO_UB 7 // max log(Odds Ratio) for a single read, estimated from quantile(0.95)/quantile(0.05), 1e3 to 1e4
 #define CROSS_BP 5
-#define CLIP_BP 5  // min length to be called soft clip 
+#define CLIP_BP 10  // min length to be called soft clip 
+#define BAD_READ -1  // not use! eg. one read is mid-read, the other is clip read
 #define UNKNOW_READ 0
 #define MID_READ 1  // read without deletion
 #define CLIP_READ 2 
@@ -17,7 +19,7 @@ int clip_pos(int beginPos, int endPos, int begin_del, int end_del, seqan::BamAli
   //chr1 6018867 6019167 6018782 6018867 M85S16 8:110:3182:21081
   if ( (abs(endPos-begin_del) < CROSS_BP) and has_soft_last(record, CLIP_BP) ) return CLIP_READ;
   if ( (abs(beginPos-end_del) < CROSS_BP) and has_soft_first(record, CLIP_BP) ) return CLIP_READ;
-  return UNKNOW_READ;  // check why so maorny -1 ?
+  return UNKNOW_READ;  // check why so many unknown ?
 }
 
 // one of the read(in the pair ) covers the delete region
@@ -32,61 +34,54 @@ int cross_pos(seqan::BamAlignmentRecord & record, int align_len, int begin_del, 
   return clip_pos(beginPos, endPos, begin_del, end_del, record);
 }
 
-void print_summary(map <seqan::CharString, int> &read_type){
-  map<int, int> type_counts;
-  for (map <seqan::CharString, int>::iterator rt = read_type.begin(); rt != read_type.end(); rt++) {
-    addKey(type_counts, rt->second, 1);
-  }
-  print_map(type_counts);
+void count_reads(map <seqan::CharString, int> &special_read, int &mid_read_count, int &clip_read_count){
+  for (map <seqan::CharString, int>::iterator rt = special_read.begin(); rt != special_read.end(); rt++) 
+    if (rt->second == MID_READ) mid_read_count++ ;
+    else clip_read_count++;
 }
-
-int chr_alupos(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int aluBegin, int aluEnd, int alu_flank, ofstream &f_tmp2, unsigned coverage_max, map <seqan::CharString, int> &read_type, map <seqan::CharString, pair<string, int> > &rg_len) {
-  read_type.clear();
-  rg_len.clear();
+ 
+int chr_alupos(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int aluBegin, int aluEnd, int alu_flank, ofstream &f_tmp2, unsigned coverage_max, unsigned &coverage_mean, map <seqan::CharString, int> &special_read, map <seqan::CharString, pair<string, int> > &rg_len){
   bool hasAlignments = false;
   if (aluBegin <= alu_flank  or !jumpToRegion(inStream, hasAlignments, context, rID, aluBegin-alu_flank, aluEnd-alu_flank, baiIndex)) return 0;
   if (!hasAlignments) return 0;
   int reads_cov = 0;
-  map <seqan::CharString, int>::iterator rt; 
   seqan::BamAlignmentRecord record;
+  rg_len.clear();
+  special_read.clear();
+  map <seqan::CharString, int>::iterator sr;
   while (!atEnd(inStream)) {
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
     if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
     if (record.beginPos < aluBegin - alu_flank) continue;            
     if (!QC_read(record)) continue;    
-    reads_cov ++;  
-
+    reads_cov ++;  // only left read counts
     int align_len = getAlignmentLengthInRef(record);    
     if ( ( max(record.beginPos + align_len, record.beginPos + record.tLen) < aluBegin - CROSS_BP) or 
 	 ( min(record.beginPos, record.pNext) > aluEnd + CROSS_BP) ) {   // useless reads           
-      //cerr << "useless reads: " << chrx << " " << aluBegin  << " " << aluEnd << endl;
       continue;        
     }
-  
-    if ( ( (rt = read_type.find(record.qName)) != read_type.end()) and (rt->second != UNKNOW_READ) ) continue;
-    int rt_val = cross_pos( record, align_len, aluBegin, aluEnd );
-    read_type[record.qName] = rt_val;
 
-    if ( rt_val == UNKNOW_READ ) {
+    if ( special_read.find(record.qName) != special_read.end()) continue;    
+    int rt_val = cross_pos( record, align_len, aluBegin, aluEnd );
+    if (rt_val != UNKNOW_READ) {
+      special_read[record.qName] = rt_val;
+      if (rt_val == CLIP_READ) {
+	f_tmp2 << "CLIP_READ " << chrx << " " << aluBegin  << " " << aluEnd << " ";
+	print_read(record, f_tmp2);	
+      }
+    } else if (left_read(record)) {
       seqan::BamTagsDict tags(record.tags);
       unsigned idx_rg;
       assert (findTagKey(idx_rg, tags, "RG"));
       string rg = toCString(getTagValue(tags, idx_rg));	
-      rg_len[record.qName] = make_pair(rg, abs(record.tLen));
-    }     
-    
-    if ( rt_val == CLIP_READ ) {
-      f_tmp2 << "CLIP_READ " << chrx << " " << aluBegin  << " " << aluEnd << " ";
-      print_read(record, f_tmp2);
-    }
-    
-  }  
-  
-  if (length(record.seq) * reads_cov / (aluEnd - aluBegin + 2 * alu_flank) > coverage_max) return 0;
-  print_summary(read_type);   
-  return 0;
+      rg_len[record.qName] = make_pair(rg, abs(record.tLen));      
+    }    
+  }   
+  coverage_mean = length(record.seq) * reads_cov / (aluEnd - aluBegin + 2 * alu_flank) ;
+  if ( coverage_mean > coverage_max) return 0;
+  return 1;
 }
-  
+ 
 int delete_search( string & bam_input, string &bai_input, vector<string> &chrns, string &path_output, string &pn, string &file_dist_prefix, string &pdf_param, string &file_alupos_prefix, int coverage_max, int alu_flank) {  
 
   // Open BGZF Stream for reading.
@@ -125,12 +120,12 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
   float *log_p = new float[3];
   int aluBegin, aluEnd;      
   boost::timer clocki;    
-  map <seqan::CharString, int> read_type; 
-  map <seqan::CharString, int>::iterator rt;
+  map <seqan::CharString, int> special_read;
   map <seqan::CharString, pair<string, int> > rg_len; 
-
+  map <seqan::CharString, pair<string, int> >::iterator rl; 
+  
   ofstream f_tmp1((path_output + pn + ".tmp1").c_str()); 
-  f_tmp1 << "chr alu_flank aluBegin aluEnd p0 p1 p2 mean_coverage\n";
+  f_tmp1 << "chr alu_flank aluBegin aluEnd p0 p1 p2 mean_coverage mid_read_count clip_read_count unknow_read_count\n";
   ofstream f_tmp2((path_output + pn + ".tmp2").c_str()); 
   f_tmp2 << "type chr aluBegin aluEnd qName beginPos endPos pNext pNextEnd\n";
   
@@ -144,28 +139,31 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
       return 1;
     }
     for (int count_loci = 0; ; count_loci++) {
+      unsigned coverage_mean = 0;
       if (!alurefpos->updatePos(aluBegin, aluEnd)) break;
-      int int_err = chr_alupos(chrx, inStream, baiIndex, context, rID, aluBegin, aluEnd, alu_flank, f_tmp2, coverage_max, read_type, rg_len);
-      if (int_err < 0) continue;
-      int mid_read_count = 0;
-      for (int i = 0; i < 3; i++) log_p[i] = 0;
-      for ( rt = read_type.begin(); rt != read_type.end(); rt++) {
-	if (rt->second == MID_READ) { 
-	  mid_read_count++;
-	} else if (rt->second == UNKNOW_READ) {
-	  empiricalpdf = empiricalpdf_rg[rg_len[rt->first].first];
-	  int insert_len = rg_len[rt->first].second;
-	  float p_y = empiricalpdf->pdf_obs(insert_len);
-	  float p_z = empiricalpdf->pdf_obs(insert_len + aluEnd - aluBegin );
-	  log_p[0] += log(p_y);
-	  log_p[1] += log(0.67 * p_y + 0.33 * p_z);
-	  log_p[2] += log(p_z); 
-	}	
-      }
+      if (!chr_alupos(chrx, inStream, baiIndex, context, rID, aluBegin, aluEnd, alu_flank, f_tmp2, coverage_max, coverage_mean, special_read, rg_len)) continue;
+      int mid_read_count = 0, clip_read_count = 0, unknow_read_count = 0;
+      count_reads(special_read, mid_read_count, clip_read_count);      
+      log_p[0] = clip_read_count * (-LOG_RATIO_UB) ; 
+      log_p[1] = (mid_read_count + clip_read_count) * log(0.5) ;
+      log_p[2] = mid_read_count * (-LOG_RATIO_UB) ; 
       
+      for ( rl = rg_len.begin(); rl != rg_len.end(); rl++) {
+	if (special_read.find(rl->first) != special_read.end()) continue;
+	unknow_read_count ++;
+	empiricalpdf = empiricalpdf_rg[(rl->second).first];
+	int insert_len = (rl->second).second;
+	float p_y = empiricalpdf->pdf_obs(insert_len);
+	float p_z = empiricalpdf->pdf_obs(insert_len + aluEnd - aluBegin );
+	log_p[0] += log(p_y);
+	log_p[1] += log(0.67 * p_y + 0.33 * p_z);
+	log_p[2] += log(p_z); 
+      }	
+      if ( (!unknow_read_count) and (!clip_read_count)) break; 
+      // need to normalize !!
       f_tmp1 << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
       for (int i = 0; i < 3; i++)  f_tmp1 << log_p[i] << " " ;
-      f_tmp1 << mean_coverage << endl;
+      f_tmp1 << coverage_mean << " "<< mid_read_count << " " << clip_read_count << " " <<  unknow_read_count << endl;
       //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      
     }
     delete alurefpos;
