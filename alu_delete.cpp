@@ -7,104 +7,88 @@
 #include <boost/timer.hpp>
 
 #define CROSS_BP 5
-#define PNEXT_BP 10 // pNext and breakpoint
 #define CLIP_BP 5  // min length to be called soft clip 
-#define BAD_READ -1
 #define UNKNOW_READ 0
-#define CROSS_READ 1  // read without deletion
+#define MID_READ 1  // read without deletion
 #define CLIP_READ 2 
 
-int cross_pos(seqan::BamAlignmentRecord & record, int align_len, int begin_del, int end_del){
-  if (( record.beginPos <= begin_del - CROSS_BP) and ( record.beginPos + align_len >= begin_del + CROSS_BP )) return CROSS_READ;
-  if (( record.beginPos <= end_del - CROSS_BP) and ( record.beginPos + align_len >= end_del + CROSS_BP )) return CROSS_READ;
-  if (( record.pNext <= begin_del - CROSS_BP) and ( record.pNext + PNEXT_BP > begin_del)) return CROSS_READ;
-  if (( record.pNext <= end_del - CROSS_BP) and ( record.pNext + PNEXT_BP > end_del)) return CROSS_READ;
-  return UNKNOW_READ; // check ?
-}
-
+// evidence of deletion
 int clip_pos(int beginPos, int endPos, int begin_del, int end_del, seqan::BamAlignmentRecord & record){
-  if ( abs(beginPos-begin_del) < CROSS_BP ) return CROSS_READ;
-  if ( abs(endPos-end_del) < CROSS_BP ) return CROSS_READ; 
   //chr1 6018867 6019167 6018782 6018867 M85S16 8:110:3182:21081
   if ( (abs(endPos-begin_del) < CROSS_BP) and has_soft_last(record, CLIP_BP) ) return CLIP_READ;
   if ( (abs(beginPos-end_del) < CROSS_BP) and has_soft_first(record, CLIP_BP) ) return CLIP_READ;
   return UNKNOW_READ;  // check why so maorny -1 ?
 }
 
-int check_region(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int aluBegin, int aluEnd, int alu_flank, map <string, vector<int> > &insertlen_rg, ofstream &fout, int coverage_max) {
+// one of the read(in the pair ) covers the delete region
+int cross_pos(seqan::BamAlignmentRecord & record, int align_len, int begin_del, int end_del){
+  int beginPos = record.beginPos;
+  int endPos = record.beginPos + align_len;
+  if ( (endPos < begin_del - CROSS_BP) or (beginPos > end_del + CROSS_BP) ) return UNKNOW_READ; 
+  if ( (endPos > begin_del + CROSS_BP) and (endPos < end_del - CROSS_BP) ) return MID_READ;
+  int endPos_pNext = beginPos + record.tLen;
+  if ( (endPos_pNext > begin_del + CROSS_BP) and (endPos_pNext < end_del- CROSS_BP) ) return MID_READ;
+  if ( (abs(beginPos-begin_del) < CROSS_BP ) or (abs(endPos-end_del) < CROSS_BP) ) return MID_READ;
+  return clip_pos(beginPos, endPos, begin_del, end_del, record);
+}
+
+void print_summary(map <seqan::CharString, int> &read_type){
+  map<int, int> type_counts;
+  for (map <seqan::CharString, int>::iterator rt = read_type.begin(); rt != read_type.end(); rt++) {
+    addKey(type_counts, rt->second, 1);
+  }
+  print_map(type_counts);
+}
+
+int chr_alupos(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int aluBegin, int aluEnd, int alu_flank, ofstream &f_tmp2, unsigned coverage_max, map <seqan::CharString, int> &read_type, map <seqan::CharString, pair<string, int> > &rg_len) {
+  read_type.clear();
+  rg_len.clear();
   bool hasAlignments = false;
   if (aluBegin <= alu_flank  or !jumpToRegion(inStream, hasAlignments, context, rID, aluBegin-alu_flank, aluEnd-alu_flank, baiIndex)) return 0;
   if (!hasAlignments) return 0;
   int reads_cov = 0;
-  set <seqan::CharString> med_del;  // reads with deletion, 0.999 sure
-  set <seqan::CharString> uden_del; // reads without deletion, 0.999 sure
+  map <seqan::CharString, int>::iterator rt; 
   seqan::BamAlignmentRecord record;
-  unsigned idx_rg;
-  map <string, vector<int> >::iterator itr;
   while (!atEnd(inStream)) {
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
     if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
     if (record.beginPos < aluBegin - alu_flank) continue;            
     if (!QC_read(record)) continue;    
-    if (left_read(record)) reads_cov ++;  
+    reads_cov ++;  
 
-    if ( (med_del.find(record.qName)!=med_del.end()) or (uden_del.find(record.qName)!=uden_del.end()) ) continue;    
-    int read_len = length(record.seq);
-    int align_len = getAlignmentLengthInRef(record);
-    if ( cross_pos( record, align_len, aluBegin, aluEnd) == CROSS_READ) {
-      uden_del.insert(record.qName);
-      continue;
-    }
-    int status_del = clip_pos( record.beginPos, record.beginPos + align_len, aluBegin, aluEnd, record);
-    if (status_del == CROSS_READ) {
-      uden_del.insert(record.qName);
-      continue;      
-    }
-
-    //    chr1 7960397 7960634 7960635 7960716 S20M81 7:55:17103:13566 7960461
-    if (status_del == CLIP_READ) {
-      med_del.insert(record.qName);
-      cerr << "clip " << " " <<  chrx << " " << aluBegin << " " << aluEnd << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record) << " ";
-      print_cigar(record);
-      cerr << " " << record.qName << " " << record.pNext << "\n";                    
-      continue;      
+    int align_len = getAlignmentLengthInRef(record);    
+    if ( ( max(record.beginPos + align_len, record.beginPos + record.tLen) < aluBegin - CROSS_BP) or 
+	 ( min(record.beginPos, record.pNext) > aluEnd + CROSS_BP) ) {   // useless reads           
+      //cerr << "useless reads: " << chrx << " " << aluBegin  << " " << aluEnd << endl;
+      continue;        
     }
   
-    if (status_del == BAD_READ) {
-      cerr << "clip " << " " <<  chrx << " " << aluBegin << " " << aluEnd << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record) << " ";
-      print_cigar(record);
-      cerr << " " << record.qName << " " << record.pNext << "\n";                    
-    } 
+    if ( ( (rt = read_type.find(record.qName)) != read_type.end()) and (rt->second != UNKNOW_READ) ) continue;
+    int rt_val = cross_pos( record, align_len, aluBegin, aluEnd );
+    read_type[record.qName] = rt_val;
+
+    if ( rt_val == UNKNOW_READ ) {
+      seqan::BamTagsDict tags(record.tags);
+      unsigned idx_rg;
+      assert (findTagKey(idx_rg, tags, "RG"));
+      string rg = toCString(getTagValue(tags, idx_rg));	
+      rg_len[record.qName] = make_pair(rg, abs(record.tLen));
+    }     
     
-  }
-  // first check if it cross 2 regions.
-       
-//    if (length(record.cigar)==0) 
-//      cerr << chrx << " " << aluBegin << " " << aluEnd << " " << record.qName << " " << record.beginPos << " " << record.pNext << " " << length(record.cigar) << "\n";    
-//if (record.cigar[0].operation == 'S' or record.cigar[len_cigar-1].operation =='S') {
+    if ( rt_val == CLIP_READ ) {
+      f_tmp2 << "CLIP_READ " << chrx << " " << aluBegin  << " " << aluEnd << " ";
+      print_read(record, f_tmp2);
+    }
+    
+  }  
   
-  //cerr << "cigar " << record.cigar[0].operation << endl;
-
-  /*
-    if ( (record.pNext <= aluBegin) or (record.beginPos >= aluEnd)) continue;  // ignore broken reads	  
-    seqan::BamTagsDict tags(record.tags);
-    assert (findTagKey(idx_rg, tags, "RG"));
-    string rg = toCString(getTagValue(tags, idx_rg));	
-    if ( (itr = insertlen_rg.find(rg)) == insertlen_rg.end()) {
-      insertlen_rg[rg].push_back(abs(record.tLen));
-    } else {
-	(itr->second).push_back(abs(record.tLen));
-    }	  
-    */  
-  
-  //if (reads_cov > 2) cerr << " ## " << reads_cov << " " << reads_mid << endl; 
-  //float mean_coverage = length(record.seq) * reads_cov * 2. / (aluEnd - aluBegin + alu_flank);
-  //if ( (reads_cov <= 2) or (mean_coverage > coverage_max) ) return 0;
+  if (length(record.seq) * reads_cov / (aluEnd - aluBegin + 2 * alu_flank) > coverage_max) return 0;
+  print_summary(read_type);   
   return 0;
 }
   
-int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chrns, string &path_output, string &pn, string &file_dist_prefix, string &pdf_param, string &file_alupos_prefix, int coverage_max, int alu_flank){  
-  ofstream fout((path_output + pn).c_str()); 
+int delete_search( string & bam_input, string &bai_input, vector<string> &chrns, string &path_output, string &pn, string &file_dist_prefix, string &pdf_param, string &file_alupos_prefix, int coverage_max, int alu_flank) {  
+
   // Open BGZF Stream for reading.
   seqan::Stream<seqan::Bgzf> inStream;
   if (!open(inStream, bam_input.c_str(), "r")) {
@@ -129,6 +113,7 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
   }  
 
   map <string, EmpiricalPdf *> empiricalpdf_rg;
+  EmpiricalPdf *empiricalpdf;
   string rg;
   ifstream fin;
   fin.open(( file_dist_prefix + "RG." + pn) .c_str());
@@ -140,6 +125,15 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
   float *log_p = new float[3];
   int aluBegin, aluEnd;      
   boost::timer clocki;    
+  map <seqan::CharString, int> read_type; 
+  map <seqan::CharString, int>::iterator rt;
+  map <seqan::CharString, pair<string, int> > rg_len; 
+
+  ofstream f_tmp1((path_output + pn + ".tmp1").c_str()); 
+  f_tmp1 << "chr alu_flank aluBegin aluEnd p0 p1 p2 mean_coverage\n";
+  ofstream f_tmp2((path_output + pn + ".tmp2").c_str()); 
+  f_tmp2 << "type chr aluBegin aluEnd qName beginPos endPos pNext pNextEnd\n";
+  
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrx = *ci;
     string file_alupos = file_alupos_prefix + chrx;
@@ -149,21 +143,29 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
       cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
       return 1;
     }
-    map <string, vector<int> > insertlen_rg;
     for (int count_loci = 0; ; count_loci++) {
       if (!alurefpos->updatePos(aluBegin, aluEnd)) break;
-      clocki.restart();
-      insertlen_rg.clear();
-      int int_err = check_region(chrx, inStream, baiIndex, context, rID, aluBegin, aluEnd, alu_flank, insertlen_rg, fout, coverage_max);
-      if (int_err < 0) cerr << chrx << " " <<  aluBegin << " " <<  aluEnd << "\n";
-
-
-      /*
-      genotype_prob(insertlen_rg, empiricalpdf_rg, aluEnd - aluBegin, log_p);
-      fout << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
-      for (int i = 0; i < 3; i++)  fout << log_p[i] << " " ;
-      fout << mean_coverage << endl;
-      */
+      int int_err = chr_alupos(chrx, inStream, baiIndex, context, rID, aluBegin, aluEnd, alu_flank, f_tmp2, coverage_max, read_type, rg_len);
+      if (int_err < 0) continue;
+      int mid_read_count = 0;
+      for (int i = 0; i < 3; i++) log_p[i] = 0;
+      for ( rt = read_type.begin(); rt != read_type.end(); rt++) {
+	if (rt->second == MID_READ) { 
+	  mid_read_count++;
+	} else if (rt->second == UNKNOW_READ) {
+	  empiricalpdf = empiricalpdf_rg[rg_len[rt->first].first];
+	  int insert_len = rg_len[rt->first].second;
+	  float p_y = empiricalpdf->pdf_obs(insert_len);
+	  float p_z = empiricalpdf->pdf_obs(insert_len + aluEnd - aluBegin );
+	  log_p[0] += log(p_y);
+	  log_p[1] += log(0.67 * p_y + 0.33 * p_z);
+	  log_p[2] += log(p_z); 
+	}	
+      }
+      
+      f_tmp1 << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
+      for (int i = 0; i < 3; i++)  f_tmp1 << log_p[i] << " " ;
+      f_tmp1 << mean_coverage << endl;
       //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      
     }
     delete alurefpos;
@@ -173,7 +175,8 @@ int pn_delete_search( string & bam_input, string &bai_input, vector<string> &chr
   for (map <string, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
     delete ri->second;
   //bamStreamOut.close();
-  fout.close();
+  f_tmp1.close();
+  f_tmp2.close();
   seqan::close(inStream);     
   return 0;
 }
@@ -188,7 +191,7 @@ int main( int argc, char* argv[] )
   string chrn = argv[3];
   string path_output = argv[4];
 
-  int coverage_max, alu_flank;
+  unsigned coverage_max, alu_flank;
   seqan::lexicalCast2(coverage_max, (read_config(config_file, "coverage_max")));
   seqan::lexicalCast2(alu_flank, (read_config(config_file, "alu_flank")));
   
@@ -211,7 +214,8 @@ int main( int argc, char* argv[] )
   string pdf_param = read_config(config_file, "pdf_param");
   string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
 
-  pn_delete_search(bam_input, bai_input, chrns, path_output, pn, file_dist_prefix, pdf_param, file_alupos_prefix, coverage_max, alu_flank);
-
+  delete_search(bam_input, bai_input, chrns, path_output, pn, file_dist_prefix, pdf_param, file_alupos_prefix, coverage_max, alu_flank);
+  
+  
   return 0;  
 }
