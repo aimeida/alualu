@@ -53,7 +53,7 @@ int chr_alupos(string &chrx, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamInd
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
     if (record.rID != rID || record.beginPos >= aluEnd + alu_flank) break;
     if (record.beginPos < aluBegin - alu_flank) continue;            
-    if (!QC_read(record)) continue;    
+    if ( (!QC_read(record)) or (abs(record.tLen) > 2000)) continue;    // ignore extreme large tLen 
     reads_cov ++;  // only left read counts
     int align_len = getAlignmentLengthInRef(record);    
     if ( ( max(record.beginPos + align_len, record.beginPos + record.tLen) < aluBegin - CROSS_BP) or 
@@ -144,6 +144,9 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
       if (!chr_alupos(chrx, inStream, baiIndex, context, rID, aluBegin, aluEnd, alu_flank, f_tmp2, coverage_max, coverage_mean, special_read, rg_len)) continue;
       int mid_read_count = 0, clip_read_count = 0, unknow_read_count = 0;
       count_reads(special_read, mid_read_count, clip_read_count);      
+      
+      //cerr << "count " << mid_read_count << " " <<  clip_read_count << endl;
+
       log_p[0] = clip_read_count * (-LOG_RATIO_UB) ; 
       log_p[1] = (mid_read_count + clip_read_count) * log(0.5) ;
       log_p[2] = mid_read_count * (-LOG_RATIO_UB) ; 
@@ -159,8 +162,8 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
 	log_p[1] += log(0.67 * p_y + 0.33 * p_z);
 	log_p[2] += log(p_z); 
       }	
-      if ( (!unknow_read_count) and (!clip_read_count)) break; 
-      // need to normalize !!
+      if ( (!unknow_read_count) and (!clip_read_count)) continue;
+      if ( !normalize_prob(log_p) ) continue;
       f_tmp1 << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
       for (int i = 0; i < 3; i++)  f_tmp1 << log_p[i] << " " ;
       f_tmp1 << coverage_mean << " "<< mid_read_count << " " << clip_read_count << " " <<  unknow_read_count << endl;
