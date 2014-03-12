@@ -36,8 +36,56 @@ string read_config(string config_file, string key){
   }     
 }
 
-void print_cigar(seqan::String<seqan::CigarElement<> > &cigar, int len_cigar) {
-  for (int li = 0; li < len_cigar; li++) cerr << cigar[li].operation << cigar[li].count; 
+void print_cigar(seqan::BamAlignmentRecord &record) {
+  for (unsigned li = 0; li < length(record.cigar); li++) cerr << record.cigar[li].operation << record.cigar[li].count; 
+}
+
+void print_cigar(seqan::BamAlignmentRecord &record, ofstream &fout) {
+  for (unsigned li = 0; li < length(record.cigar); li++) fout << record.cigar[li].operation << record.cigar[li].count; 
+}
+
+void print_read(seqan::BamAlignmentRecord &record) {
+  cerr << record.qName << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record)  << " " << record.pNext << " " << record.beginPos + record.tLen << " ";
+  print_cigar(record);
+  cerr << endl;
+}
+
+void print_read(seqan::BamAlignmentRecord &record, ofstream &fout) {
+  fout << record.qName << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record)  << " " << record.pNext << " " << record.beginPos + record.tLen << " ";
+  print_cigar(record, fout);
+  fout << endl;
+}
+
+void get_rID_chrx(string & bam_input, vector<string> &chrns, map<int, seqan::CharString> &rID_chrx){
+  seqan::Stream<seqan::Bgzf> inStream;
+  assert (open(inStream, bam_input.c_str(), "r"));
+  TNameStore      nameStore;
+  TNameStoreCache nameStoreCache(nameStore);
+  TBamIOContext   context(nameStore, nameStoreCache);
+  seqan::BamHeader header;
+  seqan::BamAlignmentRecord record;
+  assert(!readRecord(header, context, inStream, seqan::Bam()) );
+  int rID;
+  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
+    assert(getIdByName(nameStore, *ci, rID, nameStoreCache));
+    rID_chrx[rID] = *ci;
+  }  
+  seqan::close(inStream);
+}
+
+char mappingType(seqan::BamAlignmentRecord &record){
+  seqan::BamTagsDict tagsDict(record.tags);
+  unsigned myIdx = 0;
+  char valChar = 0;  
+  if ( findTagKey(myIdx, tagsDict, "X0") and extractTagValue(valChar, tagsDict, myIdx)) return valChar;
+  return 0;
+}
+
+int numOfBestHits(seqan::BamAlignmentRecord &record){
+  seqan::BamTagsDict tagsDict(record.tags);
+  unsigned myIdx = 0, valInt = 1;  
+  if ( findTagKey(myIdx, tagsDict, "X0")) extractTagValue(valInt, tagsDict, myIdx);
+  return max((int)valInt, 1);
 }
 
 void fasta_seq(string fa_input, string chrx, int beginPos, int endPos, seqan::CharString &seq){
@@ -72,7 +120,7 @@ bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_
     if (record.beginPos < that_begin) continue;
     if (record.qName == this_qName) {
       if ((flank_region > 0 and record.beginPos != this_pos) or (flank_region == 0) ) {
-	cerr << flank_region << " " <<  record.beginPos << " " << this_pos << endl;
+	//cerr << flank_region << " " <<  record.beginPos << " " << this_pos << endl;
 	that_record = record;
 	return true;
       }
@@ -82,7 +130,7 @@ bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_
 }
 
 ///// 1-based to 0-based.
-AluRefPos::AluRefPos(string file_alupos) {
+AluRefPos::AluRefPos(string file_alupos, bool use_vector) {
   ifstream fin( file_alupos.c_str());
   if (!fin) 
     try {
@@ -92,12 +140,56 @@ AluRefPos::AluRefPos(string file_alupos) {
     }     
   string _tmp1, _tmp2, alu_type, chain;
   int bp, ep;
-  while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain){
+  if (!use_vector) {
+    fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain;
     beginP.push(bp);
     endP.push(ep);
-  }
+    minP = bp;
+    while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain){
+      beginP.push(bp);
+      endP.push(ep);
+    }
+    maxP = ep;
+    cerr << "queue from " << file_alupos << " with " << beginP.size() << " loci, " << minP << " to " << maxP << endl;
+  } else {
+    fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain;
+    beginV.push_back(bp);
+    endV.push_back(ep);
+    minP = bp;
+    while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain){
+      beginV.push_back(bp);
+      endV.push_back(ep);
+    }
+    maxP = ep;
+    cerr << "vector from " << file_alupos << " with " << beginV.size() << " loci, " << minP << " to " << maxP << endl;
+  }  
   fin.close();
-  cerr << "reading from " << file_alupos << " with " << beginP.size() << " loci\n" ;
+}
+
+bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap){
+  vector<int>::iterator bi, ei;
+  for (bi = beginV.begin(), ei = endV.begin(); bi != beginV.end(); bi++, ei++){
+    if ( *bi > endPos ) return false;    
+    if ( (*ei > beginPos + alu_min_overlap) and (*bi < endPos - alu_min_overlap)) return true;
+  }
+  return false;    
+}
+
+bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap, int &beginPos_match, int &endPos_match){
+  vector<int>::iterator bi, ei;
+  for (bi = beginV.begin(), ei = endV.begin(); bi != beginV.end(); bi++, ei++){
+    if ( *bi > endPos ) return false;    
+    if ( (*ei > beginPos + alu_min_overlap) and (*bi < endPos - alu_min_overlap)) {
+      beginPos_match = *bi;
+      endPos_match = *ei;
+      return true;
+    }
+  }
+  return false;    
+}
+
+bool AluRefPos::endOfChr(int p){
+  return ( (p + 100 < minP ) or (p > maxP));
 }
 
 int AluRefPos::updatePos(int &beginPos, int &endPos){
@@ -110,6 +202,8 @@ int AluRefPos::updatePos(int &beginPos, int &endPos){
 }  
 
 AluRefPos::~AluRefPos(void){
+  beginV.clear();
+  endV.clear();
 }
 
 void insertLen_of_nonUniq_mapping(vector<int> &starts_ends, vector<int> &reads_insert_len) {

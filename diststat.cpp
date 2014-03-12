@@ -1,4 +1,3 @@
-
 #include "diststat.h"
 
 EmpiricalPdf::EmpiricalPdf(string pdf_file){ 
@@ -6,6 +5,7 @@ EmpiricalPdf::EmpiricalPdf(string pdf_file){
   float posp;
   bin_width = 0;
   ifstream fin( pdf_file.c_str());
+  assert (fin);
   fin >> pos >> posp;
   prob_vec[pos] = posp;
   min_len = pos;
@@ -17,7 +17,8 @@ EmpiricalPdf::EmpiricalPdf(string pdf_file){
   }
   max_len = pos;
   fin.close();
-  // cerr << "read pdf dist " << min_len << " " << max_len << " " << bin_width << " " << min_prob << endl;
+  cerr << "read pdf dist " << pdf_file << endl;
+  cerr << min_len << " " << max_len << " " << bin_width << " " << min_prob << endl;
 }
 
 float EmpiricalPdf::pdf_obs(int insertlen) {
@@ -28,40 +29,41 @@ float EmpiricalPdf::pdf_obs(int insertlen) {
   return min_prob;
 }   
 
-void genotype_prob(vector<int> &reads_insert_len, ReadsPosStore &reads_pos, int alu_len, float *log_p){
-  ReadsPosStore::iterator rp;
-  vector<int>::iterator ri; 
-  int insertlen, left_read_end;
-  for (rp = reads_pos.begin(); rp != reads_pos.end(); rp++){
-    if (rp->second.size() !=4 ) continue; // both ends mapped to this region && unique mapping
-    ri = rp->second.begin();
-    left_read_end = *(++ri);
-    insertlen = *(++ri) - left_read_end;
-    cerr << "debug " << insertlen <<  endl;
-    print_vec(rp->second);
-    //    for (vector<int>::iterator pi = reads_insert_len.begin(); pi != reads_insert_len.end(); pi++){
-    //      float p_y = empiricalpdf->pdf_obs(*pi);
-//      float p_z = empiricalpdf->pdf_obs(alu_len + *pi);
-//      log_p[0] += log(p_y);
-//      log_p[1] += log(0.5 * p_y + 0.5 * p_z);
-//      log_p[2] += log(p_z); 
-//    }
-//    post_prob(log_p, 3);
-  }
-}
-
-void normalize_prob(float *log_p, int len){
-  float *p = log_p;
-  float p_sum = 0;
-  int i = 0;
-  for (p = log_p, i = 0; i < len; i++, p++)  cerr << "start " << *p << endl;
-
-  for (p = log_p, i = 0; i < len; i++, p++) {
-    *p = exp(*p);
-    p_sum += *p;
-  }
+void add_read_prob(){
   
-  cerr << "need ratio trick for calculation !! \n";
-  for (p = log_p, i = 0; i < len; i++, p++) *p /= p_sum;
-  for (p = log_p, i = 0; i < len; i++, p++)  cerr << "print " << *p << endl;
 }
+
+void genotype_prob(map < string, vector<int> >  &insertlen_rg, map <string, EmpiricalPdf *> &empiricalpdf_rg, int alu_len, float *log_p){
+  for (int i = 0; i < 3; i++) log_p[i] = 0;
+  EmpiricalPdf *empiricalpdf;
+  for (map < string, vector<int> >::iterator irg=insertlen_rg.begin(); irg!=insertlen_rg.end(); irg++) {
+    empiricalpdf = empiricalpdf_rg[irg->first];
+    for (vector<int>::iterator ir = irg->second.begin(); ir != irg->second.end(); ir++ ) {
+      float p_y = empiricalpdf->pdf_obs(*ir);
+      float p_z = empiricalpdf->pdf_obs(alu_len + *ir);      
+      log_p[0] += log(p_y);
+      log_p[1] += log(0.67 * p_y + 0.33 * p_z);
+      log_p[2] += log(p_z); 
+    }
+  }
+  normalize_prob(log_p);
+}
+
+bool normalize_prob(float *log_p){
+  float r20 = exp(log_p[2] - log_p[0]); 
+  float r10 = exp(log_p[1] - log_p[0]); 
+  if ( max(r20, r10) < 1e-5 ) return false;
+  float r_sum = r20 + r10 + 1;
+  log_p[0] = 1./r_sum;
+  log_p[1] = r10/r_sum;
+  log_p[2] = r20/r_sum;
+  return true;
+}
+
+
+
+// int main( int argc, char* argv[] )
+// {
+//   cerr << "test code here \n";
+//   return 0;
+// }

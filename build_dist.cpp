@@ -1,17 +1,8 @@
 // build distribution file based on flow cells (reading group)
-//#define USING_MAIN_1
+#define USING_MAIN_1
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
 #include "common.h"
-
-template <class K, class V> 
-void addKey(map <K,V> &m, K key, int cnt=1)
-{
-  typename map <K,V>::iterator it;
-  if ((it=m.find(key)) == m.end()) {
-    m[key] = cnt;
-  } else (it->second) += cnt;
-}
 
 void write_counts(map <seqan::CharString, map<int, int> > &rg_lenCounts, string &rg_lenCounts_file){
   map <seqan::CharString, map<int, int> >::iterator sii;
@@ -148,7 +139,7 @@ int main( int argc, char* argv[] )
 #else
 int main( int argc, char* argv[] )
 {
-  int len_min = 100, len_max = 1000, bin_width = 5; 
+  int len_min = 100, len_max = 1000, bin_width = 5; // set this as default
   string f_count = argv[1];
   string f_prob = argv[2];
   if (argc > 3) { 

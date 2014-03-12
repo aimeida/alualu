@@ -68,32 +68,141 @@ int main( int argc, char* argv[] )
 
   string fa_input = "/nfs_mount/bioinfo/users/yuq/work/Alu/inputs/chromFa/" + chrx + ".fa";
   seqan::CharString fa_seq;
-  string qname = "5:89:13046:5131";
-  int p = 531848 - 1; // 531848 if from sam file
+  string qname;
+  int p, s, p2;
+  int ref_fa = 120;
+  string suba;
 
-  if (find_read(bam_input, bai_input, chrx, qname, p, record, 0)) {
-    cerr << "find! " << record.qName << " " << record.beginPos << " " << record.pNext << endl;
-    cerr << length(record.seq) << " " << hasFlagRC(record) << endl;
-    cerr << record.seq << endl;
+  TNameStore      nameStore;
+  TNameStoreCache nameStoreCache(nameStore);
+  TBamIOContext   context(nameStore, nameStoreCache);
+  seqan::BamHeader header;
+  seqan::Stream<seqan::Bgzf> inStream;
+  assert (open(inStream, bam_input.c_str(), "r"));
+  assert(!readRecord(header, context, inStream, seqan::Bam()) );
 
-    fasta_seq(fa_input, "chr1", record.beginPos, record.beginPos+20, fa_seq);
-    cerr << fa_seq << endl;
-  }
+  seqan::BamStream bamStreamOut("-", seqan::BamStream::WRITE);
+  bamStreamOut.header = header;
 
-  qname = "7:17:12645:11069";
-  p = 705847 - 1;
-  if (find_read(bam_input, bai_input, chrx, qname, p, record, 1000)) {
-    cerr << "find! " << record.qName << " " << record.beginPos << " " << record.pNext << endl;
-    cerr << length(record.seq) << " " << hasFlagRC(record) << endl;
-    cerr << record.seq << endl;
+  qname = "5:100:10002:1897";
+  p = 56519460;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  writeRecord(bamStreamOut, record);
+  
+  qname = "5:100:10002:1897";
+  p = 56519460;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 1000);
+  writeRecord(bamStreamOut, record);
+  
 
-    fasta_seq(fa_input, "chr1", record.beginPos, record.beginPos+20, fa_seq);
-    cerr << fa_seq << endl;    
-  }
+  exit(0);
+  // check this cross mapping: chr1 1913466 1913765 1913764 1913810 S74M46 5:56:18835:12168
+  qname = "5:56:18835:12168";
+  p = 1913764;
+  s = 74;
+  p2 = 1913466;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  print_cigar(record);
+  cerr << " " << record.beginPos << " " << hasFlagRC(record) << " " << getAlignmentLengthInRef(record) << endl;
+  suba = toCString(record.seq);
+  cerr << suba.substr(s) << endl;
+  cerr << suba.substr(0, s) << endl;
 
-//// find read_pair
+  fasta_seq(fa_input, "chr1", p, p+ref_fa, fa_seq);
+  cerr << fa_seq << endl;
+  fasta_seq(fa_input, "chr1", p2 - 200 , p2 + 200, fa_seq); // call local alignment externally
+  cerr << fa_seq << endl;
+  
+  //chr1 1688218 1688515 1688516 1688576 S41M60 5:101:15310:5772
+  qname = "5:101:15310:5772";
+  p = 1688516;
+  s = 41;
+  p2 = 1688218;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  print_cigar(record);
+  cerr << " " << record.beginPos << " " << hasFlagRC(record) << " " << getAlignmentLengthInRef(record) << endl;
+  suba = toCString(record.seq);
+  cerr << suba.substr(s) << endl;
+  cerr << suba.substr(0, s) << endl;
+
+  fasta_seq(fa_input, "chr1", p, p+ref_fa, fa_seq);
+  cerr << fa_seq << endl;
+  fasta_seq(fa_input, "chr1", p2 - 200 , p2 + 200, fa_seq);
+  cerr << fa_seq << endl;
+
+
+  //chr1 1079749 1080047 1079720 1079747 M27S93 5:116:6455:19955
+  qname = "5:116:6455:19955";
+  p = 1079720;
+  s = 27;
+  p2 = 1080047;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  print_cigar(record);
+  cerr << " " << record.beginPos << " " << hasFlagRC(record) << " " << getAlignmentLengthInRef(record) << endl;
+  suba = toCString(record.seq);
+  cerr << suba.substr(0, s) << endl;
+  cerr << suba.substr(s) << endl;
+
+  fasta_seq(fa_input, "chr1", p, p+ref_fa, fa_seq);
+  cerr << fa_seq << endl;
+  fasta_seq(fa_input, "chr1", p2 - 200 , p2 + 200, fa_seq);
+  cerr << fa_seq << endl;
+  
+  /*
+  // deletion
+  qname = "7:69:2725:10959";
+  p = 88887;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  print_cigar(record);
+  cerr << " " << record.beginPos << " " << hasFlagRC(record) << " " << getAlignmentLengthInRef(record) << endl;
+  cerr << record.seq << endl;
+  fasta_seq(fa_input, "chr1", p, p+ref_fa, fa_seq);
+  cerr << fa_seq << endl;
+  
+  // soft clip
+  qname = "7:24:7016:3446";
+  p = 529603;
+  s = 15;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  print_cigar(record);
+  cerr << " " << record.beginPos << " " << hasFlagRC(record) << " " << getAlignmentLengthInRef(record) << endl;
+  cerr << record.seq << endl;
+
+  suba = toCString(record.seq);
+  cerr << suba.substr(s) << endl;
+  fasta_seq(fa_input, "chr1", p, p+ref_fa, fa_seq);
+  cerr << fa_seq << endl;
+
+  // soft clip
+  qname = "5:7:12281:15766";
+  p = 227391;
+  s = 14;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  print_cigar(record);
+  cerr << " " << record.beginPos << " " << hasFlagRC(record) << " " << getAlignmentLengthInRef(record) << endl;
+  cerr << record.seq << endl;
+
+  suba = toCString(record.seq);
+  cerr << suba.substr(s) << endl;
+  fasta_seq(fa_input, "chr1", p, p+ref_fa, fa_seq);
+  cerr << fa_seq << endl;
+
+  // this one matches!
+  qname = "8:12:2481:13062";
+  p = 681924;
+  s = 0;
+  find_read(bam_input, bai_input, chrx, qname, p, record, 0);
+  print_cigar(record);
+  cerr << " " << record.beginPos << " " << hasFlagRC(record) << " " << getAlignmentLengthInRef(record) << endl;
+  cerr << record.seq << endl;
+
+  fasta_seq(fa_input, "chr1", p, p+ref_fa, fa_seq);
+  cerr << fa_seq << endl;
+  
+  */
+
+// find read_pair
 //  if (find_read(bam_input, bai_input, chrx, qname, 531847, record, 1000)) 
-//    cerr << "find! " << record.qName << " " << record.beginPos << " " << record.pNext << endl;
   
 
   return 0;
