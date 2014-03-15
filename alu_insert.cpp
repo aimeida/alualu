@@ -6,46 +6,24 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
-typedef std::map<std::string, std::ofstream*> Map;
-#define ALU_MINLEN 15
+typedef map<int, ofstream* > Map;
+#define ALU_MINLEN 50
 #define MAPPED_ALU_LEN 100
-#define FLAG_L2000 -1
-
-void match_alupos(){
-  /*
-  map<int, AluRefPos *> rID_alurefpos;
-  map<int, AluRefPos *>::iterator ra;
-  ////for (i = 0; i < length( header.sequenceInfos); i++) rID_chrx[i] = header.sequenceInfos[i].i1;  
-  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-    assert(getIdByName(nameStore, *ci, rID, nameStoreCache));
-    rID_chrx[rID] = *ci;
-    rID_alurefpos[rID] = new AluRefPos(file_alupos_prefix + *ci, true);    
-  }
-  for (ra = rID_alurefpos.begin(); ra != rID_alurefpos.end(); ra++) delete ra->second;
-  rID_alurefpos.clear();  
-  */
-  /*
-    if (record.rID < record.rNextId) { // only check it once
-      if ( ( (ra = rID_alurefpos.find(record.rNextId)) != rID_alurefpos.end() ) and (ra->second)->insideAlu(record.pNext, record.pNext + MAPPED_ALU_LEN, ALU_MINLEN) ) {
-	fout1 << "dif_chr " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rNextId << " " << record.pNext << "1\n";
-      } else if ( ( (ra = rID_alurefpos.find(record.rID)) != rID_alurefpos.end() ) and (ra->second)->insideAlu(record.beginPos, record.beginPos + getAlignmentLengthInRef(record), ALU_MINLEN) ) {
-	fout1 << "dif_chr " << record.qName << " " << record.rNextId << " " << record.pNext  << " " << record.rID << " " << record.beginPos << "1\n";
-      } 
-    */
-}
+#define FLAG_LONG -1
+#define INS_LEN_LONG 1000
 
 bool empty_map(map<seqan::CharString, pair<int,int> > &map_chr, ofstream & fout,int rID, seqan::CharString &chrn){
   if (!map_chr.size()) return false;
   cerr << chrn << " size " << map_chr.size() << endl;
   map<seqan::CharString, pair<int,int> >::iterator mc;
   for (mc = map_chr.begin(); mc!= map_chr.end(); mc++)
-    fout << "left " << mc->first << " " << rID << " " << (mc->second).first << " na -1 " << (mc->second).second << endl;
+    fout << "left " << mc->first << " " << rID << " " << (mc->second).first << " -1 -1 " << (mc->second).second << endl;
   map_chr.clear();
   return true;
 }
 
 //search alu_mate by flag, write coordiate file
-bool alu_mate_flag( string & bam_input, map<int, seqan::CharString> &rID_chrx, ofstream &fout1){
+bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrx, ofstream &fout1){
   seqan::Stream<seqan::Bgzf> inStream;
   assert (open(inStream, bam_input.c_str(), "r"));
   TNameStore      nameStore;
@@ -82,16 +60,16 @@ bool alu_mate_flag( string & bam_input, map<int, seqan::CharString> &rID_chrx, o
       if (record.beginPos < record.pNext) {	
 	if ( hits > 1) { 
 	  same_chr_left[record.qName] = make_pair(record.beginPos, hits);
-	} else if ( (abs(record.tLen) > 2000) or (hasFlagNextRC(record) == hasFlagRC(record))) { 
-	  same_chr_left[record.qName] = make_pair(record.beginPos, FLAG_L2000); // non-redundant
+	} else if ( (abs(record.tLen) > INS_LEN_LONG ) or (hasFlagNextRC(record) == hasFlagRC(record))) { 
+	  same_chr_left[record.qName] = make_pair(record.beginPos, FLAG_LONG); // non-redundant
 	}	
       } else if (record.beginPos > record.pNext) {
 	sc = same_chr_left.find(record.qName);
 	if (sc == same_chr_left.end()) {
 	  if (hits > 1) fout1 << "mul_map " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
 	} else {
-	  if ( (sc->second).second == FLAG_L2000) {
-	    fout1 << "i2000_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
+	  if ( (sc->second).second == FLAG_LONG) {
+	    fout1 << "ilong_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
 	  } else if (hits == 1) { // at least one pair is unique mapped
 	    fout1 << "mul_map " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << (sc->second).second << endl;
 	  }
@@ -103,6 +81,49 @@ bool alu_mate_flag( string & bam_input, map<int, seqan::CharString> &rID_chrx, o
   seqan::close(inStream);     
   return 0;
 }
+
+void check_type(string inputfile, Map &fileMap, map<int, AluRefPos *> &rID_alurefpos){
+  string type_flag, qname;
+  int this_chr, this_pos, bad_chr, bad_pos, hits, len_overlap;
+  map<string, int > qname_hits_difchr; 
+  map<string, int >::iterator qh;
+  map<int, AluRefPos *>::iterator ra;
+  //cerr << "call " << inputfile << endl;
+  ifstream fin(inputfile.c_str());
+  assert(fin);
+  getline(fin, qname);
+  //  while (fin >> type_flag >> qname >> this_chr >> this_pos >> bad_chr_string >> bad_pos >> hits){
+  while (fin >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos >> hits){
+    if (type_flag == "left") continue;
+    if (type_flag == "dif_chr") {
+      if (this_chr < bad_chr) {
+	qname_hits_difchr[qname] = hits;
+      } else if ( (qh = qname_hits_difchr.find(qname)) != qname_hits_difchr.end()) {
+	int pre_hits = qh->second;
+	qname_hits_difchr.erase(qh);
+	if ( hits > 1 and pre_hits > 1) continue;
+	if ( rID_alurefpos.find(this_chr) == rID_alurefpos.end() or rID_alurefpos.find(bad_chr) == rID_alurefpos.end() ) continue;
+	if ( rID_alurefpos[this_chr]->insideAlu(this_pos, this_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) and pre_hits <= 1) {
+	  *(fileMap[bad_chr]) << "dif_chr " << qname << " " << bad_chr << " " << bad_pos << " " << this_chr << " " << this_pos << " " << hits << " " << len_overlap << endl;      
+	} else if ( rID_alurefpos[bad_chr]->insideAlu(bad_pos, bad_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) and hits <= 1) {  // one end is unique
+	  *(fileMap[this_chr]) << "dif_chr " << qname << " " <<  this_chr << " " << this_pos << " " << bad_chr << " " << bad_pos << " " << pre_hits << " " << len_overlap << endl;
+	}
+      }
+    } else{
+      if ( (ra = rID_alurefpos.find(this_chr)) == rID_alurefpos.end() ) continue;
+      if (type_flag == "mul_map" and (ra->second)->insideAlu(bad_pos, bad_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) ) { // hits > 1
+	*(fileMap[this_chr]) << "mul_map " << qname << " " <<  this_chr << " " << this_pos << " " << bad_chr << " " << bad_pos << " " << hits << " " << len_overlap << endl;
+      } else if (type_flag == "ilong_RC") {  // hits = 1
+	if ( (ra->second)->insideAlu(bad_pos, bad_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) )
+	  *(fileMap[this_chr]) << "ilong_RC " << qname << " " << this_chr << " " << this_pos << " " << bad_chr << " " << bad_pos << " " << hits << " " << len_overlap << endl;
+	else if ( (ra->second)->insideAlu(this_pos, this_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) )
+	  *(fileMap[this_chr]) << "ilong_RC " << qname << " " << bad_chr << " " << bad_pos << " " << this_chr << " " << this_pos << " " << hits << " " << len_overlap << endl;       
+      }
+    }
+  }  
+  fin.close();
+}
+
 
 int main( int argc, char* argv[] )
 {
@@ -119,32 +140,42 @@ int main( int argc, char* argv[] )
   string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
   cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
   string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
-  string bai_input = bam_input + ".bai";  
-  string file_alu_mate_prefix = read_config(config_file, "file_alu_mate_prefix");  
 
-  string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   chrns.push_back("chrX");
   chrns.push_back("chrY");
   map<int, seqan::CharString> rID_chrx;
   get_rID_chrx(bam_input, chrns, rID_chrx);
-  
-  if (opt == 1) {
-    ofstream fout1( (file_alu_mate_prefix + pn).c_str() );
+  string file1 = read_config(config_file, "file_alu_mate_prefix") + pn;    
+  boost::timer clocki;    
+  clocki.restart();
+
+  if (opt == 1) {    // write discordant reads 
+    ofstream fout1( file1.c_str() );
     fout1 << "flag qname this_chr this_pos bad_chr bad_pos num_hits\n"; // bad_*: potential, need check
     alu_mate_flag(bam_input, rID_chrx, fout1);
     fout1.close();
-  } else if (opt == 2) {
-    string file_alu_mate_filter = read_config(config_file, "file_alu_mate_filter");  
-    string f_input = file_alu_mate_prefix + pn + ".alumate_flag";
+  } else if (opt == 2) {  // filter reads with alu_mate
+    string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
+    map<int, AluRefPos *> rID_alurefpos;
+    Map fileMap;
+    string file2 = read_config(config_file, "file_alu_mate_unsort") + pn;  
     for (map<int, seqan::CharString>::iterator rc = rID_chrx.begin(); rc != rID_chrx.end(); rc++) {
-      
+      rID_alurefpos[rc->first] = new AluRefPos(file_alupos_prefix + toCString(rc->second), true);    
+      fileMap[rc->first] = new ofstream( (file2 + "." + toCString(rc->second)).c_str() );
+      assert(fileMap[rc->first]);
+    }    
+    check_type(file1, fileMap, rID_alurefpos);       
+    for (Map::iterator fm = fileMap.begin(); fm != fileMap.end(); fm++) {
+      delete rID_alurefpos[fm->first];
+      delete fm->second;
     }
-    
-    //
-    //check_type(f_input, "dif_chr");
-  }
-
+    rID_alurefpos.clear();
+    // print out cmds for sorting 
+    string file3 = read_config(config_file, "file_alu_mate_sort") + pn;      
+    cout << "./alu_insert.sh " << file2 << " " << file3  << endl;      
+  } 
+  cerr << "time used " << clocki.elapsed() << endl;
   return 0;  
 }

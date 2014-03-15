@@ -1,5 +1,5 @@
 // build distribution file based on flow cells (reading group)
-#define USING_MAIN_1
+//#define USING_MAIN_1
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
 #include "common.h"
@@ -63,7 +63,6 @@ void read_pn(string &rg_lenCounts_file, string &bamInput_file){
   seqan::BamAlignmentRecord record;  
   seqan::BamStream bamStreamIn(bamInput_file.c_str());
   map <seqan::CharString, map<int, int> > rg_lenCounts; // strata by reading group 
-  size_t i = 0;
   unsigned idx_RG;
   while (!atEnd(bamStreamIn)) {
     readRecord(record, bamStreamIn);
@@ -85,6 +84,7 @@ void write_pdf(string &f_count, string &f_prob, int len_min, int len_max, int bi
   int insertlen, count, counts = 0;
   map <int, int> bin_counts;
   ifstream fin(f_count.c_str());
+  assert(fin);
   while (fin >> insertlen >> count) {
     if (insertlen < len_min) continue;
     if (insertlen >= len_max) break;    
@@ -103,54 +103,50 @@ void write_pdf(string &f_count, string &f_prob, int len_min, int len_max, int bi
 }
 
 
-#ifdef USING_MAIN_1
 int main( int argc, char* argv[] )
 {
   if (argc < 2) exit(1);
-  string pn_file = argv[1];
-  string bam_in_path = argv[2];
-  string out_path = argv[3];
-  string chrx = argv[4]; 
+  int opt;
+  seqan::lexicalCast2(opt, argv[1]);
+  string pn_file = argv[2];  
   int idx_pn;  // start from 0, run diff pn parallel 
-  seqan::lexicalCast2(idx_pn, argv[5]);
+  seqan::lexicalCast2(idx_pn, argv[3]);  
+  string in_path = argv[4];
+  string out_path = argv[5];
+  string pn = get_pn(pn_file, idx_pn);
   
-  ifstream fin( pn_file.c_str());
-  string pn, rg_lenCounts_file, bamInput_file;
-  int i = 0;
-  while (fin >> pn) {
-    if (i == idx_pn ) {
-      cerr << "reading pn: " << pn << "..................\n";
-      bamInput_file = bam_in_path + pn + "/" + pn + ".bam";
-      if (chrx != "chr0") {
-	rg_lenCounts_file = out_path + pn + ".count." + chrx + "."; /* + RG*/
-	read_pn_chr(rg_lenCounts_file, bamInput_file, chrx);
-      } else {
-	rg_lenCounts_file = out_path + pn + ".count."; /* + RG*/
-	read_pn(rg_lenCounts_file, bamInput_file);
-      }
-      fin.close();  
-      break;
+  if (opt == 1) {
+    string chrx = argv[6]; 
+    string rg_lenCounts_file, bamInput_file;
+    cerr << "reading pn: " << pn << "..................\n";
+    bamInput_file = in_path + pn + "/" + pn + ".bam";
+    if (chrx != "chr0") {
+      rg_lenCounts_file = out_path + pn + ".count." + chrx + "."; /* + RG*/
+      read_pn_chr(rg_lenCounts_file, bamInput_file, chrx);
+    } else {
+      rg_lenCounts_file = out_path + pn + ".count."; /* + RG*/
+      read_pn(rg_lenCounts_file, bamInput_file);
     }
-    i++;
+  }  else if (opt == 2) {
+    int len_min = 100, len_max = 1000, bin_width = 5; // set this as default    
+    if (argc > 4) { 
+      seqan::lexicalCast2(len_min, argv[4]);
+      seqan::lexicalCast2(len_max, argv[5]);
+      seqan::lexicalCast2(bin_width, argv[6]);
+    }
+    string rg;
+    string suffix = int_to_string(len_min) + "_" + int_to_string(len_max) + "_" + int_to_string(bin_width); 
+    ifstream fin( (out_path + "RG." + pn).c_str());
+    assert(fin);
+    while (fin >> rg) {
+      string f_count = in_path + pn + ".count." + rg;
+      string f_prob = out_path + pn + ".count." + rg + "." + suffix;
+      cerr << "Reading " << f_count << "\nWriting " << f_prob << endl;
+      write_pdf(f_count, f_prob, len_min, len_max, bin_width);    
+    }
+    fin.close();
   }
+  
   return 0;
 }
-
-#else
-int main( int argc, char* argv[] )
-{
-  int len_min = 100, len_max = 1000, bin_width = 5; // set this as default
-  string f_count = argv[1];
-  string f_prob = argv[2];
-  if (argc > 3) { 
-    seqan::lexicalCast2(len_min, argv[3]);
-    seqan::lexicalCast2(len_max, argv[4]);
-    seqan::lexicalCast2(bin_width, argv[5]);
-  }
-  cerr << "reading " << f_count << endl;
-  cerr << "write " << f_prob << endl;
-  write_pdf(f_count, f_prob, len_min, len_max, bin_width);
-  
-}
-#endif
 

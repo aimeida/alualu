@@ -13,6 +13,17 @@
 #define UNKNOW_READ 0
 #define MID_READ 1  // read without deletion
 #define CLIP_READ 2 
+typedef map<int, int> MapII;
+typedef map<int, int>::iterator MapIIt;
+
+
+inline string get_name1(string &path, string &fn){
+  return path + fn + ".tmp1";
+}
+
+inline string get_name2(string &path, string &fn){
+  return path + fn + ".tmp2";
+}
 
 // evidence of deletion
 int clip_pos(int beginPos, int endPos, int begin_del, int end_del, seqan::BamAlignmentRecord & record){
@@ -124,9 +135,9 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
   map <seqan::CharString, pair<string, int> > rg_len; 
   map <seqan::CharString, pair<string, int> >::iterator rl; 
   
-  ofstream f_tmp1((path_output + pn + ".tmp1").c_str()); 
+  ofstream f_tmp1( get_name1(path_output, pn).c_str()); 
   f_tmp1 << "chr alu_flank aluBegin aluEnd p0 p1 p2 mean_coverage mid_read_count clip_read_count unknow_read_count\n";
-  ofstream f_tmp2((path_output + pn + ".tmp2").c_str()); 
+  ofstream f_tmp2( get_name2(path_output, pn).c_str()); 
   f_tmp2 << "type chr aluBegin aluEnd qName beginPos endPos pNext pNextEnd\n";
   
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
@@ -145,7 +156,8 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
       int mid_read_count = 0, clip_read_count = 0, unknow_read_count = 0;
       count_reads(special_read, mid_read_count, clip_read_count);      
       
-      //cerr << "count " << mid_read_count << " " <<  clip_read_count << endl;
+      // cerr << "count " << mid_read_count << " " <<  clip_read_count << endl;
+      // clip_read: evidence for deletion, mid_read: evidence for insertion
 
       log_p[0] = clip_read_count * (-LOG_RATIO_UB) ; 
       log_p[1] = (mid_read_count + clip_read_count) * log(0.5) ;
@@ -182,41 +194,115 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
   return 0;
 }
 
+bool combine_pns(vector <string> &pns, string path1, string f_out){
+  ofstream fout( f_out.c_str() );
+  map <string, MapII > del_count;
+  ifstream fin;
+  stringstream ss;
+  string line, chrn, tmp1, tmp2;
+  int aluBegin, aluEnd;  
+  float p0, p1, p2;
+  for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
+    fin.open( get_name1(path1, *pi).c_str() );
+    assert(fin);
+    while ( getline(fin, line) ) {
+      ss.clear(); ss.str( line );
+      ss >> chrn >> tmp1 >> aluBegin >> aluEnd >> p0 >> p1 >> p2 ;
+      if (p1 > p0 or p2 > p0) addKey(del_count[chrn], aluBegin, p1 > p2 ? 1 : 2); 
+    }
+    fin.close();
+  }
+  float pn_chr = 2. * pns.size();
+  map<string, MapII >::iterator dc;
+  for (  dc = del_count.begin(); dc != del_count.end(); dc++ )
+    for (MapIIt dc2 = (dc->second).begin(); dc2 != (dc->second).end(); dc2++)
+      if (dc2->second > 1) fout << dc->first << " " << dc2->first << " " << dc2->second << endl;
+  fout.close();
+  return true;
+}
+
+void check_clip(string bam_input, string bai_input, string path1, string pn){
+  TNameStore      nameStore;
+  TNameStoreCache nameStoreCache(nameStore);
+  TBamIOContext   context(nameStore, nameStoreCache);
+  seqan::BamHeader header;
+  seqan::Stream<seqan::Bgzf> inStream;  
+  open(inStream, bam_input.c_str(), "r");
+  seqan::BamIndex<seqan::Bai> baiIndex;
+  assert ( !read(baiIndex, bai_input.c_str())) ;
+  assert ( !readRecord(header, context, inStream, seqan::Bam()) ); // do i need this ??
+
+  seqan::BamAlignmentRecord record;    
+  string tmp1, chrn, qName, cigar;
+  int rID, aluBegin, aluEnd, beginPos, endPos, pNext, pNextEnd;
+  string chrn_pre = "chr-1";
+  int ir = 0;
+  ifstream fin( get_name2(path1, pn).c_str() );
+  assert(fin);
+  getline(fin, tmp1 );
+  while ( fin >> tmp1 >> chrn >> aluBegin >> aluEnd >> qName >> beginPos >> endPos >> pNext >> pNextEnd >> cigar ) {
+    if (chrn != chrn_pre) {
+      assert ( getIdByName(nameStore, chrn, rID, nameStoreCache) );
+      chrn_pre = chrn;
+    }
+    bool hasAlignments = false;      
+    jumpToRegion(inStream, hasAlignments, context, rID, beginPos - 5, beginPos + 5, baiIndex);
+    if (!hasAlignments) {
+      continue;
+    }
+    if (find_read(inStream, context, rID, beginPos, qName, record)) {
+      cerr << qName << " " << record.seq << endl;
+      if (ir++ > 2) exit(0);
+    }
+  }
+  fin.close();
+}
 
 int main( int argc, char* argv[] )
 {
   if (argc < 2) exit(1);
-  string config_file = argv[1];
-  int idx_pn;  
-  seqan::lexicalCast2(idx_pn, argv[2]);
-  string chrn = argv[3];
-  string path_output = argv[4];
 
-  unsigned coverage_max, alu_flank;
-  seqan::lexicalCast2(coverage_max, (read_config(config_file, "coverage_max")));
-  seqan::lexicalCast2(alu_flank, (read_config(config_file, "alu_flank")));
-  
-  string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
-  cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
-  /// old bam files in /nfs/gpfs/data/Results/GWS/
-  //bam_input = read_config(config_file, "old_bam_prefix") + pn + "/" + pn + ".bam";
-  string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
-  string bai_input = bam_input + ".bai";  
-
+  int opt, idx_pn;
+  seqan::lexicalCast2(opt, argv[1]);
+  string config_file = argv[2];
+  string path1 = read_config(config_file, "file_delete_pn_prefix");
+  string file_pn = read_config(config_file, "file_pn");
   vector<string> chrns;
-  if (chrn != "chr0") {
-    chrns.push_back(chrn);
-  } else {
-    for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-    //for (int i = 21; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-  }
-  
-  string file_dist_prefix = read_config(config_file, "file_dist_prefix");
-  string pdf_param = read_config(config_file, "pdf_param");
-  string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
+  for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
+  if ( opt == 1 ) {  // write potential candidate
+    seqan::lexicalCast2(idx_pn, argv[3]);
+    string chrn = argv[4];
+    string pn = get_pn(file_pn, idx_pn);
+    unsigned coverage_max, alu_flank;
+    seqan::lexicalCast2(coverage_max, (read_config(config_file, "coverage_max")));
+    seqan::lexicalCast2(alu_flank, (read_config(config_file, "alu_flank")));
+    cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
+    string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+    string bai_input = bam_input + ".bai";  
 
-  delete_search(bam_input, bai_input, chrns, path_output, pn, file_dist_prefix, pdf_param, file_alupos_prefix, coverage_max, alu_flank);
-  
-  
+    if (chrn != "chr0") {  
+      chrns.clear();
+      chrns.push_back(chrn);
+    } 
+    string file_dist_prefix = read_config(config_file, "file_dist_prefix");
+    string pdf_param = read_config(config_file, "pdf_param");
+    string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
+    delete_search(bam_input, bai_input, chrns, path1, pn, file_dist_prefix, pdf_param, file_alupos_prefix, coverage_max, alu_flank);
+  } else if (opt == 2) {   // filter candidate
+    vector <string> pns;
+    ifstream fin(read_config(config_file, "file_pnIdx_used").c_str());
+    while (fin >> idx_pn) pns.push_back(get_pn(file_pn, idx_pn));
+    fin.close();
+    //print_vec(pns);
+    string f_out = path1+"test_pn";
+    combine_pns(pns, path1, f_out); 
+    cerr << "output to " << f_out << endl;
+  }  else if (opt == 3) {   // check clip_read
+    seqan::lexicalCast2(idx_pn, argv[3]);
+    string pn = get_pn(file_pn, idx_pn);
+    string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+    string bai_input = bam_input + ".bai";  
+    check_clip(bam_input, bai_input, path1, pn);
+  }
   return 0;  
 }

@@ -10,20 +10,59 @@
 typedef seqan::StringSet<seqan::CharString> TNameStore;
 typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
 typedef seqan::BamIOContext<TNameStore>     TBamIOContext;
+typedef seqan::Align<seqan::CharString, seqan::ArrayGaps> TAlign;
 
-string get_pn(string pn_file, int idx_pn);
+struct MyUpper : public unary_function<char,char> {
+  inline char operator()(char x) const  {
+    if (('a' <= x) && (x <= 'z')) return (x + ('A' - 'a'));
+    return x; 
+  }
+};
+
+// without inline, compile error
+inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);};
+inline bool QC_read( seqan::BamAlignmentRecord &record){  // if this read is counted in calculating coverage
+  return ((not hasFlagQCNoPass(record) ) and hasFlagAllProper(record) and (not hasFlagDuplicate(record)) and hasFlagMultiple(record) );
+};
+inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
+  unsigned i = length(record.cigar) - 1;
+  return (record.cigar[i].operation == 'S') and (record.cigar[i].count >= min_bp) ;
+}; 
+
+inline bool has_soft_first(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
+  return (record.cigar[0].operation == 'S') and (record.cigar[0].count >= min_bp); 
+};
+
 string read_config(string config_file, string key);
-void print_cigar(seqan::String<seqan::CigarElement<> > &cigar, int len_cigar);
+void print_cigar(seqan::BamAlignmentRecord &record);
+void print_cigar(seqan::BamAlignmentRecord &record, ofstream &fout);
+
+void print_read(seqan::BamAlignmentRecord &record);
+void print_read(seqan::BamAlignmentRecord &record, ofstream &fout);
+
 bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region);
-void fasta_seq(string fa_input, string chrx, int beginPos, int endPos, seqan::CharString &seq);
+bool find_read(seqan::Stream<seqan::Bgzf> &inStream, TBamIOContext &context, int rID, int this_pos, string this_qName, seqan::BamAlignmentRecord &record);
+
+seqan::CharString fasta_seq(string fa_input, string chrx, int beginPos, int endPos, bool upper = true);
+seqan::CharString fasta_seq(seqan::FaiIndex &faiIndex, unsigned idx, int beginPos, int endPos, bool upper = true);
+
 void insertLen_of_nonUniq_mapping(vector<int> &starts_ends, vector<int> &reads_insert_len);
+
+void get_rID_chrx(string & bam_input, vector<string> &chrns, map<int, seqan::CharString> &rID_chrx);
+char mappingType(seqan::BamAlignmentRecord &record);
+int numOfBestHits(seqan::BamAlignmentRecord &record);
 
 class AluRefPos
 {
   queue<int> beginP, endP;
+  vector<int> beginV, endV;
  public:
-  AluRefPos(string file_alupos);
+  int minP, maxP;
+  AluRefPos(string file_alupos, bool use_vector = false);
+  bool endOfChr(int p);
   int updatePos(int &beginPos, int &endPos);
+  bool insideAlu(int beginPos, int endPos, int alu_min_overlap, int &len_overlap); // return 0 if not inside Alu
+  bool insideAlu(int beginPos, int endPos, int alu_min_overlap, int &beginPos_match, int &endPos_match);
   ~AluRefPos(void);
 };
 

@@ -20,6 +20,7 @@ typedef map<string, vector <int> >  ReadsPosStore;
 
 string int_to_string(int i);
 void print_vec(vector<int> &m);
+string get_pn(string pn_file, int idx_pn);
 
 template <class K, class V> 
 void addKey(map <K,V> &m, K key, int cnt=1)
@@ -34,7 +35,8 @@ template <class K, class V>
 void print_map(map <K,V> &m) 
 {
   typename map <K,V>::iterator it;
-  for (it = m.begin(); it != m.end(); it++) cerr << it->first << " " << it->second << endl;  
+  for (it = m.begin(); it != m.end(); it++) cerr << it->first << ":" << it->second << " ";
+  cerr << endl;  
 };
 
 template <class K>

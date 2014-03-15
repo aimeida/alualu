@@ -1,19 +1,5 @@
 #include "utils.h"
 
-string get_pn(string pn_file, int idx_pn){
-  ifstream fin( pn_file.c_str());
-  string pn;
-  int i = 0;
-  while (fin >> pn) {
-    if (i == idx_pn ) {
-      fin.close();  
-      return pn;
-    }
-    i++;
-  }
-  return "na";
-}
-
 string read_config(string config_file, string key){
   string _key, _value;
   ifstream fin( config_file.c_str());
@@ -88,12 +74,30 @@ int numOfBestHits(seqan::BamAlignmentRecord &record){
   return max((int)valInt, 1);
 }
 
-void fasta_seq(string fa_input, string chrx, int beginPos, int endPos, seqan::CharString &seq){
+seqan::CharString fasta_seq(string fa_input, string chrx, int beginPos, int endPos, bool upper){
   seqan::FaiIndex faiIndex;
   assert (!read(faiIndex, fa_input.c_str()) );
   unsigned idx = 0;
   assert (getIdByName(faiIndex, chrx, idx));
+  seqan::CharString seq;
   assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
+  if (!upper) {
+    return seq;
+  } else {
+    seqan::ModifiedString< seqan::CharString, seqan::ModView<MyUpper> > SEQ(seq);
+    return SEQ;
+  }
+}
+
+seqan::CharString fasta_seq(seqan::FaiIndex &faiIndex, unsigned idx, int beginPos, int endPos, bool upper){
+  seqan::CharString seq;
+  assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
+  if (!upper) {
+    return seq;
+  } else {
+    seqan::ModifiedString< seqan::CharString, seqan::ModView<MyUpper> > SEQ(seq);
+    return SEQ;
+  }
 }
 
 bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region) { // flank_region = 0, print this read; otherwise, print its pair
@@ -110,7 +114,7 @@ bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_
   assert( !read(baiIndex, bai_input.c_str())) ;
   int rID;
   assert ( !readRecord(header, context, inStream, seqan::Bam()) ); // do i need this ??
-  assert ( getIdByName(nameStore, chrx, rID, nameStoreCache) );
+  assert ( getIdByName(nameStore, chrx, rID, nameStoreCache) ); // change context ??
   bool hasAlignments = false;
   jumpToRegion(inStream, hasAlignments, context, rID, that_begin, that_end, baiIndex);
   if (!hasAlignments) return false;
@@ -125,6 +129,17 @@ bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_
 	return true;
       }
     }
+  }
+  return false;
+}
+
+bool find_read(seqan::Stream<seqan::Bgzf> &inStream, TBamIOContext &context, int rID, int this_pos, string this_qName, seqan::BamAlignmentRecord &record){
+  //bool find_read(seqan::Stream<seqan::Bgzf> &inStream, int rID, int this_pos, string &this_qName ){
+  while (!atEnd(inStream)) {
+    assert (!readRecord(record, context, inStream, seqan::Bam())); 
+    if (record.rID != rID || record.beginPos >= this_pos + 5) break;
+    if (record.beginPos < this_pos-5 ) continue;
+    if (record.qName == this_qName and record.beginPos == this_pos) return true;
   }
   return false;
 }
@@ -166,13 +181,13 @@ AluRefPos::AluRefPos(string file_alupos, bool use_vector) {
   fin.close();
 }
 
-bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap){
+bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap, int &len_overlap){
   vector<int>::iterator bi, ei;
   for (bi = beginV.begin(), ei = endV.begin(); bi != beginV.end(); bi++, ei++){
-    if ( *bi > endPos ) return false;    
-    if ( (*ei > beginPos + alu_min_overlap) and (*bi < endPos - alu_min_overlap)) return true;
+    if ( *bi > endPos ) return false;
+    if ( (len_overlap = min(*ei,endPos)-max(*bi, beginPos)) >= alu_min_overlap ) return true;
   }
-  return false;    
+  return false;
 }
 
 bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap, int &beginPos_match, int &endPos_match){
