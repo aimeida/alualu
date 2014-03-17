@@ -99,6 +99,7 @@ int main( int argc, char* argv[] )
   cout << "hasRC " << hasFlagRC(record) << endl; // 1
   suba = toCString(record.seq);
   fa_seq = fasta_seq(fa_input, "chr1", p_ref_a, p_ref_b, true);
+  cerr << fa_seq << endl;
   assignSource(row(align,0),suba.substr(0, 27));
   assignSource(row(align,1),fa_seq);
   // score: match, mismatch, gap[, gapOpen]
@@ -130,15 +131,13 @@ int main( int argc, char* argv[] )
   
   qname = "5:101:15310:5772";
   p = 1688516;
-  p_ref_a = 1688515;
-  p_ref_b = 1688575;
   find_read(bam_input, bai_input, chrx, qname, p, record, 0);
   writeRecord(bamStreamOut, record);
   cout << "\n##########################\n";
   cout << "hasRC " << hasFlagRC(record) << endl;  // 0
   suba = toCString(record.seq);
-  cout << suba.substr(40) << endl;
-  fa_seq = fasta_seq(fa_input, "chr1", p_ref_a, p_ref_b);
+  cout << suba.substr(0,40) << endl;
+  fa_seq = fasta_seq(fa_input, "chr1", 1688218 - 40, 1688218);
   cout << fa_seq << endl;
   cout << "##########################\n";
 

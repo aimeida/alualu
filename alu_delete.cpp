@@ -9,6 +9,7 @@
 #define LOG_RATIO_UB 7 // max log(Odds Ratio) for a single read, estimated from quantile(0.95)/quantile(0.05), 1e3 to 1e4
 #define CROSS_BP 5
 #define CLIP_BP 10  // min length to be called soft clip 
+#define CLIP_ALIGN 10 // extend bp in both end for split mapping 
 #define BAD_READ -1  // not use! eg. one read is mid-read, the other is clip read
 #define UNKNOW_READ 0
 #define MID_READ 1  // read without deletion
@@ -16,14 +17,9 @@
 typedef map<int, int> MapII;
 typedef map<int, int>::iterator MapIIt;
 
-
-inline string get_name1(string &path, string &fn){
-  return path + fn + ".tmp1";
-}
-
-inline string get_name2(string &path, string &fn){
-  return path + fn + ".tmp2";
-}
+inline string get_name1(string &path, string &fn){ return path + fn + ".tmp1";}
+inline string get_name2(string &path, string &fn){ return path + fn + ".tmp2";}
+inline string get_name3(string &path, string &fn){ return path + fn + ".tmp3";}
 
 // evidence of deletion
 int clip_pos(int beginPos, int endPos, int begin_del, int end_del, seqan::BamAlignmentRecord & record){
@@ -194,6 +190,57 @@ int delete_search( string & bam_input, string &bai_input, vector<string> &chrns,
   return 0;
 }
 
+bool get_align_pos(int aluBegin, int aluEnd, int beginPos, int endPos, int &ref_a, int &ref_b, int &read_a, int &read_b, seqan::BamAlignmentRecord &record){
+  int len_match = 0;
+  unsigned i = length(record.cigar) - 1; // ignore complicated alignment between S and M
+  int len_read = length(record.seq);
+  if ( abs(beginPos - aluEnd) < CROSS_BP and record.cigar[i].operation == 'M') {  //eg. S41M60, has_soft_first 
+    len_match = record.cigar[i].count;
+    ref_a = aluBegin - (len_read - len_match);
+    ref_b = aluBegin;
+    read_a = 0;
+    read_b = len_read - len_match;
+  } else if (abs(endPos - aluBegin) < CROSS_BP and record.cigar[0].operation == 'M' ) { // eg. M27S93, has_soft_last
+    len_match = record.cigar[0].count;
+    ref_a = aluEnd;
+    ref_b = aluEnd + (len_read - len_match);
+    read_a = len_match;
+    read_b = len_read;
+  }
+  return len_match ? true : false;
+}
+
+bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &record, int read_a, int read_b, int &score, int &align_len){
+  // end quality if bad!!! use external mapping tool ?
+  // no need to use seed or chain, since don't know exact position to start mapping
+  read_b = read_a + (read_b - read_a) * 0.75 + 2; // end might have bad quality
+  seqan::Score<int> scoringScheme(1, -3, -2, -5);
+  TAlign align;
+  int align_len_min = min(CLIP_ALIGN, read_b - read_a );
+  resize(rows(align), 2);
+  assignSource(row(align,0), infix(record.seq, read_a, read_b) );  // 2,3
+  assignSource(row(align,1), fa_seq);   // 1,4
+  // AlignConfig[1,2,3,4], 1=true: targetsite duplication ? 2=true:free end gaps for record.seq
+  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<false, true, true, false>()); 
+  align_len =  toViewPosition(row(align, 0), read_b - read_a) - max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
+
+  if (score > 0 and align_len >= align_len_min) {
+    //cerr << "score1 is " << score << " " << align_len << "\n" << align << endl;
+    return true;
+  }
+
+  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, false>()); 
+  align_len =  toViewPosition(row(align, 0), read_b - read_a) - max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
+  if (score > 0 and align_len >= align_len_min) {
+    //cerr << "score2 is " << score << " " << align_len << "\n" << align << endl;
+    return true;
+  }
+  return false;
+  ////TPosition prefixLength = toSourcePosition(row(align, 1), toViewPosition(row(align, 0), 0));  
+  ////cerr << clippedBeginPosition(row(align, 0)) << " " << clippedBeginPosition(row(align, 1)) << " " <<  endl;
+  //  cerr << "score1 is " << score << " " << align_len << "\n" << align << endl;
+}
+
 bool combine_pns(vector <string> &pns, string path1, string f_out){
   ofstream fout( f_out.c_str() );
   map <string, MapII > del_count;
@@ -221,7 +268,7 @@ bool combine_pns(vector <string> &pns, string path1, string f_out){
   return true;
 }
 
-void check_clip(string bam_input, string bai_input, string path1, string pn){
+void check_clip(string file_fa_prefix, string bam_input, string bai_input, string path1, string pn){
   TNameStore      nameStore;
   TNameStoreCache nameStoreCache(nameStore);
   TBamIOContext   context(nameStore, nameStoreCache);
@@ -233,30 +280,53 @@ void check_clip(string bam_input, string bai_input, string path1, string pn){
   assert ( !readRecord(header, context, inStream, seqan::Bam()) ); // do i need this ??
 
   seqan::BamAlignmentRecord record;    
-  string tmp1, chrn, qName, cigar;
+  stringstream ss;
+  string tmp1, chrn, qName, cigar, line;
   int rID, aluBegin, aluEnd, beginPos, endPos, pNext, pNextEnd;
-  string chrn_pre = "chr-1";
+  string chrn_pre = "chr0";
   int ir = 0;
+  int ref_a, ref_b, read_a, read_b, score, align_len;
+  seqan::FaiIndex faiIndex;
+  unsigned fa_idx = 0;
+  seqan::CharString fa_seq;
   ifstream fin( get_name2(path1, pn).c_str() );
+  //ifstream fin( get_name3(path1, pn).c_str() );
   assert(fin);
-  getline(fin, tmp1 );
-  while ( fin >> tmp1 >> chrn >> aluBegin >> aluEnd >> qName >> beginPos >> endPos >> pNext >> pNextEnd >> cigar ) {
+  getline(fin, line);  
+
+  ofstream fout( get_name3(path1, pn).c_str() );
+  fout << line << " score len_clipped" << endl;
+
+  while ( getline(fin, line) ) {
+    ss.clear(); ss.str(line);
+    ss >> tmp1 >> chrn >> aluBegin >> aluEnd >> qName >> beginPos >> endPos >> pNext >> pNextEnd >> cigar;
     if (chrn != chrn_pre) {
-      assert ( getIdByName(nameStore, chrn, rID, nameStoreCache) );
       chrn_pre = chrn;
+      assert ( getIdByName(nameStore, chrn, rID, nameStoreCache) );
+      string fa_input = file_fa_prefix + chrn + ".fa";
+      assert (!read(faiIndex, fa_input.c_str()) );      
+      assert (getIdByName(faiIndex, chrn, fa_idx));
+
     }
     bool hasAlignments = false;      
     jumpToRegion(inStream, hasAlignments, context, rID, beginPos - 5, beginPos + 5, baiIndex);
     if (!hasAlignments) {
       continue;
     }
-    if (find_read(inStream, context, rID, beginPos, qName, record)) {
-      cerr << qName << " " << record.seq << endl;
-      if (ir++ > 2) exit(0);
+    if (find_read(inStream, context, rID, beginPos, qName, record) and 
+	get_align_pos(aluBegin, aluEnd, beginPos, endPos, ref_a, ref_b, read_a, read_b, record) ) {
+      fa_seq = fasta_seq(faiIndex, fa_idx, ref_a - CLIP_ALIGN, ref_b + CLIP_ALIGN, true);      
+      if (split_global_align(fa_seq, record, read_a, read_b, score, align_len)) 
+	fout << line << " " << score << " " << align_len << endl;
+      //cerr << qName << " " << line << endl;
+      //cerr << qName << " " << score << " " << ref_a << " " <<  ref_b << " " <<  read_a << " " <<  read_b << endl;
     }
+    //if (ir++ > 10) exit(0);
   }
   fin.close();
+  fout.close();
 }
+
 
 int main( int argc, char* argv[] )
 {
@@ -302,7 +372,8 @@ int main( int argc, char* argv[] )
     string pn = get_pn(file_pn, idx_pn);
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
-    check_clip(bam_input, bai_input, path1, pn);
+    string file_fa_prefix = read_config(config_file, "file_fa_prefix");
+    check_clip(file_fa_prefix, bam_input, bai_input, path1, pn);
   }
   return 0;  
 }

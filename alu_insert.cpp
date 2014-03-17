@@ -7,10 +7,12 @@
 #include <boost/timer.hpp>
 
 typedef map<int, ofstream* > Map;
-#define ALU_MINLEN 50
-#define MAPPED_ALU_LEN 100
+#define ALU_MIN_LEN 50
+#define DEFAULT_READ_LEN 100 // if unknown, use default
 #define FLAG_LONG -1
-#define INS_LEN_LONG 1000
+#define DISCORDANT_LEN 1000 
+#define SCAN_WIN_LEN 350  // 0.99 quantile = 400, 400-50
+#define LEFT_PLUS_RIGHT 5 // minimum sum of left and right reads
 
 bool empty_map(map<seqan::CharString, pair<int,int> > &map_chr, ofstream & fout,int rID, seqan::CharString &chrn){
   if (!map_chr.size()) return false;
@@ -60,7 +62,7 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrx, ofs
       if (record.beginPos < record.pNext) {	
 	if ( hits > 1) { 
 	  same_chr_left[record.qName] = make_pair(record.beginPos, hits);
-	} else if ( (abs(record.tLen) > INS_LEN_LONG ) or (hasFlagNextRC(record) == hasFlagRC(record))) { 
+	} else if ( (abs(record.tLen) > DISCORDANT_LEN ) or (hasFlagNextRC(record) == hasFlagRC(record))) { 
 	  same_chr_left[record.qName] = make_pair(record.beginPos, FLAG_LONG); // non-redundant
 	}	
       } else if (record.beginPos > record.pNext) {
@@ -103,20 +105,20 @@ void check_type(string inputfile, Map &fileMap, map<int, AluRefPos *> &rID_alure
 	qname_hits_difchr.erase(qh);
 	if ( hits > 1 and pre_hits > 1) continue;
 	if ( rID_alurefpos.find(this_chr) == rID_alurefpos.end() or rID_alurefpos.find(bad_chr) == rID_alurefpos.end() ) continue;
-	if ( rID_alurefpos[this_chr]->insideAlu(this_pos, this_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) and pre_hits <= 1) {
+	if ( rID_alurefpos[this_chr]->insideAlu(this_pos, this_pos + DEFAULT_READ_LEN, ALU_MIN_LEN, len_overlap) and pre_hits <= 1) {
 	  *(fileMap[bad_chr]) << "dif_chr " << qname << " " << bad_chr << " " << bad_pos << " " << this_chr << " " << this_pos << " " << hits << " " << len_overlap << endl;      
-	} else if ( rID_alurefpos[bad_chr]->insideAlu(bad_pos, bad_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) and hits <= 1) {  // one end is unique
+	} else if ( rID_alurefpos[bad_chr]->insideAlu(bad_pos, bad_pos + DEFAULT_READ_LEN, ALU_MIN_LEN, len_overlap) and hits <= 1) {  // one end is unique
 	  *(fileMap[this_chr]) << "dif_chr " << qname << " " <<  this_chr << " " << this_pos << " " << bad_chr << " " << bad_pos << " " << pre_hits << " " << len_overlap << endl;
 	}
       }
     } else{
       if ( (ra = rID_alurefpos.find(this_chr)) == rID_alurefpos.end() ) continue;
-      if (type_flag == "mul_map" and (ra->second)->insideAlu(bad_pos, bad_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) ) { // hits > 1
+      if ( type_flag == "mul_map" and (ra->second)->insideAlu(bad_pos, bad_pos + DEFAULT_READ_LEN, ALU_MIN_LEN, len_overlap) ) { // hits > 1
 	*(fileMap[this_chr]) << "mul_map " << qname << " " <<  this_chr << " " << this_pos << " " << bad_chr << " " << bad_pos << " " << hits << " " << len_overlap << endl;
       } else if (type_flag == "ilong_RC") {  // hits = 1
-	if ( (ra->second)->insideAlu(bad_pos, bad_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) )
+	if ( (ra->second)->insideAlu(bad_pos, bad_pos + DEFAULT_READ_LEN, ALU_MIN_LEN, len_overlap) )
 	  *(fileMap[this_chr]) << "ilong_RC " << qname << " " << this_chr << " " << this_pos << " " << bad_chr << " " << bad_pos << " " << hits << " " << len_overlap << endl;
-	else if ( (ra->second)->insideAlu(this_pos, this_pos + MAPPED_ALU_LEN, ALU_MINLEN, len_overlap) )
+	else if ( (ra->second)->insideAlu(this_pos, this_pos + DEFAULT_READ_LEN, ALU_MIN_LEN, len_overlap) )
 	  *(fileMap[this_chr]) << "ilong_RC " << qname << " " << bad_chr << " " << bad_pos << " " << this_chr << " " << this_pos << " " << hits << " " << len_overlap << endl;       
       }
     }
@@ -124,6 +126,90 @@ void check_type(string inputfile, Map &fileMap, map<int, AluRefPos *> &rID_alure
   fin.close();
 }
 
+void add_to_list(list< pair<int, int> > &left_reads, list< pair<int, int> > &right_reads, string &type_flag, int pos, int hits, bool mapped_left) {
+  if (type_flag == "dif_chr") {
+    left_reads.push_back( make_pair(pos, hits) );
+    right_reads.push_back( make_pair(pos, hits) );
+  } else if ( type_flag == "mul_map" or type_flag == "ilong_RC") {
+    if (mapped_left) left_reads.push_back( make_pair(pos, hits));
+    else right_reads.push_back( make_pair(pos, hits));
+  }
+}
+
+void read_line(ifstream &fin, list< pair<int, int> > &left_reads, list< pair<int, int> > &right_reads, bool &readable){
+  string line, type_flag, qname;
+  int this_chr, this_pos, bad_chr, bad_pos, hits;  
+  stringstream ss;  
+  if (getline(fin, line)) {
+    ss.clear(); ss.str( line );
+    ss >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos >> hits;      
+    add_to_list(left_reads, right_reads, type_flag, this_pos, hits, (this_pos < bad_pos));  
+    readable = true;
+  } else {
+    readable = false;
+  }
+}
+
+// update pos_to_scan along the way 
+void read_line(ifstream &fin, list< pair<int, int> > &left_reads, list< pair<int, int> > &right_reads, bool &readable, list<int> &pos_to_scan){
+  string line, type_flag, qname;
+  int this_chr, this_pos, bad_chr, bad_pos, hits;  
+  stringstream ss;  
+  if (getline(fin, line)) {
+    ss.clear(); ss.str( line );
+    ss >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos >> hits;      
+    add_to_list(left_reads, right_reads, type_flag, this_pos, hits, (this_pos < bad_pos));  
+    if ( this_pos > pos_to_scan.back() ) pos_to_scan.push_back( this_pos );
+    readable = true;
+  } else {
+    readable = false;
+  }
+}
+
+void check_this_pos(list <pair<int, int> > &left_reads, list <pair<int, int> > &right_reads, int this_pos, int lr_num, int rr_num){
+  list <pair<int, int> >::iterator ri;
+  for ( ri = left_reads.begin(); ri != left_reads.end(); ri++) {
+    if ( (*ri).first >= this_pos) break;
+    if ( (*ri).first < this_pos - SCAN_WIN_LEN ) left_reads.erase(ri);
+    else lr_num++;
+  }
+  for ( ri = right_reads.begin(); ri != right_reads.end(); ri++) {
+    if ( (*ri).first > this_pos + SCAN_WIN_LEN - DEFAULT_READ_LEN) continue;
+    if ( (*ri).first <= this_pos) right_reads.erase(ri);
+    else rr_num++;
+  }
+}
+
+void scan_location(string file1, string file2, vector<string> &chrns){
+  bool readable;
+  ofstream fout(file2.c_str());
+  int this_pos, lr_num, rr_num;
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
+    list <pair<int, int> > left_reads, right_reads;
+    list <int> pos_to_scan;    
+    list <int>::iterator pts;
+    ifstream fin( (file1 + *ci).c_str());
+    assert(fin); // init, 700 * 30 /100 = 210 
+    for (int i = 0; i < 100; i++) read_line(fin, left_reads, right_reads, readable); 
+    if (!readable) break;
+    for (int i = 0; i < 100; i++) read_line(fin, left_reads, right_reads, readable, pos_to_scan); 
+    if (!readable) break;
+    while (pos_to_scan.size()) { // read and scan in turn
+      pts = pos_to_scan.begin();
+      this_pos = *pts;
+      lr_num = 0;
+      rr_num = 0;
+      check_this_pos(left_reads, right_reads, this_pos, lr_num, rr_num);
+      if (lr_num + rr_num >= LEFT_PLUS_RIGHT) fout << *ci << " " << this_pos  << " " << lr_num  << " " << rr_num << endl;
+      if (pos_to_scan.size() < 3 or right_reads.back().first < *(++pts) + SCAN_WIN_LEN ) {
+	while ( right_reads.back().first < this_pos + SCAN_WIN_LEN ) read_line(fin, left_reads, right_reads, readable, pos_to_scan); 
+	if (!readable) break;
+      }
+    }
+    fin.close();
+  }
+  fout.close();
+}
 
 int main( int argc, char* argv[] )
 {
@@ -147,7 +233,12 @@ int main( int argc, char* argv[] )
   chrns.push_back("chrY");
   map<int, seqan::CharString> rID_chrx;
   get_rID_chrx(bam_input, chrns, rID_chrx);
-  string file1 = read_config(config_file, "file_alu_mate_prefix") + pn;    
+  string file1 = read_config(config_file, "file_alu_mate0") + pn;    
+  string file1_prefix = read_config(config_file, "file_alu_mate1");
+  string file2 = file1_prefix + "unsort/" + pn;    
+  string file3 = file1_prefix + "sort_all/" + pn;    
+  string file4 = file1_prefix + "location_all/" + pn;      
+  string file5 = file1_prefix + "location_noRep/" + pn;      
   boost::timer clocki;    
   clocki.restart();
 
@@ -160,7 +251,6 @@ int main( int argc, char* argv[] )
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
     map<int, AluRefPos *> rID_alurefpos;
     Map fileMap;
-    string file2 = read_config(config_file, "file_alu_mate_unsort") + pn;  
     for (map<int, seqan::CharString>::iterator rc = rID_chrx.begin(); rc != rID_chrx.end(); rc++) {
       rID_alurefpos[rc->first] = new AluRefPos(file_alupos_prefix + toCString(rc->second), true);    
       fileMap[rc->first] = new ofstream( (file2 + "." + toCString(rc->second)).c_str() );
@@ -172,10 +262,12 @@ int main( int argc, char* argv[] )
       delete fm->second;
     }
     rID_alurefpos.clear();
-    // print out cmds for sorting 
-    string file3 = read_config(config_file, "file_alu_mate_sort") + pn;      
-    cout << "./alu_insert.sh " << file2 << " " << file3  << endl;      
-  } 
+    cout << "./alu_insert.sh " << file2 << " " << file3  << endl;   // print cmds for sorting 
+  } else if (opt == 3) { // scan for potential regions 
+    scan_location(file3, file4, chrns);
+    //filter_location_rep(file4, file5);
+  }  
+  
   cerr << "time used " << clocki.elapsed() << endl;
   return 0;  
 }
