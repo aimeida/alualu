@@ -11,8 +11,11 @@ typedef map<int, ofstream* > Map;
 #define DEFAULT_READ_LEN 100 // if unknown, use default
 #define FLAG_LONG -1
 #define DISCORDANT_LEN 1000 
-#define SCAN_WIN_LEN 350  // 0.99 quantile = 400, 400-50
+#define SCAN_WIN_LEN 400  // 0.99 quantile = 400
 #define LEFT_PLUS_RIGHT 5 // minimum sum of left and right reads
+
+inline string get_name1(string path, string fn){ return path + fn + ".tmp1";}
+inline string get_name2(string path, string fn){ return path + fn + ".tmp2";}
 
 bool empty_map(map<seqan::CharString, pair<int,int> > &map_chr, ofstream & fout,int rID, seqan::CharString &chrn){
   if (!map_chr.size()) return false;
@@ -126,7 +129,7 @@ void check_type(string inputfile, Map &fileMap, map<int, AluRefPos *> &rID_alure
   fin.close();
 }
 
-void add_to_list(list< pair<int, int> > &left_reads, list< pair<int, int> > &right_reads, string &type_flag, int pos, int hits, bool mapped_left) {
+void left_or_right(list< pair<int, int> > &left_reads, list< pair<int, int> > &right_reads, string &type_flag, int pos, int hits, bool mapped_left) {
   if (type_flag == "dif_chr") {
     left_reads.push_back( make_pair(pos, hits) );
     right_reads.push_back( make_pair(pos, hits) );
@@ -143,7 +146,7 @@ void read_line(ifstream &fin, list< pair<int, int> > &left_reads, list< pair<int
   if (getline(fin, line)) {
     ss.clear(); ss.str( line );
     ss >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos >> hits;      
-    add_to_list(left_reads, right_reads, type_flag, this_pos, hits, (this_pos < bad_pos));  
+    left_or_right(left_reads, right_reads, type_flag, this_pos, hits, (this_pos < bad_pos));  
     readable = true;
   } else {
     readable = false;
@@ -158,56 +161,137 @@ void read_line(ifstream &fin, list< pair<int, int> > &left_reads, list< pair<int
   if (getline(fin, line)) {
     ss.clear(); ss.str( line );
     ss >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos >> hits;      
-    add_to_list(left_reads, right_reads, type_flag, this_pos, hits, (this_pos < bad_pos));  
-    if ( this_pos > pos_to_scan.back() ) pos_to_scan.push_back( this_pos );
+    left_or_right(left_reads, right_reads, type_flag, this_pos, hits, (this_pos < bad_pos));  
+    if ( (!pos_to_scan.size()) or this_pos > pos_to_scan.back() ) pos_to_scan.push_back( this_pos );
     readable = true;
   } else {
     readable = false;
   }
 }
 
-void check_this_pos(list <pair<int, int> > &left_reads, list <pair<int, int> > &right_reads, int this_pos, int lr_num, int rr_num){
+void check_this_pos(list <pair<int, int> > &left_reads, list <pair<int, int> > &right_reads, int this_pos, int &lr_num, int &rr_num){
   list <pair<int, int> >::iterator ri;
-  for ( ri = left_reads.begin(); ri != left_reads.end(); ri++) {
+  ri = left_reads.begin();
+  while (ri != left_reads.end() ) {
+    //cerr << (*ri).first << " " << this_pos << endl;
     if ( (*ri).first >= this_pos) break;
-    if ( (*ri).first < this_pos - SCAN_WIN_LEN ) left_reads.erase(ri);
-    else lr_num++;
-  }
-  for ( ri = right_reads.begin(); ri != right_reads.end(); ri++) {
-    if ( (*ri).first > this_pos + SCAN_WIN_LEN - DEFAULT_READ_LEN) continue;
-    if ( (*ri).first <= this_pos) right_reads.erase(ri);
-    else rr_num++;
+    if ( (*ri).first < this_pos - SCAN_WIN_LEN ) { left_reads.erase(ri++); }
+    else {lr_num++;  ri++;}
+  }  
+  ri = right_reads.begin(); 
+  while (ri != right_reads.end() ) {
+    //cerr << (*ri).first << " " << this_pos << endl;
+    if ( (*ri).first > this_pos + SCAN_WIN_LEN - DEFAULT_READ_LEN) { ri++; continue; }
+    if ( (*ri).first <= this_pos) {right_reads.erase(ri++); }
+    else {rr_num++;  ri++;}
   }
 }
 
 void scan_location(string file1, string file2, vector<string> &chrns){
   bool readable;
   ofstream fout(file2.c_str());
-  int this_pos, lr_num, rr_num;
+  int this_pos, next_pos, lr_num, rr_num;
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     list <pair<int, int> > left_reads, right_reads;
     list <int> pos_to_scan;    
     list <int>::iterator pts;
-    ifstream fin( (file1 + *ci).c_str());
+    ifstream fin( (file1 + "." +  *ci).c_str());
     assert(fin); // init, 700 * 30 /100 = 210 
-    for (int i = 0; i < 100; i++) read_line(fin, left_reads, right_reads, readable); 
+    for (int i = 0; i < 10; i++) read_line(fin, left_reads, right_reads, readable); 
     if (!readable) break;
-    for (int i = 0; i < 100; i++) read_line(fin, left_reads, right_reads, readable, pos_to_scan); 
+    for (int i = 0; i < 10; i++) read_line(fin, left_reads, right_reads, readable, pos_to_scan); 
     if (!readable) break;
-    while (pos_to_scan.size()) { // read and scan in turn
+    //cerr << *ci << " pos_to_scan " << pos_to_scan.size() << endl;
+    while ( pos_to_scan.size() ) {
       pts = pos_to_scan.begin();
       this_pos = *pts;
+      next_pos = *(++pts); 
+      //cerr << "check point0 " << pos_to_scan.size() << " " << this_pos << endl;
+      pos_to_scan.pop_front();
       lr_num = 0;
-      rr_num = 0;
+      rr_num = 0;      
       check_this_pos(left_reads, right_reads, this_pos, lr_num, rr_num);
-      if (lr_num + rr_num >= LEFT_PLUS_RIGHT) fout << *ci << " " << this_pos  << " " << lr_num  << " " << rr_num << endl;
-      if (pos_to_scan.size() < 3 or right_reads.back().first < *(++pts) + SCAN_WIN_LEN ) {
-	while ( right_reads.back().first < this_pos + SCAN_WIN_LEN ) read_line(fin, left_reads, right_reads, readable, pos_to_scan); 
-	if (!readable) break;
-      }
+      //cerr << this_pos << " 2 " << lr_num << " " << rr_num << " " << left_reads.size() << " " << right_reads.size() << endl;
+      if (lr_num + rr_num >= LEFT_PLUS_RIGHT) fout << *ci << " " << this_pos  << " " << lr_num  << " " << rr_num << endl;      
+      if (pos_to_scan.size() < 5 or ( (!right_reads.empty()) and right_reads.back().first < next_pos + SCAN_WIN_LEN )) {
+	while ( right_reads.size() < 5 or right_reads.back().first < this_pos + SCAN_WIN_LEN ) {
+	  read_line(fin, left_reads, right_reads, readable, pos_to_scan); 
+	  if (!readable) break;
+	}	
+      }      
     }
+    cerr << "done " << *ci << endl;
     fin.close();
   }
+  //cerr << "output to " << file2 << endl;
+  fout.close();
+}
+
+void combine_location(string file1, string file2, int pos_dif, int count_dif){ // AND
+  string chrn, chrn_pre;
+  int maxCount, nowCount, pos, lr_num, rr_num, pos_pre, lr_num_pre, rr_num_pre;
+  vector<int>  maxCount_pos;
+  ifstream fin(file1.c_str());
+  assert(fin);
+  ofstream fout(file2.c_str());
+  //int ti = 0;
+  while ( fin >> chrn >> pos >> lr_num >> rr_num) {
+    //if ( ti++ > 20) break;
+    if (chrn_pre != chrn) {
+      chrn_pre = chrn;
+      pos_pre = pos;
+      lr_num_pre = lr_num;
+      rr_num_pre = rr_num;
+      maxCount_pos.clear();
+      maxCount_pos.push_back(pos);
+      maxCount = lr_num + rr_num;
+      continue;
+    }     
+    if ( pos - pos_pre <= pos_dif and abs(lr_num - lr_num_pre) <= count_dif and abs(rr_num - rr_num_pre) <= count_dif) { // same block
+      nowCount = lr_num + rr_num;
+      if ( nowCount > maxCount) {
+	maxCount = nowCount;
+	maxCount_pos.clear();
+	maxCount_pos.push_back(pos);
+      } else if ( nowCount == maxCount) {
+	maxCount_pos.push_back(pos);
+      }
+    } else { // create new block      
+      fout << chrn << " " << maxCount << " " << maxCount_pos.front() << " " << maxCount_pos.back() << endl;
+      maxCount = lr_num + rr_num;
+      maxCount_pos.clear();
+      maxCount_pos.push_back(pos);      
+    }
+    pos_pre = pos;
+    lr_num_pre = lr_num;
+    rr_num_pre = rr_num;
+  }
+  fin.close();
+  fout.close();
+}
+
+void filter_location_rep(string file1, string file2, RepMaskPos &repmaskPos){
+  ifstream fin(file1.c_str());
+  assert(fin);
+  ofstream fout(file2.c_str());
+  string line, chrn, chrn_pre = "chr0";
+  stringstream ss;
+  int r_num, pos_left, pos_right;
+  vector<int>::iterator bi, ei;
+  int be_size, bei;
+  while ( getline(fin, line) ) {
+    ss.clear(); ss.str( line );
+    ss >> chrn >> r_num >> pos_left  >> pos_right;
+    if (chrn != chrn_pre) {
+      bi = repmaskPos.beginP[chrn].begin();
+      ei = repmaskPos.endP[chrn].begin();
+      bei = 0;
+      be_size = repmaskPos.beginP[chrn].size();
+    } 
+    while ( pos_left > (*ei) and bei < be_size) { bi++; ei++; bei++; }
+    if ( pos_left < (*bi) or pos_left > (*ei) )  fout << line << endl;
+  }  
+  fin.close();
   fout.close();
 }
 
@@ -237,8 +321,6 @@ int main( int argc, char* argv[] )
   string file1_prefix = read_config(config_file, "file_alu_mate1");
   string file2 = file1_prefix + "unsort/" + pn;    
   string file3 = file1_prefix + "sort_all/" + pn;    
-  string file4 = file1_prefix + "location_all/" + pn;      
-  string file5 = file1_prefix + "location_noRep/" + pn;      
   boost::timer clocki;    
   clocki.restart();
 
@@ -264,8 +346,14 @@ int main( int argc, char* argv[] )
     rID_alurefpos.clear();
     cout << "./alu_insert.sh " << file2 << " " << file3  << endl;   // print cmds for sorting 
   } else if (opt == 3) { // scan for potential regions 
-    scan_location(file3, file4, chrns);
-    //filter_location_rep(file4, file5);
+    string file4 = get_name1(file1_prefix + "location_all/", pn);      
+    //scan_location(file3, file4, chrns);
+    string file5 = get_name2(file1_prefix + "location_all/", pn);          
+    //combine_location(file4, file5, 40, 2);
+
+    string file6 = get_name2(file1_prefix + "location_noRep/", pn);      
+    RepMaskPos repmaskPos = RepMaskPos(read_config(config_file, "file_repeatMask"), 100); // combine regions(dist < 100bp)
+    filter_location_rep(file5, file6, repmaskPos);
   }  
   
   cerr << "time used " << clocki.elapsed() << endl;

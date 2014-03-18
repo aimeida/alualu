@@ -284,6 +284,7 @@ int main( int argc, char* argv[] )
   string file_pn = read_config(config_file, "file_pn");
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
+
   if ( opt == 1 ) {  // write potential candidate
     seqan::lexicalCast2(idx_pn, argv[3]);
     string chrn = argv[4];
