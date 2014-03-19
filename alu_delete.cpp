@@ -1,5 +1,8 @@
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
+#include <seqan/basic.h>
+#include <seqan/vcf_io.h>
+
 #include "common.h"
 #include "diststat.h"
 #include "utils.h"
@@ -246,9 +249,9 @@ int delete_search( string & bam_input, string &bai_input, string file_fa_prefix,
   return 0;
 }
 
-bool combine_pns(vector <string> &pns, string path1, string f_out){
-  ofstream fout( f_out.c_str() );
+bool combine_pns_count(vector <string> &pns, string path1, string f_out){
   map <string, MapII > del_count;
+  map <string, MapII >::iterator dc;
   ifstream fin;
   stringstream ss;
   string line, chrn, tmp1, tmp2;
@@ -263,15 +266,90 @@ bool combine_pns(vector <string> &pns, string path1, string f_out){
       if (p1 > p0 or p2 > p0) addKey(del_count[chrn], aluBegin, p1 > p2 ? 1 : 2); 
     }
     fin.close();
-  }
-  float pn_chr = 2. * pns.size();
-  map<string, MapII >::iterator dc;
+  }  
+  //float pn_chr = 2. * pns.size();
+  ofstream fout( f_out.c_str() );
   for (  dc = del_count.begin(); dc != del_count.end(); dc++ )
     for (MapIIt dc2 = (dc->second).begin(); dc2 != (dc->second).end(); dc2++)
       if (dc2->second > 1) fout << dc->first << " " << dc2->first << " " << dc2->second << endl;
   fout.close();
   return true;
 }
+
+string phred_log (float p) {
+  if (p) return int_to_string ( -(int)(log10 (p) * 10));
+  else return "255";
+}
+
+string phred_scaled(float p0, float p1, float p2){
+  return phred_log(p0)  + "," + phred_log(p1) + "," + phred_log(p2);
+}
+
+void combine_pns_vcf(vector <string> &pns, string path1, string f_out, vector <string> &chrns){
+  ifstream fin;
+  stringstream ss;
+  string line, chrn, tmp1, tmp2;
+  int aluBegin, aluEnd, cii, flag;
+
+  map < pair<int, int>, map<string, string> > pos_pn_prob;
+  float p0, p1, p2;      
+  map < pair<int, int>, map<string, string> >::iterator ppp;
+  map<string, string>::iterator pp;
+  vector <string>::iterator ci, pi;
+  //seqan::VcfStream out("-", seqan::VcfStream::WRITE);
+  seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE);
+  for ( ci = chrns.begin(); ci != chrns.end(); ci++)
+    appendValue(vcfout.header.sequenceNames, *ci);
+  for ( pi = pns.begin(); pi != pns.end(); pi++) 
+    appendValue(vcfout.header.sampleNames, *pi);
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileformat", "VCFv4.1"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileDate", "201402"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("reference", "hg18"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=PL,Number=3,Type=Integer, Description=\"Phred-scaled likelihoods for genotypes\">"));
+  seqan::VcfRecord record;    
+  record.ref = ".";
+  record.alt = "1";
+  record.qual = 0;
+  record.filter = ".";
+  record.info = ".";
+  record.format = ".";
+    
+  for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
+    pos_pn_prob.clear();
+    for ( pi = pns.begin(); pi != pns.end(); pi++) {
+      fin.open( get_name1(path1, *pi).c_str() );
+      assert(fin);
+      flag = 1;
+      while ( getline(fin, line) ) {
+	ss.clear(); ss.str( line );
+	ss >> chrn >> tmp1 >> aluBegin >> aluEnd >> p0 >> p1 >> p2 ;
+	if (chrn != *ci) {
+	  if (flag) continue;
+	  else break;
+	}
+	flag = 0;
+	if (p1 > p0 or p2 > p0) pos_pn_prob[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled(p0, p1, p2);
+      }
+      fin.close();
+    }
+
+    // Write out the records.
+    for (ppp = pos_pn_prob.begin(); ppp != pos_pn_prob.end(); ppp++) {
+      record.beginPos = (ppp->first).first;
+      record.rID = cii;
+      record.id = int_to_string((ppp->first).second);
+      for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
+	if ( (pp = ppp->second.find(*pi)) != ppp->second.end() )  appendValue(record.genotypeInfos, pp->second);
+	else  appendValue(record.genotypeInfos, "0,255,255"); 	  
+      }
+      writeRecord(vcfout, record);
+      clear(record.genotypeInfos);
+    }        
+  }  // chrn finished
+  clear(record);
+  seqan::close(vcfout);
+}
+
 
 int main( int argc, char* argv[] )
 {
@@ -312,7 +390,9 @@ int main( int argc, char* argv[] )
     fin.close();
     //print_vec(pns);
     string f_out = path1+"test_pn";
-    combine_pns(pns, path1, f_out); 
+    //combine_pns_count(pns, path1, f_out); 
+    f_out = path1+"test_vcf";
+    combine_pns_vcf(pns, path1, f_out, chrns);
     cerr << "output to " << f_out << endl;
   } 
 
