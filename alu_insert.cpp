@@ -16,6 +16,7 @@ typedef map<int, ofstream* > Map;
 
 inline string get_name1(string path, string fn){ return path + fn + ".tmp1";}
 inline string get_name2(string path, string fn){ return path + fn + ".tmp2";}
+inline string get_name(string path, string fn, string suffix){ return path + fn + suffix;}
 
 bool empty_map(map<seqan::CharString, pair<int,int> > &map_chr, ofstream & fout,int rID, seqan::CharString &chrn){
   if (!map_chr.size()) return false;
@@ -42,47 +43,44 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrx, ofs
   map<seqan::CharString, pair<int,int> > same_chr_left; // value: (pos, count)
   map<seqan::CharString, pair<int,int> >::iterator sc;
 
-  //bool hasAlignments = false;
-  //jumpToRegion(inStream, hasAlignments, context, 10, 100000, 100000, baiIndex); // debug chr19
   while (!atEnd(inStream)) {
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
     if ( hasFlagQCNoPass(record) or hasFlagDuplicate(record) or hasFlagUnmapped(record) or hasFlagNextUnmapped(record) or (not hasFlagMultiple(record))) continue;
     //if (ic++ > 6000) break;
     //// this FLAG is broken ==> if (hasFlagSecondary(record)) writeRecord(bamStreamOut, record);
-    ia++;
-    if (ia % 1000000 == 0) cerr << ia << " " << same_chr_left.size() << endl;
-    if (record.rID != record.rNextId) { // NB: redundant
+    if (ia++ % 1000000 == 0) cerr << ia << " " << same_chr_left.size() << endl;
+    if (record.rID != record.rNextId) { // NB: redundant, one pair written twice
       fout1 << "dif_chr " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rNextId << " " << record.pNext << " " << numOfBestHits(record) <<  endl;      
       continue;
-    } else {
-      if ( rID_chrx.find(record.rID) == rID_chrx.end() ) continue;
-      if ( record.rID != rID) {
-	empty_map(same_chr_left, fout1, rID, rID_chrx[rID]);
-	cerr << "done with " << rID_chrx[rID] << " " << rID << endl;
-	rID = record.rID;	
-      }       
-      int hits = numOfBestHits(record);      
-      if (record.beginPos < record.pNext) {	
-	if ( hits > 1) { 
-	  same_chr_left[record.qName] = make_pair(record.beginPos, hits);
-	} else if ( (abs(record.tLen) > DISCORDANT_LEN ) or (hasFlagNextRC(record) == hasFlagRC(record))) { 
-	  same_chr_left[record.qName] = make_pair(record.beginPos, FLAG_LONG); // non-redundant
-	}	
-      } else if (record.beginPos > record.pNext) {
-	sc = same_chr_left.find(record.qName);
-	if (sc == same_chr_left.end()) {
-	  if (hits > 1) fout1 << "mul_map " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
-	} else {
-	  if ( (sc->second).second == FLAG_LONG) {
-	    fout1 << "ilong_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
-	  } else if (hits == 1) { // at least one pair is unique mapped
-	    fout1 << "mul_map " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << (sc->second).second << endl;
-	  }
-	  same_chr_left.erase(sc);
-	}	      
-      }
     }
-  }  
+    if ( rID_chrx.find(record.rID) == rID_chrx.end() ) continue;
+    if ( record.rID != rID) {
+      empty_map(same_chr_left, fout1, rID, rID_chrx[rID]);
+      cerr << "done with " << rID_chrx[rID] << " " << rID << endl;
+      rID = record.rID;	
+    }       
+    int hits = numOfBestHits(record);      
+    if (record.beginPos < record.pNext) {	// left read
+      if ( hits > 1 and not_all_match(record) ) { 
+	same_chr_left[record.qName] = make_pair(record.beginPos, hits);
+      } else if ( (abs(record.tLen) > DISCORDANT_LEN ) or (hasFlagNextRC(record) == hasFlagRC(record))) { 
+	same_chr_left[record.qName] = make_pair(record.beginPos, FLAG_LONG); // non-redundant
+      }	
+    } else if (record.beginPos > record.pNext) { // right read
+      sc = same_chr_left.find(record.qName);  
+      if (sc == same_chr_left.end()) {   // left read is ok
+	if (hits > 1 and not_all_match(record) )
+	  fout1 << "mul_map1 " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
+      } else {          // left read not ok 
+	if ( (sc->second).second == FLAG_LONG) {
+	  fout1 << "ilong_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
+	} else if (hits == 1) {  // at least one pair is ok
+	  fout1 << "mul_map2 " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << (sc->second).second << endl;
+	}
+	same_chr_left.erase(sc); // rm left read
+      }	      
+    }    
+  } 
   seqan::close(inStream);     
   return 0;
 }
@@ -304,9 +302,6 @@ int main( int argc, char* argv[] )
   string config_file = argv[2];
   seqan::lexicalCast2(idx_pn, argv[3]);
 
-//  unsigned coverage_max;
-//  seqan::lexicalCast2(coverage_max, (read_config(config_file, "coverage_max")));
-
   string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
   cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
   string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
@@ -317,10 +312,10 @@ int main( int argc, char* argv[] )
   chrns.push_back("chrY");
   map<int, seqan::CharString> rID_chrx;
   get_rID_chrx(bam_input, chrns, rID_chrx);
-  string file1 = read_config(config_file, "file_alu_mate0") + pn;    
-  string file1_prefix = read_config(config_file, "file_alu_mate1");
-  string file2 = file1_prefix + "unsort/" + pn;    
-  string file3 = file1_prefix + "sort_all/" + pn;    
+
+  string path1 = read_config(config_file, "file_alu_mate0") ;    
+  string file1 = get_name1(path1, pn);
+  string file2 = get_name2(path1, pn);
   boost::timer clocki;    
   clocki.restart();
 
@@ -329,13 +324,13 @@ int main( int argc, char* argv[] )
     fout1 << "flag qname this_chr this_pos bad_chr bad_pos num_hits\n"; // bad_*: potential, need check
     alu_mate_flag(bam_input, rID_chrx, fout1);
     fout1.close();
-  } else if (opt == 2) {  // filter reads with alu_mate
+    return 0;
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
     map<int, AluRefPos *> rID_alurefpos;
     Map fileMap;
     for (map<int, seqan::CharString>::iterator rc = rID_chrx.begin(); rc != rID_chrx.end(); rc++) {
       rID_alurefpos[rc->first] = new AluRefPos(file_alupos_prefix + toCString(rc->second), true);    
-      fileMap[rc->first] = new ofstream( (file2 + "." + toCString(rc->second)).c_str() );
+      fileMap[rc->first] = new ofstream( (file1 + "." + toCString(rc->second)).c_str() );
       assert(fileMap[rc->first]);
     }    
     check_type(file1, fileMap, rID_alurefpos);       
@@ -344,16 +339,15 @@ int main( int argc, char* argv[] )
       delete fm->second;
     }
     rID_alurefpos.clear();
-    cout << "./alu_insert.sh " << file2 << " " << file3  << endl;   // print cmds for sorting 
-  } else if (opt == 3) { // scan for potential regions 
-    string file4 = get_name1(file1_prefix + "location_all/", pn);      
-    //scan_location(file3, file4, chrns);
-    string file5 = get_name2(file1_prefix + "location_all/", pn);          
-    //combine_location(file4, file5, 40, 2);
-
-    string file6 = get_name2(file1_prefix + "location_noRep/", pn);      
+    cout << "next step: run ./alu_insert.sh \n" ;  // sort file1 to file2 
+  } else if (opt == 2) { // scan for potential regions 
+    string file3 = get_name(path1, pn, ".tmp3");
+    string file4 = get_name(path1, pn, ".tmp4" );
+    string file5 = get_name(path1, pn, ".tmp5");
+    scan_location(file2, file3, chrns);
+    combine_location(file3, file4, 40, 2);
     RepMaskPos repmaskPos = RepMaskPos(read_config(config_file, "file_repeatMask"), 100); // combine regions(dist < 100bp)
-    filter_location_rep(file5, file6, repmaskPos);
+    filter_location_rep(file4, file5, repmaskPos);
   }  
   
   cerr << "time used " << clocki.elapsed() << endl;

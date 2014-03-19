@@ -28,9 +28,16 @@ inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){
   unsigned i = length(record.cigar) - 1;
   return (record.cigar[i].operation == 'S') and (record.cigar[i].count >= min_bp) ;
 }; 
-
 inline bool has_soft_first(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
   return (record.cigar[0].operation == 'S') and (record.cigar[0].count >= min_bp); 
+};
+
+inline bool not_all_match(seqan::BamAlignmentRecord &record, int max_bp = 5){ 
+  //return !(length(record.cigar) == 1 and record.cigar[0].operation == 'M');
+  int non_match_len = 0;
+  for (size_t i = 0; i < length(record.cigar); i++) 
+    if (record.cigar[i].operation != 'M') non_match_len += record.cigar[i].count; 
+  return non_match_len > max_bp;  // if < 5bp, consider as full match
 };
 
 string read_config(string config_file, string key);
@@ -65,6 +72,17 @@ class AluRefPos
   bool insideAlu(int beginPos, int endPos, int alu_min_overlap, int &beginPos_match, int &endPos_match);
   ~AluRefPos(void);
 };
+
+class RepMaskPos
+{
+ public:
+  vector<string> chrns;
+  map<string, vector<int> > beginP, endP;
+  RepMaskPos(string file_rmsk, int join_len = 20);
+  void print_begin(int ni=10);
+  //bool insideRep(string chrn, int pos);
+};
+
 
 /*
 // failed at compile !!

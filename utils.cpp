@@ -144,6 +144,52 @@ bool find_read(seqan::Stream<seqan::Bgzf> &inStream, TBamIOContext &context, int
   return false;
 }
 
+RepMaskPos::RepMaskPos(string file_rmsk, int join_len){
+  vector<string>::iterator ci;
+  vector<int>::iterator pi;
+  for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
+  chrns.push_back("chrX");
+  chrns.push_back("chrY");
+
+  string line, chrn, chrn_pre="chr0";
+  stringstream ss;
+  int beginPos, endPos, beginPos_pre, endPos_pre;
+  ifstream fin(file_rmsk.c_str());
+  assert(fin);
+  while (getline(fin, line)) {
+    ss.clear(); ss.str( line );
+    ss >> chrn >> beginPos >> endPos;
+    if ( find(chrns.begin(), chrns.end(), chrn) == chrns.end() ) continue;
+    if (chrn != chrn_pre) {
+      chrn_pre = chrn;
+      beginPos_pre = beginPos;
+      endPos_pre = endPos;      
+    } else {
+      if (beginPos - endPos_pre > join_len) {  // close this block, create new
+	beginP[chrn].push_back(beginPos_pre);
+	endP[chrn].push_back(endPos_pre);	
+	beginPos_pre = beginPos;
+      }
+      endPos_pre = endPos;      
+    }
+  }
+  fin.close();    
+//  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
+//    assert(beginP[*ci].size() == endP[*ci].size() );
+//    cerr << *ci << " " <<  beginP[*ci].size() << endl;
+//  }
+}
+
+void RepMaskPos::print_begin(int ni){
+  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
+    cerr << *ci << " " << beginP[*ci].size() << endl;
+    vector<int>::iterator pi = beginP[*ci].begin(); 
+    vector<int>::iterator ei = endP[*ci].begin(); 
+    for (int i = 0; i < ni and pi != beginP[*ci].end(); i++) 
+      cerr << *pi++ << " " << *ei++ << endl;
+  }
+}
+
 ///// 1-based to 0-based.
 AluRefPos::AluRefPos(string file_alupos, bool use_vector) {
   ifstream fin( file_alupos.c_str());
