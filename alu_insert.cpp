@@ -7,9 +7,12 @@
 #include <boost/timer.hpp>
 
 typedef map<int, ofstream* > Map;
+typedef pair<int, string > RowInfo;
+
 #define ALU_MIN_LEN 50
 #define DEFAULT_READ_LEN 100 // if unknown, use default
 #define FLAG_LONG -1
+#define FLAG_RC -2
 #define DISCORDANT_LEN 1000 
 #define SCAN_WIN_LEN 400  // 0.99 quantile = 400
 #define LEFT_PLUS_RIGHT 5 // minimum sum of left and right reads
@@ -63,19 +66,19 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrx, ofs
     if (record.beginPos < record.pNext) {	// left read
       if ( hits > 1 and not_all_match(record) ) { 
 	same_chr_left[record.qName] = make_pair(record.beginPos, hits);
-      } else if ( (abs(record.tLen) > DISCORDANT_LEN ) or (hasFlagNextRC(record) == hasFlagRC(record))) { 
+      } else if ( (abs(record.tLen) > DISCORDANT_LEN ) or (hasFlagNextRC(record) == hasFlagRC(record))) {  // here to define iLong_RC
 	same_chr_left[record.qName] = make_pair(record.beginPos, FLAG_LONG); // non-redundant
       }	
     } else if (record.beginPos > record.pNext) { // right read
       sc = same_chr_left.find(record.qName);  
       if (sc == same_chr_left.end()) {   // left read is ok
 	if (hits > 1 and not_all_match(record) )
-	  fout1 << "mul_map1 " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
+	  fout1 << "mul_map " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
       } else {          // left read not ok 
 	if ( (sc->second).second == FLAG_LONG) {
 	  fout1 << "ilong_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << hits << endl;
 	} else if (hits == 1) {  // at least one pair is ok
-	  fout1 << "mul_map2 " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << (sc->second).second << endl;
+	  fout1 << "mul_map " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << (sc->second).second << endl;
 	}
 	same_chr_left.erase(sc); // rm left read
       }	      
@@ -218,7 +221,7 @@ void scan_location(string file1, string file2, vector<string> &chrns){
 	}	
       }      
     }
-    cerr << "done " << *ci << endl;
+    //cerr << "done " << *ci << endl;
     fin.close();
   }
   //cerr << "output to " << file2 << endl;
@@ -293,6 +296,35 @@ void filter_location_rep(string file1, string file2, RepMaskPos &repmaskPos){
   fout.close();
 }
 
+
+struct compare_row {
+  bool operator()(const RowInfo& a, const RowInfo& b) const {
+    return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
+  }
+};
+
+
+void sort_by_col4(string file1, string file2, vector <string> &chrns) {
+  string line, tmp1, tmp2, tmp3;
+  int pos;
+  stringstream ss;
+  set< RowInfo, compare_row > rows;
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
+    ifstream fin( (file1 + "." +  *ci).c_str());
+    assert(fin); 
+    while (getline(fin, line)) {
+      ss.clear(); ss.str( line );
+      ss >>  tmp1 >> tmp2 >> tmp3 >> pos;
+      rows.insert( make_pair(pos, line) );
+    }
+    fin.close();
+    ofstream fout( (file2 + "." +  *ci).c_str());
+    for (set< RowInfo >::iterator ri = rows.begin(); ri != rows.end(); ri++ )
+      fout << (*ri).second << endl;
+    fout.close();
+  }
+}
+
 int main( int argc, char* argv[] )
 {
   if (argc < 2) exit(1);
@@ -319,27 +351,27 @@ int main( int argc, char* argv[] )
   boost::timer clocki;    
   clocki.restart();
 
-  if (opt == 1) {    // write discordant reads 
-    ofstream fout1( file1.c_str() );
-    fout1 << "flag qname this_chr this_pos bad_chr bad_pos num_hits\n"; // bad_*: potential, need check
-    alu_mate_flag(bam_input, rID_chrx, fout1);
-    fout1.close();
-    return 0;
-    string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
-    map<int, AluRefPos *> rID_alurefpos;
-    Map fileMap;
-    for (map<int, seqan::CharString>::iterator rc = rID_chrx.begin(); rc != rID_chrx.end(); rc++) {
-      rID_alurefpos[rc->first] = new AluRefPos(file_alupos_prefix + toCString(rc->second), true);    
-      fileMap[rc->first] = new ofstream( (file1 + "." + toCString(rc->second)).c_str() );
-      assert(fileMap[rc->first]);
-    }    
-    check_type(file1, fileMap, rID_alurefpos);       
-    for (Map::iterator fm = fileMap.begin(); fm != fileMap.end(); fm++) {
-      delete rID_alurefpos[fm->first];
-      delete fm->second;
-    }
-    rID_alurefpos.clear();
-    cout << "next step: run ./alu_insert.sh \n" ;  // sort file1 to file2 
+  if (opt == 1) {    
+//    ofstream fout1( file1.c_str() );   // takes 2h per pn
+//    fout1 << "flag qname this_chr this_pos bad_chr bad_pos num_hits\n"; // bad_*: potential, need check
+//    alu_mate_flag(bam_input, rID_chrx, fout1);
+//    fout1.close();
+//    
+//    string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
+//    map<int, AluRefPos *> rID_alurefpos;
+//    Map fileMap;
+//    for (map<int, seqan::CharString>::iterator rc = rID_chrx.begin(); rc != rID_chrx.end(); rc++) {
+//      rID_alurefpos[rc->first] = new AluRefPos(file_alupos_prefix + toCString(rc->second), true);    
+//      fileMap[rc->first] = new ofstream( (file1 + "." + toCString(rc->second)).c_str() );
+//      assert(fileMap[rc->first]);
+//    }    
+//    check_type(file1, fileMap, rID_alurefpos);       
+//    for (Map::iterator fm = fileMap.begin(); fm != fileMap.end(); fm++) {
+//      delete rID_alurefpos[fm->first];
+//      delete fm->second;
+//    }
+//    rID_alurefpos.clear();
+    sort_by_col4(file1, file2, chrns);
   } else if (opt == 2) { // scan for potential regions 
     string file3 = get_name(path1, pn, ".tmp3");
     string file4 = get_name(path1, pn, ".tmp4" );
