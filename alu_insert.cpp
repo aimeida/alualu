@@ -32,7 +32,7 @@ bool empty_map(map<seqan::CharString, pair<int,int> > &map_chr, ofstream & fout,
 }
 
 //search alu_mate by flag, write coordiate file
-bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrx, ofstream &fout1){
+bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrn, ofstream &fout1){
   seqan::Stream<seqan::Bgzf> inStream;
   assert (open(inStream, bam_input.c_str(), "r"));
   TNameStore      nameStore;
@@ -56,10 +56,10 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrx, ofs
       fout1 << "dif_chr " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rNextId << " " << record.pNext << " " << numOfBestHits(record) <<  endl;      
       continue;
     }
-    if ( rID_chrx.find(record.rID) == rID_chrx.end() ) continue;
+    if ( rID_chrn.find(record.rID) == rID_chrn.end() ) continue;
     if ( record.rID != rID) {
-      empty_map(same_chr_left, fout1, rID, rID_chrx[rID]);
-      cerr << "done with " << rID_chrx[rID] << " " << rID << endl;
+      empty_map(same_chr_left, fout1, rID, rID_chrn[rID]);
+      cerr << "done with " << rID_chrn[rID] << " " << rID << endl;
       rID = record.rID;	
     }       
     int hits = numOfBestHits(record);      
@@ -88,7 +88,7 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrx, ofs
   return 0;
 }
 
-void check_type(string inputfile, Map &fileMap, map<int, AluRefPos *> &rID_alurefpos){
+void filter_reads_in_alu(string inputfile, Map &fileMap, map<int, AluRefPos *> &rID_alurefpos){
   string type_flag, qname;
   int this_chr, this_pos, bad_chr, bad_pos, hits, len_overlap;
   map<string, int > qname_hits_difchr; 
@@ -98,7 +98,6 @@ void check_type(string inputfile, Map &fileMap, map<int, AluRefPos *> &rID_alure
   ifstream fin(inputfile.c_str());
   assert(fin);
   getline(fin, qname);
-  //  while (fin >> type_flag >> qname >> this_chr >> this_pos >> bad_chr_string >> bad_pos >> hits){
   while (fin >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos >> hits){
     if (type_flag == "left") continue;
     if (type_flag == "dif_chr") {
@@ -310,6 +309,7 @@ void sort_by_col4(string file1, string file2, vector <string> &chrns) {
   stringstream ss;
   set< RowInfo, compare_row > rows;
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
+    rows.clear();
     ifstream fin( (file1 + "." +  *ci).c_str());
     assert(fin); 
     while (getline(fin, line)) {
@@ -342,8 +342,8 @@ int main( int argc, char* argv[] )
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   chrns.push_back("chrX");
   chrns.push_back("chrY");
-  map<int, seqan::CharString> rID_chrx;
-  get_rID_chrx(bam_input, chrns, rID_chrx);
+  map<int, seqan::CharString> rID_chrn;
+  get_rID_chrn(bam_input, chrns, rID_chrn);
 
   string path1 = read_config(config_file, "file_alu_mate0") ;    
   string file1 = get_name1(path1, pn);
@@ -354,24 +354,24 @@ int main( int argc, char* argv[] )
   if (opt == 1) {    
 //    ofstream fout1( file1.c_str() );   // takes 2h per pn
 //    fout1 << "flag qname this_chr this_pos bad_chr bad_pos num_hits\n"; // bad_*: potential, need check
-//    alu_mate_flag(bam_input, rID_chrx, fout1);
+//    alu_mate_flag(bam_input, rID_chrn, fout1);
 //    fout1.close();
-//    
-//    string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
-//    map<int, AluRefPos *> rID_alurefpos;
-//    Map fileMap;
-//    for (map<int, seqan::CharString>::iterator rc = rID_chrx.begin(); rc != rID_chrx.end(); rc++) {
-//      rID_alurefpos[rc->first] = new AluRefPos(file_alupos_prefix + toCString(rc->second), true);    
-//      fileMap[rc->first] = new ofstream( (file1 + "." + toCString(rc->second)).c_str() );
-//      assert(fileMap[rc->first]);
-//    }    
-//    check_type(file1, fileMap, rID_alurefpos);       
-//    for (Map::iterator fm = fileMap.begin(); fm != fileMap.end(); fm++) {
-//      delete rID_alurefpos[fm->first];
-//      delete fm->second;
-//    }
-//    rID_alurefpos.clear();
-    sort_by_col4(file1, file2, chrns);
+
+    string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
+    map<int, AluRefPos *> rID_alurefpos;
+    Map fileMap;
+    for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
+      rID_alurefpos[rc->first] = new AluRefPos(file_alupos_prefix + toCString(rc->second), true);    
+      fileMap[rc->first] = new ofstream( (file1 + "." + toCString(rc->second)).c_str() );
+      assert(fileMap[rc->first]);
+    }    
+    filter_reads_in_alu(file1, fileMap, rID_alurefpos);       
+    for (Map::iterator fm = fileMap.begin(); fm != fileMap.end(); fm++) {
+      delete rID_alurefpos[fm->first];
+      delete fm->second;
+    }
+    rID_alurefpos.clear();
+    //sort_by_col4(file1, file2, chrns);
   } else if (opt == 2) { // scan for potential regions 
     string file3 = get_name(path1, pn, ".tmp3");
     string file4 = get_name(path1, pn, ".tmp4" );
@@ -380,6 +380,7 @@ int main( int argc, char* argv[] )
     combine_location(file3, file4, 40, 2);
     RepMaskPos repmaskPos = RepMaskPos(read_config(config_file, "file_repeatMask"), 100); // combine regions(dist < 100bp)
     filter_location_rep(file4, file5, repmaskPos);
+    cerr << "all locations: " << file4 << "\nlocations excluding repetitive regions: " << file5 << endl;
   }  
   
   cerr << "time used " << clocki.elapsed() << endl;
