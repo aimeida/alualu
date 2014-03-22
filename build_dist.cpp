@@ -16,7 +16,7 @@ void write_counts(map <seqan::CharString, map<int, int> > &rg_lenCounts, string 
   }
 }
 
-void read_pn_chr(string &rg_lenCounts_file, string &bamInput_file, string &chrx){
+void read_pn_chr(string &rg_lenCounts_file, string &bamInput_file, string &chrn){
   typedef seqan::StringSet<seqan::CharString> TNameStore;
   typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
   typedef seqan::BamIOContext<TNameStore>     TBamIOContext;  
@@ -30,8 +30,8 @@ void read_pn_chr(string &rg_lenCounts_file, string &bamInput_file, string &chrx)
   readRecord(header, context, inStream, seqan::Bam());
   seqan::close(inStream);
   int rID = 0;
-  if(!getIdByName(nameStore, chrx, rID, nameStoreCache)) 
-    cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
+  if(!getIdByName(nameStore, chrn, rID, nameStoreCache)) 
+    cerr << "ERROR: Reference sequence named "<< chrn << " not known.\n";
   seqan::BamStream bamStreamIn(bamInput_file.c_str());
   map <seqan::CharString, map<int, int> > rg_lenCounts; // strata by reading group 
   size_t i = 0;
@@ -116,13 +116,13 @@ int main( int argc, char* argv[] )
   string pn = get_pn(pn_file, idx_pn);
   
   if (opt == 1) {
-    string chrx = argv[6]; 
+    string chrn = argv[6]; 
     string rg_lenCounts_file, bamInput_file;
     cerr << "reading pn: " << pn << "..................\n";
     bamInput_file = in_path + pn + "/" + pn + ".bam";
-    if (chrx != "chr0") {
-      rg_lenCounts_file = out_path + pn + ".count." + chrx + "."; /* + RG*/
-      read_pn_chr(rg_lenCounts_file, bamInput_file, chrx);
+    if (chrn != "chr0") {
+      rg_lenCounts_file = out_path + pn + ".count." + chrn + "."; /* + RG*/
+      read_pn_chr(rg_lenCounts_file, bamInput_file, chrn);
     } else {
       rg_lenCounts_file = out_path + pn + ".count."; /* + RG*/
       read_pn(rg_lenCounts_file, bamInput_file);

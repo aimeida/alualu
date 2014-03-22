@@ -192,17 +192,17 @@ int delete_search( string & bam_input, string &bai_input, string file_fa_prefix,
   //f_tmp2 << "type chr aluBegin aluEnd qName beginPos endPos pNext pNextEnd\n";
   
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
-    string chrx = *ci;
-    string file_alupos = file_alupos_prefix + chrx;
-    AluRefPos *alurefpos = new AluRefPos(file_alupos);
+    string chrn = *ci;
+    string file_alupos = file_alupos_prefix + chrn;
+    AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, 200);
     int rID = 0;
-    if (!getIdByName(nameStore, chrx, rID, nameStoreCache)) {
-      cerr << "ERROR: Reference sequence named "<< chrx << " not known.\n";
+    if (!getIdByName(nameStore, chrn, rID, nameStoreCache)) {
+      cerr << "ERROR: Reference sequence named "<< chrn << " not known.\n";
       return 1;
     }
     
-    assert (!read(faiIndex, (file_fa_prefix + chrx + ".fa").c_str()) );      
-    assert (getIdByName(faiIndex, chrx, fa_idx));
+    assert (!read(faiIndex, (file_fa_prefix + chrn + ".fa").c_str()) );      
+    assert (getIdByName(faiIndex, chrn, fa_idx));
 
     for (int count_loci = 0; ; count_loci++) {
       unsigned coverage_mean = 0;
@@ -232,7 +232,7 @@ int delete_search( string & bam_input, string &bai_input, string file_fa_prefix,
       }	
       if ( (!unknow_read_count) and (!clip_read_count)) continue;
       if ( !normalize_prob(log_p) ) continue;
-      f_tmp1 << chrx << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
+      f_tmp1 << chrn << " " << alu_flank << " " << aluBegin << " " << aluEnd << " " ;
       for (int i = 0; i < 3; i++)  f_tmp1 << log_p[i] << " " ;
       f_tmp1 << coverage_mean << " "<< mid_read_count << " " << clip_read_count << " " <<  unknow_read_count << endl;
       //cerr << endl << count_loci << " time used " << aluBegin - alu_flank << " "<< clocki.elapsed() << " " << reads_cov <<  endl;      

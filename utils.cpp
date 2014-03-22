@@ -42,7 +42,7 @@ void print_read(seqan::BamAlignmentRecord &record, ofstream &fout) {
   fout << endl;
 }
 
-void get_rID_chrx(string & bam_input, vector<string> &chrns, map<int, seqan::CharString> &rID_chrx){
+void get_rID_chrn(string & bam_input, vector<string> &chrns, map<int, seqan::CharString> &rID_chrn){
   seqan::Stream<seqan::Bgzf> inStream;
   assert (open(inStream, bam_input.c_str(), "r"));
   TNameStore      nameStore;
@@ -54,7 +54,7 @@ void get_rID_chrx(string & bam_input, vector<string> &chrns, map<int, seqan::Cha
   int rID;
   for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     assert(getIdByName(nameStore, *ci, rID, nameStoreCache));
-    rID_chrx[rID] = *ci;
+    rID_chrn[rID] = *ci;
   }  
   seqan::close(inStream);
 }
@@ -74,33 +74,27 @@ int numOfBestHits(seqan::BamAlignmentRecord &record){
   return max((int)valInt, 1);
 }
 
-seqan::CharString fasta_seq(string fa_input, string chrx, int beginPos, int endPos, bool upper){
+seqan::CharString fasta_seq(string fa_input, string chrn, int beginPos, int endPos, bool upper){
   seqan::FaiIndex faiIndex;
   assert (!read(faiIndex, fa_input.c_str()) );
   unsigned idx = 0;
-  assert (getIdByName(faiIndex, chrx, idx));
+  assert (getIdByName(faiIndex, chrn, idx));
   seqan::CharString seq;
   assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
-  if (!upper) {
-    return seq;
-  } else {
-    seqan::ModifiedString< seqan::CharString, seqan::ModView<MyUpper> > SEQ(seq);
-    return SEQ;
-  }
+  if (upper) seqan::toUpper(seq);
+  return seq;
+//    seqan::ModifiedString< seqan::CharString, seqan::ModView<MyUpper> > SEQ(seq);
+//    return SEQ;
 }
 
 seqan::CharString fasta_seq(seqan::FaiIndex &faiIndex, unsigned idx, int beginPos, int endPos, bool upper){
   seqan::CharString seq;
   assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
-  if (!upper) {
-    return seq;
-  } else {
-    seqan::ModifiedString< seqan::CharString, seqan::ModView<MyUpper> > SEQ(seq);
-    return SEQ;
-  }
+  if (upper) seqan::toUpper(seq);
+  return seq;
 }
 
-bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region) { // flank_region = 0, print this read; otherwise, print its pair
+bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region) { // flank_region = 0, print this read; otherwise, print its pair
   int that_begin = this_pos - max(flank_region, 10); 
   int that_end = this_pos + max(flank_region, 10);
   TNameStore      nameStore;
@@ -114,7 +108,7 @@ bool find_read(string &bam_input, string &bai_input, string &chrx, string &this_
   assert( !read(baiIndex, bai_input.c_str())) ;
   int rID;
   assert ( !readRecord(header, context, inStream, seqan::Bam()) ); // do i need this ??
-  assert ( getIdByName(nameStore, chrx, rID, nameStoreCache) ); // change context ??
+  assert ( getIdByName(nameStore, chrn, rID, nameStoreCache) ); // change context ??
   bool hasAlignments = false;
   jumpToRegion(inStream, hasAlignments, context, rID, that_begin, that_end, baiIndex);
   if (!hasAlignments) return false;
@@ -190,8 +184,7 @@ void RepMaskPos::print_begin(int ni){
   }
 }
 
-///// 1-based to 0-based.
-AluRefPos::AluRefPos(string file_alupos, bool use_vector) {
+AluRefPosRead::AluRefPosRead(string file_alupos, int minLen) {
   ifstream fin( file_alupos.c_str());
   if (!fin) 
     try {
@@ -199,33 +192,55 @@ AluRefPos::AluRefPos(string file_alupos, bool use_vector) {
     } catch(int e) {
       cerr << "#### ERROR #### file: "<< file_alupos << " not exists!!!" << endl;
     }     
-  string _tmp1, _tmp2, alu_type, chain;
+  string _tmp1, _tmp2, alu_type;
+  char chain;
   int bp, ep;
-  if (!use_vector) {
-    fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain;
+  while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain){
+    if (ep - bp < minLen) continue;
+    if (beginP.empty()) minP = bp;
     beginP.push(bp);
     endP.push(ep);
-    minP = bp;
-    while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain){
-      beginP.push(bp);
-      endP.push(ep);
-    }
-    maxP = ep;
-    cerr << "queue from " << file_alupos << " with " << beginP.size() << " loci, " << minP << " to " << maxP << endl;
-  } else {
-    fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain;
-    beginV.push_back(bp);
-    endV.push_back(ep);
-    minP = bp;
-    while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> chain){
-      beginV.push_back(bp);
-      endV.push_back(ep);
-    }
-    maxP = ep;
-    cerr << "vector from " << file_alupos << " with " << beginV.size() << " loci, " << minP << " to " << maxP << endl;
-  }  
+    strandP.push(chain);
+  }
+  maxP = ep;
+  cerr << "queue from " << file_alupos << " with " << beginP.size() << " loci, " << minP << " to " << maxP << endl;
   fin.close();
 }
+
+int AluRefPosRead::updatePos(int &beginPos, int &endPos){
+  if (!beginP.size()) return 0;
+  beginPos = beginP.front();
+  endPos = endP.front();
+  beginP.pop();
+  endP.pop();
+  return 1;
+}  
+
+int AluRefPosRead::updatePos(int &beginPos, int &endPos, char &chain){
+  if (!beginP.size()) return 0;
+  beginPos = beginP.front();
+  endPos = endP.front();
+  chain = strandP.front();
+  beginP.pop();
+  endP.pop();
+  strandP.pop();
+  return 1;
+}  
+
+AluRefPos::AluRefPos(string file_alupos) {
+  ifstream fin( file_alupos.c_str());
+  assert(fin);
+  string _tmp1, _tmp2, alu_type, _tmp3;
+  int bp, ep;
+  while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> _tmp3){
+    beginV.push_back(bp);
+    endV.push_back(ep);
+    typeV.push_back(alu_type);
+  }
+  fin.close();  
+}
+
+
 
 bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap, int &len_overlap){
   vector<int>::iterator bi, ei;
@@ -235,32 +250,6 @@ bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap, int &le
   }
   return false;
 }
-
-bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap, int &beginPos_match, int &endPos_match){
-  vector<int>::iterator bi, ei;
-  for (bi = beginV.begin(), ei = endV.begin(); bi != beginV.end(); bi++, ei++){
-    if ( *bi > endPos ) return false;    
-    if ( (*ei > beginPos + alu_min_overlap) and (*bi < endPos - alu_min_overlap)) {
-      beginPos_match = *bi;
-      endPos_match = *ei;
-      return true;
-    }
-  }
-  return false;    
-}
-
-bool AluRefPos::endOfChr(int p){
-  return ( (p + 100 < minP ) or (p > maxP));
-}
-
-int AluRefPos::updatePos(int &beginPos, int &endPos){
-  if (!beginP.size()) return 0;
-  beginPos = beginP.front();
-  endPos = endP.front();
-  beginP.pop();
-  endP.pop();
-  return 1;
-}  
 
 AluRefPos::~AluRefPos(void){
   beginV.clear();
