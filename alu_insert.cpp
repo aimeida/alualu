@@ -7,6 +7,7 @@
 #include <boost/timer.hpp>
 
 typedef map<int, ofstream* > MapFO;
+typedef map<string, ofstream* > MapSFO;
 typedef pair<int, string > RowInfo;
 
 #define ALU_MIN_LEN 50
@@ -139,7 +140,7 @@ void check_this_pos(list <pair<int, int> > &left_reads, list <pair<int, int> > &
   }
 }
 
-void scan_location(string file1, string file2, vector<string> &chrns){
+void read_counts_location(string file1, string file2, vector<string> &chrns){
   bool readable;
   ofstream fout(file2.c_str());
   int this_pos, next_pos, lr_num, rr_num;
@@ -179,7 +180,7 @@ void scan_location(string file1, string file2, vector<string> &chrns){
   fout.close();
 }
 
-void combine_location(string file1, string file2, int pos_dif, int count_dif){ // AND
+void join_location(string file1, string file2, int pos_dif, int count_dif){ // AND
   string chrn, chrn_pre;
   int maxCount, nowCount, pos, lr_num, rr_num, pos_pre, lr_num_pre, rr_num_pre;
   vector<int>  maxCount_pos;
@@ -222,7 +223,7 @@ void combine_location(string file1, string file2, int pos_dif, int count_dif){ /
   fout.close();
 }
 
-void filter_location_rep(string file1, string file2, RepMaskPos &repmaskPos){
+void filter_location_rep(string file1, string file2, RepMaskPos *repmaskPos){
   ifstream fin(file1.c_str());
   assert(fin);
   ofstream fout(file2.c_str());
@@ -235,10 +236,10 @@ void filter_location_rep(string file1, string file2, RepMaskPos &repmaskPos){
     ss.clear(); ss.str( line );
     ss >> chrn >> r_num >> pos_left >> pos_right;
     if (chrn != chrn_pre) {
-      bi = repmaskPos.beginP[chrn].begin();
-      ei = repmaskPos.endP[chrn].begin();
+      bi = repmaskPos->beginP[chrn].begin();
+      ei = repmaskPos->endP[chrn].begin();
       bei = 0;
-      be_size = repmaskPos.beginP[chrn].size();
+      be_size = repmaskPos->beginP[chrn].size();
     } 
     while ( pos_left >= (*ei) and bei < be_size) { bi++; ei++; bei++; }
     if ( min(*ei, pos_right) - max(*bi, pos_left) <= 0)  fout << line << endl;  // not in Alu
@@ -254,6 +255,9 @@ struct compare_row {
   }
 };
 
+bool compare_list(const RowInfo& a, const RowInfo& b) {
+  return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
+}
 
 int read_sort_by_col(string fn, int coln, bool has_header, set< RowInfo, compare_row > &rows) {
   string line, tmpv;
@@ -276,7 +280,30 @@ int read_sort_by_col(string fn, int coln, bool has_header, set< RowInfo, compare
   return rows.size();
 }
 
-void keep_alu_mate(string file1, string file2, string chrn, AluRefPos * alurefpos, string &header){
+
+int read_sort_by_col(string fn, int coln, bool has_header, list< RowInfo> &rows_list) {
+  string line, tmpv;
+  int pos;
+  stringstream ss;
+  ifstream fin( fn.c_str());
+  assert(fin); 
+  rows_list.clear();
+  if (has_header) getline(fin, line);
+  int rown = 0;
+  while (getline(fin, line)) {
+    rown++;
+    ss.clear(); ss.str( line );
+    for (int i = 0; i < coln-1; i++) ss >> tmpv;
+    ss >> pos;
+    rows_list.push_back( make_pair(pos, line) );
+  }
+  fin.close();
+  rows_list.sort(compare_list);
+  if (rows_list.size() != rown ) cerr << "##### ERROR #### " << fn << endl;
+  return rows_list.size();
+}
+
+void keep_alu_mate(string file1, string file2, AluRefPos * alurefpos, string &header){
   set< RowInfo, compare_row > rows;
   read_sort_by_col(file1, 4, !header.empty(), rows);      
   // filter reads and keep only alu_mate
@@ -311,36 +338,104 @@ void reorder_column(string fn, MapFO &fileMap, bool has_header){
   fin.close();
 }
 
+void write_all_location( vector<string> &fns, vector <int>&idx_pns, vector<string> &chrns, string file_prefix) {
+  MapSFO fileMap;
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) 
+    fileMap[*ci] = new ofstream( ( file_prefix + *ci ).c_str() );
+  ifstream fin;
+  stringstream ss;
+  string line, chrn;
+  vector <int>::iterator ii = idx_pns.begin();
+  for (vector<string>::iterator fi = fns.begin(); fi!= fns.end(); fi++, ii++){
+    fin.open( (*fi).c_str() );
+    while (getline(fin, line)) {
+      ss.clear(); ss.str( line );
+      ss >> chrn;
+      *(fileMap[chrn]) << line << " " << *ii << endl;
+    }
+    fin.close();
+  }
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
+    delete fileMap[*ci];
+    list< RowInfo> rows_list;
+    string fn = file_prefix + *ci;
+    read_sort_by_col(fn, 3, false, rows_list);      
+    ofstream fout(fn.c_str());
+    for (list< RowInfo>::iterator ri = rows_list.begin(); ri!=rows_list.end(); ri++) 
+      fout << (*ri).second << endl;
+    fout.close();
+    rows_list.clear();
+  }
+}
+
+
+void join_location2(vector<string> &chrns, string prefix_if, string prefix_of, int pa_dif, int pb_dif, int min_num_pn){
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
+    ifstream fin( (prefix_if+*ci).c_str() );
+    assert(fin);
+    ofstream fout( (prefix_of+*ci).c_str() );
+    int idx, pa, pb, num;
+    string chrn;
+    set<int> ids;
+    fin >> chrn >> num >> pa >> pb >> idx;
+    int pa_block = pa;
+    int pb_block = pb;
+    int pa_pre = pa;
+    int reads_num = num;
+    ids.insert(idx);
+    while (fin >> chrn >> num >> pa >> pb >> idx) {
+      if ( pa - pa_block <= pa_dif or abs(pb - pb_block) <= pb_dif) {  // same block
+	ids.insert(idx);
+	pb_block = max(pb_block, pb);
+	reads_num += num;
+      } else { // new block
+	if ( ids.size() >= min_num_pn)
+	  fout << pa_block << " " << pb_block << " " << ids.size() << " " << reads_num << endl;
+	ids.clear();
+	pa_block = pa;
+	pb_block = pb;
+	reads_num = num;
+      }
+      pa_pre = pa;
+    }
+    if ( ids.size() >= min_num_pn) // last block
+      fout << pa_block << " " << pb_block << " " << ids.size() << " " << reads_num << endl;
+    fin.close();
+    fout.close();
+  }
+}
+
 int main( int argc, char* argv[] )
 {
   if (argc < 2) exit(1);
   int opt, idx_pn;
   seqan::lexicalCast2(opt, argv[1]);
   string config_file = argv[2];
-  seqan::lexicalCast2(idx_pn, argv[3]);
-
-  string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
-  cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
-  string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
 
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   chrns.push_back("chrX");
   chrns.push_back("chrY");
-  map<int, seqan::CharString> rID_chrn;
-  get_rID_chrn(bam_input, chrns, rID_chrn);
-
-  string path1 = read_config(config_file, "file_alu_mate0") ;    
-  string file1_prefix = get_name(path1, pn, ".tmp1");
-  string file2_prefix = get_name(path1, pn, ".tmp2");
-  string file3_prefix = get_name(path1, pn, ".tmp3");
+  string path0 = read_config(config_file, "file_alu_mate0") ;    
+  string path1 = read_config(config_file, "file_alu_mate1") ;    
 
   boost::timer clocki;    
   clocki.restart();
 
   if (opt == 1) {    
-    string file1, file2, file3;
+    seqan::lexicalCast2(idx_pn, argv[3]);
+    string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
+    cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
+    string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+    map<int, seqan::CharString> rID_chrn;
+    get_rID_chrn(bam_input, chrns, rID_chrn);
+    
     MapFO fileMap;
+    string file1_prefix = get_name(path0, pn, ".tmp1");
+    string file2_prefix = get_name(path0, pn, ".tmp2");
+    string file3_prefix = get_name(path0, pn, ".tmp3");
+    
+    string file1, file2, file3;
     string header = "flag qname bad_chr bad_pos this_chr this_pos bad_num_hits\n"; // bad_*: potential, need check
     // step 1, about 2h
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
@@ -357,11 +452,10 @@ int main( int argc, char* argv[] )
       file1 = file1_prefix + "." + toCString(rc->second);
       file2 = file2_prefix + "." + toCString(rc->second);
       AluRefPos *alurefpos = new AluRefPos(file_alupos_prefix + toCString(rc->second));          
-      keep_alu_mate(file1, file2, toCString(rc->second), alurefpos, header);       
+      keep_alu_mate(file1, file2, alurefpos, header);       
       delete alurefpos;      
     } 
-    cerr << "searching alu mate, done\n";
-    
+    cerr << "searching alu mate, done\n";    
     // rewrite for counting 
     header = "flag qname this_chr this_pos bad_chr bad_pos bad_num_hits\n"; // bad_*: potential, need check 
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
@@ -374,7 +468,6 @@ int main( int argc, char* argv[] )
       reorder_column(file2_prefix + "." + toCString(rc->second), fileMap, true);
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) 
       delete fileMap[rc->first];    
-
     // sort by col
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
       file3 = file3_prefix + "." + toCString(rc->second);
@@ -385,17 +478,39 @@ int main( int argc, char* argv[] )
 	fout << (*ri).second << endl;
       fout.close();
     }
-
-  } else if (opt == 2) { // 1. scan for potential regions 2. filter out rep regions 
-    string file4 = get_name(path1, pn, ".tmp4" );
-    string file5 = get_name(path1, pn, ".tmp5" );
-    scan_location(file3_prefix, file3_prefix, chrns);
-    combine_location(file3_prefix, file4, 40, 2);
-    RepMaskPos repmaskPos = RepMaskPos(read_config(config_file, "file_repeatMask"), 100); // combine regions(dist < 100bp)
-    filter_location_rep(file4, file5, repmaskPos);
-    cerr << "all locations: " << file4 << "\nlocations excluding repetitive regions: " << file5 << endl;
-  }  
-  
+    // first pass for potential locations 
+    read_counts_location(file3_prefix, file3_prefix, chrns);
+  } else if (opt == 2) { // combine positions 
+    // 1. scan for potential regions 2. filter out rep regions 
+    bool repmaskPos_read = false;
+    RepMaskPos *repmaskPos;
+    map<int, string> ID_pn;
+    get_pn(read_config(config_file, "file_pn"), ID_pn);
+    vector<string> fns;
+    vector<int> idx_pns;
+    ifstream fin(read_config(config_file, "file_pnIdx_used").c_str());
+    while (fin >> idx_pn) {
+      idx_pns.push_back(idx_pn);
+      string pn = ID_pn[idx_pn];
+      string file3 = get_name(path0, pn, ".tmp3" );
+      string file4 = get_name(path0, pn, ".tmp4" );
+      string file5 = get_name(path0, pn, ".tmp5" );      
+      /*
+      join_location(file3, file4, 50, 4);
+      if (!repmaskPos_read) {
+	repmaskPos = new RepMaskPos(read_config(config_file, "file_repeatMask"), 100); // combine regions(dist < 100bp)
+	repmaskPos_read = true;
+      }
+      filter_location_rep(file4, file5, repmaskPos);
+      */
+      
+      fns.push_back(file5);
+    }
+    fin.close();
+    //write_all_location(fns, idx_pns, chrns, path1+"tmp.insert_pos.");
+    join_location2(chrns, path1+"tmp.insert_pos.", path1+"insert_pos.", 50, 20, 3);
+    
+  }
   cerr << "time used " << clocki.elapsed() << endl;
   return 0;  
 }
