@@ -43,7 +43,7 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrn, Map
     if ( record.rID != rID_pre) {
       if (same_chr_left.size() ) {  // do not print out left reads 
 	for (map<seqan::CharString, pair<int,int> >::iterator mc = same_chr_left.begin(); mc!= same_chr_left.end(); mc++)
-	  cerr << "left " << mc->first << " " << rID_pre << " " << (mc->second).first << " -1 -1 " << (mc->second).second << endl;
+	  cerr << "left " << mc->first << " " << rID_pre << " " << (mc->second).first << " -1 -1 " << (mc->second).second << " " << length(record.seq) << endl;
 	same_chr_left.clear();
       }
       cerr << "done with " << rID_chrn[rID_pre] << " " << rID_pre << endl;
@@ -52,7 +52,7 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrn, Map
     if (ia++ % 1000000 == 0) cerr << ia << " " << same_chr_left.size() << endl;
     if (record.rID != record.rNextId) { // NB: redundant! one pair read twice, thus are written twice as well
       if (rID_chrn.find(record.rNextId) != rID_chrn.end())  // both chrn exist
-	*(fileMap[record.rNextId]) << "dif_chr " << record.qName << " " << record.rNextId << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << numOfBestHits(record) <<  endl;      
+	*(fileMap[record.rNextId]) << "dif_chr " << record.qName << " " << record.rNextId << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << numOfBestHits(record) << " " << length(record.seq) << endl;      
       continue;
     }
     int hits = numOfBestHits(record);      
@@ -66,13 +66,13 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrn, Map
       sc = same_chr_left.find(record.qName);  
       if (sc == same_chr_left.end()) {   // left read is unique
 	if (hits > 1 and not_all_match(record) )
-	  *(fileMap[record.rID]) << "mul_map " << record.qName << " " << record.rID <<  " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << hits << endl;
+	  *(fileMap[record.rID]) << "mul_map " << record.qName << " " << record.rID <<  " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << hits << " " << length(record.seq) << endl;
       } else {                   // left read not multi_mapped
 	if ( (sc->second).second == FLAG_LONG) {  // NB, redundant! written twice when right reads are read
-	  *(fileMap[record.rID]) << "ilong_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " 1" << hits << endl;
-	  *(fileMap[record.rID]) << "ilong_RC " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << hits << endl;
+	  *(fileMap[record.rID]) << "ilong_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " 1" << hits << " " << length(record.seq) << endl;
+	  *(fileMap[record.rID]) << "ilong_RC " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << hits << " " << length(record.seq) << endl;
 	} else if (hits == 1) {  // at least one pair is ok
-	  *(fileMap[record.rID]) << "mul_map " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << (sc->second).second << endl;
+	  *(fileMap[record.rID]) << "mul_map " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << (sc->second).second << " " << length(record.seq)  << endl;
 	}
 	same_chr_left.erase(sc); // rm left read
       }	      
@@ -140,7 +140,7 @@ void check_this_pos(list <pair<int, int> > &left_reads, list <pair<int, int> > &
   }
 }
 
-void read_counts_location(string file1, string file2, vector<string> &chrns){
+void alumate_counts_filter(string file1, string file2, vector<string> &chrns){
   bool readable;
   ofstream fout(file2.c_str());
   int this_pos, next_pos, lr_num, rr_num;
@@ -308,32 +308,36 @@ void keep_alu_mate(string file1, string file2, AluRefPos * alurefpos, string &he
   read_sort_by_col(file1, 4, !header.empty(), rows);      
   // filter reads and keep only alu_mate
   ofstream fout(file2.c_str());
-  fout << header;
+  if (!header.empty()) fout << header << " sub_type " <<  endl;
   vector<int>::iterator bi = alurefpos->beginV.begin();
   vector<int>::iterator ei = alurefpos->endV.begin();
+  vector<string>::iterator ti = alurefpos->typeV.begin();
   int bei = 0;
-  int be_size = alurefpos->beginV.size();
+  int be_size = alurefpos->beginV.size() - 1; // -1 ! otherwise seg fault
   int left_pos, len_overlap;
-  for (set< RowInfo, compare_row >::iterator ri = rows.begin(); ri!=rows.end(); ri++) {
+  int ni = 0;
+  for (set< RowInfo, compare_row >::iterator ri = rows.begin(); ri!=rows.end(); ri++, ni++) {
     left_pos = (*ri).first;    // when to start ????
-    while ( left_pos >= (*ei) and bei < be_size) { bi++; ei++; bei++; }
+    //cout << ni << " " << rows.size() << " " << bei << " " << be_size <<  endl;
+    while ( ( left_pos >= (*ei)) and bei < be_size) { bi++; ei++; ti++; bei++; }
+    //cout << ni << " " << rows.size() << " " << (*ri).second << " " << *bi << " " << *ei << " " << *ti << " " <<  bei << " " << be_size <<  endl;
     if ( (len_overlap = min(*ei, left_pos + DEFAULT_READ_LEN) - max(*bi, left_pos)) > ALU_MIN_LEN ) 
-      fout << (*ri).second << " " << len_overlap << endl;    
+      fout << (*ri).second << " " << *ti << endl;    
   }
   fout.close();
 }
 
 void reorder_column(string fn, MapFO &fileMap, bool has_header){
-  string line, type_flag, qname;
-  int this_chr, this_pos, bad_chr, bad_pos, hits;  
+  string line, type_flag, qname, sub_type;
+  int this_chr, this_pos, bad_chr, bad_pos, hits, len_read;  
   stringstream ss;  
   ifstream fin( fn.c_str() );
   if (has_header) getline(fin, line);
   while ( getline(fin, line) ) {
     ss.clear(); ss.str( line );
-    ss >> type_flag >> qname >> bad_chr >> bad_pos >> this_chr >> this_pos >> hits;      
+    ss >> type_flag >> qname >> bad_chr >> bad_pos >> this_chr >> this_pos >> hits >> len_read >> sub_type;      
     if (type_flag == "left") continue;
-    *(fileMap[this_chr]) << type_flag << " " << qname <<" " << this_chr <<" " << this_pos <<" " << bad_chr <<" " << bad_pos <<" " << hits << endl;
+    *(fileMap[this_chr]) << type_flag << " " << qname <<" " << this_chr <<" " << this_pos <<" " << bad_chr <<" " << bad_pos <<" " << hits << " " << len_read << " " << sub_type << endl;
   }
   fin.close();
 }
@@ -418,7 +422,6 @@ int main( int argc, char* argv[] )
   chrns.push_back("chrY");
   string path0 = read_config(config_file, "file_alu_mate0") ;    
   string path1 = read_config(config_file, "file_alu_mate1") ;    
-
   boost::timer clocki;    
   clocki.restart();
 
@@ -436,50 +439,58 @@ int main( int argc, char* argv[] )
     string file3_prefix = get_name(path0, pn, ".tmp3");
     
     string file1, file2, file3;
-    string header = "flag qname bad_chr bad_pos this_chr this_pos bad_num_hits\n"; // bad_*: potential, need check
-    // step 1, about 2h
-    for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
-      file1 = file1_prefix + "." + toCString(rc->second);
-      fileMap[rc->first] = new ofstream( file1.c_str() );
-      assert(fileMap[rc->first]);
-      *(fileMap[rc->first]) << header ;
-    }
-    alu_mate_flag(bam_input, rID_chrn, fileMap);
-    // step 2, 5 min
+    string header = "flag qname bad_chr bad_pos this_chr this_pos bad_num_hits len_read"; // bad_*: potential, need check
+//   // step 1, about 2h
+//   for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
+//     file1 = file1_prefix + "." + toCString(rc->second);
+//     fileMap[rc->first] = new ofstream( file1.c_str() );
+//     assert(fileMap[rc->first]);
+//     *(fileMap[rc->first]) << header << endl;
+//   }
+//   alu_mate_flag(bam_input, rID_chrn, fileMap);
+
+   // step 2, if mate mapped to alu. 5 min. 
+   //  /debug/alu_insert 1 /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/config.properties 1
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
-      delete fileMap[rc->first];
-      file1 = file1_prefix + "." + toCString(rc->second);
-      file2 = file2_prefix + "." + toCString(rc->second);
-      AluRefPos *alurefpos = new AluRefPos(file_alupos_prefix + toCString(rc->second));          
+      //delete fileMap[rc->first];
+      string chrn = toCString(rc->second);
+      file1 = file1_prefix + "." + chrn;
+      file2 = file2_prefix + "." + chrn;
+      AluRefPos *alurefpos = new AluRefPos(file_alupos_prefix + chrn);          
       keep_alu_mate(file1, file2, alurefpos, header);       
       delete alurefpos;      
     } 
     cerr << "searching alu mate, done\n";    
-    // rewrite for counting 
-    header = "flag qname this_chr this_pos bad_chr bad_pos bad_num_hits\n"; // bad_*: potential, need check 
+    
+  // rewrite for counting, switch 2 column and sort by pos 
+    header = "flag qname this_chr this_pos bad_chr bad_pos bad_num_hits len_read sub_type"; // bad_*: potential, need check 
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
       file3 = file3_prefix + "." + toCString(rc->second);
       fileMap[rc->first] = new ofstream( file3.c_str() );
       assert(fileMap[rc->first]);
-      *(fileMap[rc->first]) << header ;      
+      *(fileMap[rc->first]) << header << endl ;      
     }    
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) 
       reorder_column(file2_prefix + "." + toCString(rc->second), fileMap, true);
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) 
       delete fileMap[rc->first];    
-    // sort by col
+
+   // sort by col
+    cerr << "sorting\n";
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
-      file3 = file3_prefix + "." + toCString(rc->second);
-      set< RowInfo, compare_row > rows;
-      read_sort_by_col(file3, 4, !header.empty(), rows);      
-      ofstream fout(file3.c_str());
-      for (set< RowInfo, compare_row >::iterator ri = rows.begin(); ri!=rows.end(); ri++) 
-	fout << (*ri).second << endl;
-      fout.close();
-    }
+     file3 = file3_prefix + "." + toCString(rc->second);
+     set< RowInfo, compare_row > rows;
+     read_sort_by_col(file3, 4, true, rows);      
+     ofstream fout(file3.c_str());
+     fout << header << endl ;      
+     for (set< RowInfo, compare_row >::iterator ri = rows.begin(); ri!=rows.end(); ri++) 
+       fout << (*ri).second << endl;
+     fout.close();
+   }
+
     // first pass for potential locations 
-    read_counts_location(file3_prefix, file3_prefix, chrns);
+    //    alumate_counts_filter(file3_prefix, file3_prefix, chrns);
   } else if (opt == 2) { // combine positions 
     // 1. scan for potential regions 2. filter out rep regions 
     bool repmaskPos_read = false;
