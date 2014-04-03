@@ -10,12 +10,15 @@ typedef map<int, ofstream* > MapFO;
 typedef map<string, ofstream* > MapSFO;
 typedef pair<int, string > RowInfo;
 
-#define ALU_MIN_LEN 50
+#define ALU_MIN_LEN 50  // min overlap in alu region
 #define DEFAULT_READ_LEN 100 // if unknown, use default
+#define CLIP_BP 10
 #define FLAG_LONG -1
 #define FLAG_RC -2
 #define DISCORDANT_LEN 1000 
+#define INS_COVERAGE_MAX 6    // approximate, not exact, remove some high coverage regions 
 #define SCAN_WIN_LEN 400  // 0.99 quantile = 400
+#define WINLEN_ONE_SIDE 500
 #define LEFT_PLUS_RIGHT 5 // minimum sum of left and right reads
 
 inline string get_name(string path, string fn, string suffix){ return path + fn + suffix;}
@@ -128,6 +131,7 @@ string major_type( map <string, int> &alu_type_count) {
     if (atc->second > max_count) max_count = atc->second;
   for (atc = alu_type_count.begin(); atc != alu_type_count.end(); atc++) 
     if (atc->second == max_count) return atc->first;
+  return "err";
 }
 
 void check_this_pos(list <READ_INFO *> &lr_reads, int this_pos, int &lr_num, int &rr_num, map <string, int> &alu_type_count){
@@ -306,7 +310,7 @@ int read_sort_by_col(string fn, int coln, bool has_header, list< RowInfo> &rows_
   assert(fin); 
   rows_list.clear();
   if (has_header) getline(fin, line);
-  int rown = 0;
+  size_t rown = 0;
   while (getline(fin, line)) {
     rown++;
     ss.clear(); ss.str( line );
@@ -390,7 +394,7 @@ void write_all_location( vector<string> &fns, vector <int>&idx_pns, vector<strin
 }
 
 
-void join_location2(vector<string> &chrns, string prefix_if, string prefix_of, int pos_dif, int min_num_pn){
+void join_location2(vector<string> &chrns, string prefix_if, string prefix_of, int pos_dif, size_t min_num_pn){
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     ifstream fin( (prefix_if+*ci).c_str() );
     assert(fin);
@@ -430,6 +434,93 @@ void join_location2(vector<string> &chrns, string prefix_if, string prefix_of, i
   }
 }
 
+bool consider_this_loci(string &line, int &ref_begin, int &ref_end, int &idx_pn_first, int idx_pn_this){
+  int n_pn, n_reads, idx_pn;
+  float coverage;
+  string alu_type;
+  stringstream ss;
+  ss.str(line);
+  ss >> ref_begin >> ref_end >> n_pn >> n_reads >> alu_type >> idx_pn_first;
+  coverage = n_reads * DEFAULT_READ_LEN / (float) n_pn / (float)(ref_end - ref_begin + SCAN_WIN_LEN * 2);
+  if ( coverage >= INS_COVERAGE_MAX ) return false;
+  if ( idx_pn_first ==  idx_pn_this) return true;
+  for (int i = 0; i < n_pn - 1; i++) {
+    ss >> idx_pn;
+    if (idx_pn_this == idx_pn) return true;
+  }
+  return false;
+}
+
+bool readbam_this_loci(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int beginPos, int endPos, seqan::BamStream &bamStreamOut, ofstream &fout, stringstream &ss){
+  bool hasAlignments = false;
+  if (!jumpToRegion(inStream, hasAlignments, context, rID, beginPos, endPos, baiIndex)) return 0;
+  if (!hasAlignments) return false;
+
+  seqan::BamAlignmentRecord record;
+  while (!atEnd(inStream)) {
+    assert (!readRecord(record, context, inStream, seqan::Bam())); 
+    if ( record.rID != rID || record.beginPos >= endPos) break;
+    if ( record.beginPos < beginPos) continue;            
+    if ( hasFlagQCNoPass(record) or hasFlagDuplicate(record) or hasFlagUnmapped(record) or hasFlagNextUnmapped(record) or (not hasFlagMultiple(record)) ) continue;
+    if ( has_soft_last(record, CLIP_BP) or has_soft_first(record, CLIP_BP)) {
+      writeRecord(bamStreamOut, record);
+      fout << ss.str() << " " << record.qName << endl;      
+    }
+  }
+  return true;
+}
+
+void write_fastq(string fout_fasta, string fin_read_bam, string fin_read_map, int idx_pn){
+  int pre_pos = 0;
+  int region_begin, region_end, idx_pn_first;
+  string chrn, line; 
+  stringstream ss;
+  seqan::Stream<seqan::Bgzf> inStream;
+  assert (open(inStream, fin_read_bam.c_str(), "r"));
+  TNameStore      nameStore;
+  TNameStoreCache nameStoreCache(nameStore);
+  TBamIOContext   context(nameStore, nameStoreCache);
+  seqan::BamHeader header;
+  seqan::BamAlignmentRecord record;
+  assert(!readRecord(header, context, inStream, seqan::Bam()) );
+  ofstream fastq_f, fastq_r;
+  string fastq_fn;
+  ifstream fin(fin_read_map.c_str());
+  while (!atEnd(inStream)) {
+    assert (!readRecord(record, context, inStream, seqan::Bam())); 
+    getline(fin, line);
+    ss.clear(); ss.str(line);
+    ss >> chrn >> region_begin >> region_end >> idx_pn_first;
+    if ( (!pre_pos) or (region_begin != pre_pos ) ) { 
+      if (pre_pos) {
+	fastq_f.close();
+	fastq_r.close();
+      }
+      fastq_fn = fout_fasta + chrn + "_"+ int_to_string(region_begin);
+      if (idx_pn_first == idx_pn) {
+	fastq_f.open( ( fastq_fn + "_f.fastq").c_str() );
+	fastq_r.open( ( fastq_fn + "_r.fastq").c_str() );
+      } else {		
+	fastq_f.open( ( fastq_fn + "_f.fastq").c_str(), ios::app);
+	fastq_r.open( ( fastq_fn + "_r.fastq").c_str(), ios::app);
+      }
+    }
+    pre_pos = region_begin;
+    //cerr << record.qName << endl;
+    if ( hasFlagRC(record) ) { 
+      reverseComplement(record.seq); 
+      reverse(record.qual);
+      writeRecord(fastq_r, record.qName, record.seq, record.qual, seqan::Fastq());
+    } else {
+      writeRecord(fastq_f, record.qName, record.seq, record.qual, seqan::Fastq());
+    }
+  }
+  fastq_f.close();
+  fastq_r.close();
+  fin.close();
+  seqan::close(inStream);
+}
+
 int main( int argc, char* argv[] )
 {
   if (argc < 2) exit(1);
@@ -439,8 +530,6 @@ int main( int argc, char* argv[] )
 
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-  chrns.push_back("chrX");
-  chrns.push_back("chrY");
   string path0 = read_config(config_file, "file_alu_mate0") ;    
   string path1 = read_config(config_file, "file_alu_mate1") ;    
   boost::timer clocki;    
@@ -448,14 +537,16 @@ int main( int argc, char* argv[] )
 
   map<int, string> ID_pn;
   get_pn(read_config(config_file, "file_pn"), ID_pn);
+  map<int, seqan::CharString> rID_chrn;
   
-
   if (opt == 1) {    
+    chrns.push_back("chrX");
+    chrns.push_back("chrY");
+
     seqan::lexicalCast2(idx_pn, argv[3]);
-    string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
+    string pn = ID_pn[idx_pn];
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
-    map<int, seqan::CharString> rID_chrn;
     get_rID_chrn(bam_input, chrns, rID_chrn);
     
     MapFO fileMap;
@@ -517,8 +608,12 @@ int main( int argc, char* argv[] )
 
     // first pass for potential locations 
     alumate_counts_filter(file3_prefix, file3_prefix, chrns);
-  } else if (opt == 2) { // combine positions 
+  } else if (opt == 2) { // combine positions from multiple individuals
+    string opt2 = "tmp3";
+    if (argc > 3) opt2 = argv[3];  // tmp3 or tmp5
     // 1. scan for potential regions 2. filter out rep regions 
+    chrns.push_back("chrX");
+    chrns.push_back("chrY");
     bool repmaskPos_read = false;
     RepMaskPos *repmaskPos;
     vector<string> fns;
@@ -531,28 +626,82 @@ int main( int argc, char* argv[] )
       string file4 = get_name(path0, pn, ".tmp4" );
       string file5 = get_name(path0, pn, ".tmp5" );      
       fns.push_back(file5);    
-      join_location(file3, file4, 50, 4);
-      if (!repmaskPos_read) {
-	repmaskPos = new RepMaskPos(read_config(config_file, "file_repeatMask"), 100); // combine regions(dist < 100bp)
-	repmaskPos_read = true;
+      if ( opt2 == "tmp3") {
+	join_location(file3, file4, 50, 4);
+	if (!repmaskPos_read) {
+	  repmaskPos = new RepMaskPos(read_config(config_file, "file_repeatMask"), 100); // combine regions(dist < 100bp)
+	  repmaskPos_read = true;
+	}
+	filter_location_rep(file4, file5, repmaskPos);
       }
-      filter_location_rep(file4, file5, repmaskPos);
     }
     fin.close();
-  } else if (opt == 3) {
-    vector<string> fns;
-    vector<int> idx_pns;
+    write_all_location(fns, idx_pns, chrns, path1+"tmp.insert_pos."); 
+    join_location2(chrns, path1+"tmp.insert_pos.", path1+"insert_pos.", 40, 3); //at least 3 pn has insertion   
+
+  } else if (opt == 3) { // run each pn seperately, write reads in insert regions 
+    seqan::lexicalCast2(idx_pn, argv[3]);
+    string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
+    string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+    string bai_input = bam_input + ".bai";  
+    seqan::BamIndex<seqan::Bai> baiIndex;
+    assert (!read(baiIndex, bai_input.c_str()));
+    TNameStore      nameStore;
+    TNameStoreCache nameStoreCache(nameStore);
+    TBamIOContext   context(nameStore, nameStoreCache);
+    seqan::BamHeader header;
+    seqan::BamAlignmentRecord record;
+    seqan::Stream<seqan::Bgzf> inStream;
+    assert(open(inStream, bam_input.c_str(), "r"));
+    assert(!readRecord(header, context, inStream, seqan::Bam()));
+    
+    get_rID_chrn(bam_input, chrns, rID_chrn);
+    string fin_ins_pos = path1 + "insert_pos.";
+    string fout_ins_read = path1 + "split_mapping_clip/";
+    system( ("mkdir " + fout_ins_read).c_str() );
+    string fout_ins_read_bam = fout_ins_read + pn + ".bam" ;
+    string fout_ins_read_map = fout_ins_read + pn + ".map" ;
+    seqan::BamStream bamStreamOut(fout_ins_read_bam.c_str(), seqan::BamStream::WRITE);
+    bamStreamOut.header = header;
+
+    ofstream fout(fout_ins_read_map.c_str());
+    string line;
+    int region_begin, region_end, check_begin, check_end, idx_pn_first;
+    
+    for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
+      string chrn = toCString(rc->second);
+      cerr << "chr " << chrn << endl;
+      ifstream fin( (fin_ins_pos + chrn).c_str());
+      while (getline(fin, line)) {
+	if ( consider_this_loci(line, region_begin, region_end, idx_pn_first, idx_pn) ) {
+	  check_begin = region_begin - WINLEN_ONE_SIDE;
+	  check_end = region_end + WINLEN_ONE_SIDE;
+	  stringstream ss;
+	  ss << chrn << " " << region_begin << " " << region_end << " " << idx_pn_first;
+	  readbam_this_loci(inStream, baiIndex, context, rc->first, check_begin, check_end, bamStreamOut, fout, ss);
+	  ss.clear();
+	}
+      }
+      fin.close();
+    }
+    fout.close();
+    seqan::close(inStream);     
+    seqan::close(bamStreamOut);
+
+  }  else if (opt == 4) { // combine reads from all pns    
+    string fin_read = path1 + "split_mapping_clip/";
+    string fout_fasta = path1 + "split_mapping/";
     ifstream fin(read_config(config_file, "file_pnIdx_used").c_str());
     while (fin >> idx_pn) {
-      idx_pns.push_back(idx_pn);
       string pn = ID_pn[idx_pn];
-      fns.push_back(get_name(path0, pn, ".tmp5") );      
+      string fin_read_bam = fin_read + pn + ".bam" ;
+      string fin_read_map = fin_read + pn + ".map" ;
+      write_fastq(fout_fasta, fin_read_bam, fin_read_map, idx_pn);
+      cerr << "done with " << pn << endl;
     }
     fin.close();
-    //write_all_location(fns, idx_pns, chrns, path1+"tmp.insert_pos."); 
-    // ## at least 3 pn has insertion
-    join_location2(chrns, path1+"tmp.insert_pos.", path1+"insert_pos.", 40, 3);    
   }
+  
   cerr << "time used " << clocki.elapsed() << endl;
   return 0;  
 }

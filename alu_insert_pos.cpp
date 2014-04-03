@@ -78,8 +78,9 @@ bool check_region_fastq(string bam_input, string bai_input, map<int, seqan::Char
       if ( hasFlagRC(record) ) { 
 	reverseComplement(record.seq); reverse(record.qual);
 	writeRecord(fastq_r, record.qName, record.seq, record.qual);
-      } 
-      writeRecord(fastq_f, record.qName, record.seq, record.qual);
+      } else { 
+	writeRecord(fastq_f, record.qName, record.seq, record.qual);
+      }
     }
   }
   seqan::close(bamStreamOut);
