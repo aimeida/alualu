@@ -18,10 +18,14 @@ typedef seqan::Dna5String TSeq;
 #define DISCORDANT_LEN 1000 
 #define INS_COVERAGE_MAX 6    // approximate, not exact, remove some high coverage regions 
 #define SCAN_WIN_LEN 400  // 0.99 quantile = 400
-#define WINLEN_ONE_SIDE 500
 #define LEFT_PLUS_RIGHT 5 // minimum sum of left and right reads
 
 inline string get_name(string path, string fn, string suffix){ return path + fn + suffix;}
+
+inline void region_to_ref_pos(int region_begin, int region_end, int &ref_begin, int &ref_end){
+  ref_begin = region_begin - DEFAULT_READ_LEN;
+  ref_end = region_end + 2 * DEFAULT_READ_LEN;
+}
 
 //write down alu_mate and flag, 
 bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrn, MapFO &fileMap){
@@ -462,20 +466,20 @@ bool consider_this_loci(string &line, int &ref_begin) {
   return false;
 }
 
-bool readbam_this_loci(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, int beginPos, int endPos, seqan::BamStream &bamStreamOut, ofstream &fout, stringstream &ss){
+bool readbam_this_loci(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, size_t ref_begin, int ref_end, seqan::BamStream &bamStreamOut, ofstream &fout, stringstream &ss){
   bool hasAlignments = false;
-  if (!jumpToRegion(inStream, hasAlignments, context, rID, beginPos, endPos, baiIndex)) return false;
+  if (!jumpToRegion(inStream, hasAlignments, context, rID, ref_begin, ref_end, baiIndex)) return false;
   if (!hasAlignments) return false;
 
   seqan::BamAlignmentRecord record;
   while (!atEnd(inStream)) {
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    if ( record.rID != rID || record.beginPos >= endPos) break;
-    if ( record.beginPos < beginPos) continue;            
+    if ( record.rID != rID || record.beginPos >= ref_end) break;
+    if ( record.beginPos + getAlignmentLengthInRef(record) <= ref_begin) continue; // has overlap with this region           
     if ( hasFlagQCNoPass(record) or hasFlagDuplicate(record) or hasFlagUnmapped(record) or hasFlagNextUnmapped(record) or (not hasFlagMultiple(record)) ) continue;
     if ( has_soft_last(record, CLIP_BP) or has_soft_first(record, CLIP_BP)) {
       writeRecord(bamStreamOut, record);
-      fout << ss.str() << " " << record.qName << endl;      
+      fout << ss.str() << " " << record.qName << " " << ref_begin << " " << ref_end << endl;      
     }
   }
   return true;
@@ -540,7 +544,7 @@ void write_fastq(string fout_fasta, string fin_read_bam, string fin_read_map, in
 }
 
 // this version only counts fastq files 
-void write_fastq(string fin_read_map, map <string, set< pair<int, int> > > & pos_of_clippedReads){
+void get_filename_fastq(string fin_read_map, map <string, set< pair<int, int> > > & pos_of_clippedReads){
   int pre_pos = 0;
   string chrn, line;
   int region_begin, region_end, idx_pn_first;
@@ -620,8 +624,7 @@ int main( int argc, char* argv[] )
   string config_file = argv[2];
 
   vector<string> chrns;
-  //for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-  for (int i = 1; i < 2; i++)  chrns.push_back("chr" + int_to_string(i) );
+  for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   string path0 = read_config(config_file, "file_alu_mate0") ;    
   string path1 = read_config(config_file, "file_alu_mate1") ;    
   boost::timer clocki;    
@@ -733,12 +736,10 @@ int main( int argc, char* argv[] )
 
   } else if (opt == 3) { // run each pn seperately, write reads in insert regions 
     seqan::lexicalCast2(idx_pn, argv[3]);
-
     string fin_ins_pos = path1 + "insert_pos.";
     string fout_ins_read = path1 + "split_mapping_clip/";   
     if ( access( fout_ins_read.c_str(), 0 ) != 0 )
-      system( ("mkdir " + fout_ins_read).c_str() );
-    
+      system( ("mkdir " + fout_ins_read).c_str() );    
     string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
@@ -757,20 +758,18 @@ int main( int argc, char* argv[] )
     string fout_ins_read_map = fout_ins_read + pn + ".map" ;
     seqan::BamStream bamStreamOut(fout_ins_read_bam.c_str(), seqan::BamStream::WRITE);
     bamStreamOut.header = header;
-
     ofstream fout(fout_ins_read_map.c_str());
-    int region_begin, region_end, check_begin, check_end, idx_pn_first;
+    int region_begin, region_end, ref_begin, ref_end, idx_pn_first;
     string line;
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
       string chrn = toCString(rc->second);
       ifstream fin( (fin_ins_pos + chrn).c_str());
       while (getline(fin, line)) {
 	if ( consider_this_loci(line, region_begin, region_end, idx_pn_first, idx_pn) ) {
-	  check_begin = region_begin - WINLEN_ONE_SIDE;
-	  check_end = region_end + WINLEN_ONE_SIDE;
+	  region_to_ref_pos(region_begin, region_end, ref_begin, ref_end);
 	  stringstream ss;
 	  ss << chrn << " " << region_begin << " " << region_end << " " << idx_pn_first;
-	  readbam_this_loci(inStream, baiIndex, context, rc->first, check_begin, check_end, bamStreamOut, fout, ss);
+	  readbam_this_loci(inStream, baiIndex, context, rc->first, ref_begin, ref_end, bamStreamOut, fout, ss);
 	  ss.clear();
 	}
       }
@@ -787,7 +786,7 @@ int main( int argc, char* argv[] )
     if ( access( fout_fasta.c_str(), 0 ) != 0 ) system( ("mkdir " + fout_fasta).c_str() );
     if ( access( fout_splazer.c_str(), 0 ) != 0 ) system( ("mkdir " + fout_splazer).c_str() );
 
-    // step 1, write fasta file
+    // step 1, write fasta file for each position 
     bool rm_old_fasta = true;
     map<string, set< pair<int, int> > > pos_of_clippedReads;    
     ifstream fin(read_config(config_file, "file_pnIdx_used").c_str());
@@ -795,13 +794,13 @@ int main( int argc, char* argv[] )
       string pn = ID_pn[idx_pn];
       string fin_read_bam = fin_read + pn + ".bam" ;
       string fin_read_map = fin_read + pn + ".map" ;
-      //write_fastq(fout_fasta, fin_read_bam, fin_read_map, idx_pn, pos_of_clippedReads, rm_old_fasta);
-      write_fastq(fin_read_map, pos_of_clippedReads); // only to update pos_of_clippedReads
+      write_fastq(fout_fasta, fin_read_bam, fin_read_map, idx_pn, pos_of_clippedReads, rm_old_fasta);
+      //get_filename_fastq(fin_read_map, pos_of_clippedReads); // only to update pos_of_clippedReads
       cout << "done with " << pn << endl;
     }
     fin.close();
 
-    // step 2, write ref_genome.fa and commands to call splazers
+    // step 2, write ref_genome.fa 
     string file_alu_cons = read_config(config_file, "file_alu_cons");
     string file_fa_prefix = read_config(config_file, "file_fa_prefix");
     seqan::FaiIndex faiIndex;
@@ -809,49 +808,49 @@ int main( int argc, char* argv[] )
     TSeq nnn;
     resize(nnn, 70, 'N');
     map<string, set< pair<int, int> > >::iterator pi;
-    map<int, string> pos_aluType;
-    
-    // following used for splazers 
-
-    string bin_splazers = read_config(config_file, "bin_splazers");
-    string param1 = "-id -i 80 -m 1 -tr 95"; // fixme: some read length is 120 bp 
-    string param2 = "-sm 20 -ep 3 -es 3 -minG 5 -of 4"; 
-    string cmd;
-    
-    ofstream fout_qsub("alu_insert_chr.txt"); 
+    map<int, string> pos_aluType;    
+    int region_begin, ref_begin, ref_end;
     for ( pi = pos_of_clippedReads.begin(); pi != pos_of_clippedReads.end(); pi++ ) {
       string chrn = pi->first;
-      fout_qsub << "sh /nfs_mount/bioinfo/users/yuq/work/Alu/stat/alu/rp_insert/alu_insert_" << chrn << ".txt\n";
-      ofstream fout_cmd( ("alu_insert_" + chrn + ".txt").c_str() );
-      //get_alu_type(path1+"insert_pos." + chrn, pos_aluType);
-      //assert (!read(faiIndex, (file_fa_prefix + chrn + ".fa").c_str()) );
-      //assert (getIdByName(faiIndex, chrn, fa_idx));
+      get_alu_type(path1+"insert_pos." + chrn, pos_aluType);
+      assert (!read(faiIndex, (file_fa_prefix + chrn + ".fa").c_str()) );
+      assert (getIdByName(faiIndex, chrn, fa_idx));
       for (set< pair<int, int> >::iterator ri = (pi->second).begin(); ri != (pi->second).end(); ri++) {
-	int region_begin =  (*ri).first;
-	int ref_begin = region_begin - WINLEN_ONE_SIDE;
-	int ref_end = (*ri).second + 2 * DEFAULT_READ_LEN;
-	string file_prefix = fout_fasta + chrn + "_" + int_to_string( (*ri).first ) + "_" + int_to_string ((*ri).second);
-	string file_ref  = file_prefix + ".fa";
-	string file_prefix2 = fout_splazer + chrn + "_" + int_to_string( (*ri).first ) + "_" + int_to_string ((*ri).second);
-
-	// 4 lines writing cmds 
-	call_splazers(cmd, bin_splazers, param1 + " -f " + param2, file_ref, file_prefix + "_f.fastq", file_prefix2 + "_f.sam");
-	fout_cmd << cmd << endl;
-	call_splazers(cmd, bin_splazers, param1 + " -r " + param2, file_ref, file_prefix + "_r.fastq", file_prefix2 + "_r.sam");
-	fout_cmd << cmd << endl;
-
-	/*
+	region_begin =  (*ri).first;
+	region_to_ref_pos(region_begin, (*ri).second, ref_begin, ref_end);
+	string file_ref = fout_fasta + chrn + "_" + int_to_string( region_begin ) + "_" + int_to_string ((*ri).second) + ".fa";
 	bool upper = true;
 	TSeq fa_seq = (TSeq)fasta_seq(faiIndex, fa_idx, ref_begin, ref_end, upper);
 	TSeq alu_seq;
 	string alu_type = parse_alu_type(pos_aluType[region_begin]);
 	read_fasta_by_name(alu_seq, file_alu_cons, alu_type); 
-	string fa_name = alu_type + "_" + int_to_string(length(alu_seq)) ;
-	write_ref(file_ref, fa_name, nnn, fa_seq, alu_seq);
+	stringstream ss;
+	ss << ref_begin << "_" << ref_end << "_" << alu_type << "_" << length(alu_seq);
+	write_ref(file_ref, ss.str(), nnn, fa_seq, alu_seq);
 	//cout << file_ref << " type " << pos_aluType[region_begin] << " " << alu_type << endl;	
-	*/
       }   
-      cout << "done with " << chrn << endl;
+    }
+    
+    // step3: write command files to call splazers
+    string bin_splazers = read_config(config_file, "bin_splazers");
+    string param1 = "-id -i 80 -m 1 -tr 95"; // fixme: some read length is 120 bp 
+    string param2 = "-sm 20 -ep 3 -es 3 -minG 5 -of 4"; 
+    string cmd;    
+    ofstream fout_qsub("alu_insert_chr.txt"); 
+    for ( pi = pos_of_clippedReads.begin(); pi != pos_of_clippedReads.end(); pi++ ) {
+      string chrn = pi->first;
+      fout_qsub << "sh /nfs_mount/bioinfo/users/yuq/work/Alu/stat/alu/rp_insert/alu_insert_" << chrn << ".txt\n";
+      ofstream fout_cmd( ("alu_insert_" + chrn + ".txt").c_str() );
+      for (set< pair<int, int> >::iterator ri = (pi->second).begin(); ri != (pi->second).end(); ri++) {
+	int region_begin = (*ri).first;
+	string file_prefix = fout_fasta + chrn + "_" + int_to_string( region_begin ) + "_" + int_to_string ((*ri).second);
+	string file_prefix2 = fout_splazer + chrn + "_" + int_to_string( region_begin ) + "_" + int_to_string ((*ri).second);
+	call_splazers(cmd, bin_splazers, param1 + " -f " + param2, file_prefix + ".fa", file_prefix + "_f.fastq", file_prefix2 + "_f.sam");
+	fout_cmd << cmd << endl;
+	call_splazers(cmd, bin_splazers, param1 + " -r " + param2, file_prefix + ".fa", file_prefix + "_r.fastq", file_prefix2 + "_r.sam");
+	fout_cmd << cmd << endl;
+      }   
+      //cout << "done with " << chrn << endl;
       fout_cmd.close();
     }
     fout_qsub.close();
