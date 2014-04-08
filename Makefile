@@ -14,13 +14,13 @@ LIB = -lz -lbz2 $(B_LIB)
 BAM2FASTQ_FILES_CPP = bam2fastq.cpp
 BAM2FASTQ_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BAM2FASTQ_FILES_CPP))
 
-ALU_DELETE_FILES_CPP = utils.cpp alu_delete.cpp common.cpp diststat.cpp
+ALU_DELETE_FILES_CPP = utils.cpp alu_delete.cpp common.cpp delete_utils.cpp
 ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
 
-ALU_INSERT_FILES_CPP = utils.cpp alu_insert.cpp common.cpp 
+ALU_INSERT_FILES_CPP = alu_insert.cpp common.cpp utils.cpp insert_utils.cpp
 ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 
-INSERT_POS_FILES_CPP = utils.cpp insert_pos.cpp common.cpp 
+INSERT_POS_FILES_CPP = insert_pos.cpp common.cpp utils.cpp insert_utils.cpp
 INSERT_POS_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INSERT_POS_FILES_CPP))
 
 ALU_HG18_FILES_CPP = utils.cpp alu_hg18.cpp common.cpp 
@@ -38,7 +38,7 @@ BUILD_DIST_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_FILES_CPP))
 FILES_CPP = *cpp *h 
 FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(FILES_CPP))
 
-TEST_FILES_CPP = alu_delete.cpp common.h diststat.h
+TEST_FILES_CPP = alu_delete.cpp common.h 
 TEST_FILES_O = $(patsubst %.cc,%.o,$(TEST_FILES_CPP))
 
 EXE ?= alu_delete build_dist
