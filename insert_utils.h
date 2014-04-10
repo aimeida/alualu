@@ -29,6 +29,9 @@ inline bool compare_list(const RowInfo& a, const RowInfo& b) {
 };
 
 bool readbam_clip(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, size_t ref_begin, int ref_end, seqan::BamStream &bamStreamOut, vector<seqan::CharString> & qnames, size_t offset);
+void write_from_bam(string path_fout, string fin_read_bam, string fin_read_map, map <string, set< pair<int, int> > > & chr_clipReads, string format);
 
+void write_fastq_seqcons(string path_fout, string fin_read_bam, string fin_read_map, map <string, set< pair<int, int> > > & chr_clipReads, string format);
+void write_fastq_seqcons_nopair(string path_fout, string fin_read_bam, string fin_read_map, map <string, set< pair<int, int> > > & chr_clipReads, string format);
 
 #endif /*INSERT_UTILS_H*/

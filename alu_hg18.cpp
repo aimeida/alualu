@@ -6,7 +6,7 @@
 #include "common.h"
 #include "utils.h"
 
-#define N_ALU 40
+#define N_ALU 100
 
 int print_align( map<int, seqan::CharString> &fa_seqs, int i, int j){
   TAlign align;
@@ -39,7 +39,7 @@ int main( int argc, char* argv[] )
   seqan::lexicalCast2(opt, argv[1]);
   string align_alu_type = argv[2]; // AluY, AluSx, AluJo, AluJb
   
-  string chrn = "chr13";
+  string chrn = "chr1";
   string config_file = "/nfs_mount/bioinfo/users/yuq/work/Alu/inputs/config.properties";
 
   string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
@@ -78,14 +78,16 @@ int main( int argc, char* argv[] )
   } else if ( opt == 2 ) {
     string file_alu = "/nfs_mount/bioinfo/users/yuq/work/Alu/outputs/grocery/alu.seq." + align_alu_type + ".fa";  
     ofstream fout(file_alu.c_str());
-    for (int i=0; i < N_ALU; ) {
+    int i = 0, skip_first_n = 50;
+    while ( i < N_ALU + skip_first_n) {      
       alurefpos->updatePos(aluBegin, aluEnd, chain, alu_type);
       if (alu_type != align_alu_type ) continue;
+      i++;
+      if (i < skip_first_n) continue;
       seqan::CharString fa = fasta_seq(faiIndex, fa_idx, aluBegin, aluEnd, true); 
       if ( chain=='-' )  seqan::reverseComplement(fa);
       string fa_name = chrn + "_" + int_to_string(aluBegin) + "_" + int_to_string(aluEnd);
       writeRecord(fout, fa_name.c_str(), fa, seqan::Fasta());      
-      i++;
     }      
     fout.close();
     cerr << "write into " << file_alu << endl;

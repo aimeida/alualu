@@ -61,9 +61,10 @@ bool check_region(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamStream &bamStr
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
     if (record.rID != rID || record.beginPos >= endPos) break;
     if (record.beginPos < beginPos) continue;            
-    if ( hasFlagQCNoPass(record) or hasFlagDuplicate(record) or hasFlagUnmapped(record) or hasFlagNextUnmapped(record) or (not hasFlagMultiple(record))) continue;
-    if ( ! hasFlagAllProper(record) )
-      writeRecord(bamStreamOut, record);
+    //if ( hasFlagQCNoPass(record) or hasFlagDuplicate(record) or hasFlagUnmapped(record) or hasFlagNextUnmapped(record) or (not hasFlagMultiple(record))) continue;
+    if ( !(QC_insert_read) )  continue;
+    ///if ( ! hasFlagAllProper(record) )  // print out all records for now
+    writeRecord(bamStreamOut, record);
   }
 }
 
@@ -101,25 +102,36 @@ int main( int argc, char* argv[] )
   string qname;
   int p, p_ref_a, p_ref_b, s, p2;
   int ref_fa = 120;
+  
 
-  p = 1574233;
-  check_region(inStream, bamStreamOut, baiIndex, context, rID, p - 200, p + 100);
-
+  // if read gap > 100 bp, might be the place of insertion
+  // possible locations: 100766800  or 100766810 ! 
+  check_region(inStream, bamStreamOut, baiIndex, context, rID, 183203676 - 600,  183203987 + 600);
   exit(0);
 
   seqan::CharString fa_seq;
   ////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////////  
-  qname = "5:25:10808:19055";
-  p = 4003788;
-  if (find_read(bam_input, bai_input, chrn, qname, p, record, 0))
-    writeRecord(bamStreamOut, record);
-  cout << "## " << not_all_match(record) << endl;
+
+//   qname = "8:93:11692:3291";
+//   p = 100766799;
+//   if (find_read(bam_input, bai_input, chrn, qname, p, record, 0))
+//     writeRecord(bamStreamOut, record);
+//   
+//   qname = "8:64:15011:5948";
+//   if (find_read(bam_input, bai_input, chrn, qname, p, record, 0))
+//     writeRecord(bamStreamOut, record);
   
-  qname = "8:110:6356:4228";
-  p = 2614214;
-  if (find_read(bam_input, bai_input, chrn, qname, p, record, 0))
-    writeRecord(bamStreamOut, record);
+  fa_seq = fasta_seq(fa_input, "chr1", 35351533, 35351633, true);
+  cout << "fa_seq: \n";
+  cout << fa_seq << endl;  
+
+  fa_seq = fasta_seq(fa_input, "chr1", 211386483, 211386583, true);
+  cout << "fa_seq: \n";
+  cout << fa_seq << endl;  
+  
+  exit(0);
+
   cout << "## " << not_all_match(record) << endl;
   ////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////////
@@ -145,7 +157,6 @@ int main( int argc, char* argv[] )
   fa_seq = fasta_seq(fa_input, "chr1", p_ref_a, p_ref_b, true);
   cout << suba.substr(27) << endl;
   cout << fa_seq << endl;  
-
 
   return 0;
 }
