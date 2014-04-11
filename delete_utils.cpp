@@ -82,12 +82,59 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluB
     }
     return useless_read; // if left reads, we don't know the type yet
   }
-      
   // only consider as mid_read if very certain, otherwise look at its pair later
   if ( endPos > aluBegin + BOUNDARY_OFFSET and beginPos < aluEnd - BOUNDARY_OFFSET) 
-    if (!not_all_match(record))  return mid_read;
-  
+    if (!not_all_match(record))  return mid_read;  
   return useless_read;  // alu_flank is too larger, we have a lot reads not useful 
+}
+
+void get_min_value(map <int, float> & m, float & min_val, int & min_key) {
+  map <int, float>::iterator mi = m.begin();
+  min_val = mi->second;
+  min_key = mi->first ;
+  mi++;
+  while ( mi != m.end() ) {
+    if ( min_val > mi->second) {
+      min_val = mi->second;
+      min_key = mi->first;
+    }
+    mi++;
+  }
+}
+
+void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){  
+  assert( max_logp_dif > 0);
+  map <int, float> idx_logp;
+  int i, min_idx;
+  for ( i = 0; i < 3; i++) idx_logp[i] = log_gp[i];
+  float min_logp;
+  get_min_value(idx_logp, min_logp, min_idx);
+  for ( i = 0; i < 3; i++) {
+    if ( idx_logp[i] - min_logp > max_logp_dif ) {
+      idx_logp[min_idx] = 1;   // set p[i] = 0 afterwards
+      min_logp = 1; 
+      break;
+    }
+  }  
+  if (min_logp > 0) { // check the two elements left
+    get_min_value(idx_logp, min_logp, min_idx);
+    for ( i = 0; i < 3; i++) { 
+      if ( idx_logp[i] < 1 and idx_logp[i] - min_logp > max_logp_dif ) {
+	idx_logp[min_idx] = 1;
+	break;
+      }
+    }
+  }
+  get_min_value(idx_logp, min_logp, min_idx);
+  //cout << "log " << min_logp << " " << max_logp_dif << " " << endl;
+  
+  float ratio_sum = 0;
+  for ( i = 0; i < 3; i++) 
+    if (idx_logp[i] < 1) ratio_sum += pow(10, (idx_logp[i] - min_logp));
+
+  for ( i = 0; i < 3; i++) {
+    if (idx_logp[i] > 0) gp[i] = 0;
+    else gp[i] = pow(10, (idx_logp[i] - min_logp)) / ratio_sum;}    
 }
 
 bool check_delete_region(string const & bam_input, string const &bai_input, string const & fa_input,  string chrn, int beginPos, int endPos ){
@@ -132,33 +179,6 @@ bool check_delete_region(string const & bam_input, string const &bai_input, stri
     for ( ii = unknow_info.begin(); ii != unknow_info.end(); ii++)
       cout << ii->first << " " << ii->second << endl;
   } 
-  return true;
-}
-
-void genotype_prob(map < string, vector<int> >  &insertlen_rg, map <string, EmpiricalPdf *> &empiricalpdf_rg, int alu_len, float *log_p){
-  for (int i = 0; i < 3; i++) log_p[i] = 0;
-  EmpiricalPdf *empiricalpdf;
-  for (map < string, vector<int> >::iterator irg=insertlen_rg.begin(); irg!=insertlen_rg.end(); irg++) {
-    empiricalpdf = empiricalpdf_rg[irg->first];
-    for (vector<int>::iterator ir = irg->second.begin(); ir != irg->second.end(); ir++ ) {
-      float p_y = empiricalpdf->pdf_obs(*ir);
-      float p_z = empiricalpdf->pdf_obs(alu_len + *ir);      
-      log_p[0] += log(p_y);
-      log_p[1] += log(0.67 * p_y + 0.33 * p_z);
-      log_p[2] += log(p_z); 
-    }
-  }
-  normalize_prob(log_p);
-}
-
-bool normalize_prob(float *log_p){
-  float r20 = exp(log_p[2] - log_p[0]); 
-  float r10 = exp(log_p[1] - log_p[0]); 
-  if ( max(r20, r10) < 1e-5 ) return false;
-  float r_sum = r20 + r10 + 1;
-  log_p[0] = 1./r_sum;
-  log_p[1] = r10/r_sum;
-  log_p[2] = r20/r_sum;
   return true;
 }
 

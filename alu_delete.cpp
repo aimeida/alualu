@@ -6,8 +6,6 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
-#define COVERAGE_HIGH 100
-
 inline string get_name_tmp(string path, string fn, string suffix){ return path + fn + suffix;}
 inline string get_name_rg(string prefix, string pn){ return prefix + "RG." + pn;}
 inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_param){ return prefix + pn + ".count." + rg + "." + pdf_param; }
@@ -123,79 +121,83 @@ int delete_search( string & bam_input, string &bai_input, string file_fa_prefix,
   return 0;
 }
 
-
-void calculate_geno_prob(){
-  float *log_p = new float[3];
-  delete log_p;
-  /*
-    int mid_read_count = 0, clip_read_count = 0, unknow_read_count = 0;
-      count_reads(special_read, mid_read_count, clip_read_count);      
-      // clip_read: evidence for deletion, mid_read: evidence for insertion
-      log_p[0] = clip_read_count * (-LOG_RATIO_UB) ; 
-      log_p[1] = (mid_read_count + clip_read_count) * log(0.5) ;
-      log_p[2] = mid_read_count * (-LOG_RATIO_UB) ; 
-      ///  other reads in rg_len      
-      for ( rl = rg_len.begin(); rl != rg_len.end(); rl++) {  
-	if (special_read.find(rl->first) != special_read.end()) continue;
-	unknow_read_count ++;
-	empiricalpdf = empiricalpdf_rg[(rl->second).first];
-	int insert_len = (rl->second).second;
-	float p_y = empiricalpdf->pdf_obs(insert_len);
-	float p_z = empiricalpdf->pdf_obs(insert_len + aluEnd - aluBegin );
-	log_p[0] += log(p_y);
-	log_p[1] += log(0.67 * p_y + 0.33 * p_z);
-	log_p[2] += log(p_z); 
-      }	
-      if ( (!unknow_read_count) and (!clip_read_count)) continue;
-      if ( !normalize_prob(log_p) ) continue;
-      */
-     ///for (int i = 0; i < 3; i++)  f_tmp1 << log_p[i] << " " ;
-}
-
-bool combine_pns_count(vector <string> &pns, string path1, string f_out){
-  map <string, MapII > del_count;
-  map <string, MapII >::iterator dc;
-  ifstream fin;
+void genoProb_by_read(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & empiricalpdf_rg){
+  // clip_read: evidence for deletion, mid_read: evidence for insertion
+  float *log10_pl = new float[3];
+  float *log10_pm = new float[3];
+  float *gp = new float[3];
+  string phred_str_l, phred_str_m;
   stringstream ss;
-  string line, chrn, tmp1, tmp2;
-  int aluBegin, aluEnd;  
-  float p0, p1, p2;
-  for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-    fin.open( get_name_tmp(path1, *pi, ".tmp1").c_str() );
-    assert(fin);
-    while ( getline(fin, line) ) {
-      ss.clear(); ss.str( line );
-      ss >> chrn >> tmp1 >> aluBegin >> aluEnd >> p0 >> p1 >> p2 ;
-      if (p1 > p0 or p2 > p0) addKey(del_count[chrn], aluBegin, p1 > p2 ? 1 : 2); 
+  string line, chrn, meanCov;
+  int aluBegin, aluEnd, midCnt, clipCnt, unknowCnt;
+  ofstream fout(fn_tmp2.c_str());
+  fout << "chr aluBegin aluEnd unknowCnt l0 l1 l2 m0 m1 m2\n";  
+  ifstream fin(fn_tmp1.c_str());
+  assert(fin);
+  getline(fin, line); // read header
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line); 
+    ss >> chrn >> aluBegin >> aluEnd >> meanCov >> midCnt >> clipCnt >> unknowCnt ;
+    // based on special reads
+    log10_pl[0] = clipCnt * (-LOG10_RATIO_UB) ; 
+    log10_pl[1] = (midCnt + clipCnt) * log10 (0.5) ;
+    log10_pl[2] = midCnt * (-LOG10_RATIO_UB) ; 
+
+    if ( unknowCnt == 0 )  {
+      if ( p00_is_dominant(log10_pl, - LOG10_RATIO_UB) ) continue;
+      fout << chrn << " " << aluBegin << " " << aluEnd << " " << unknowCnt ;
+
+      //cout << "### " << log10_pl[0] << " " << log10_pl[1] << " " << log10_pl[2] << " " << endl;
+      log10P_to_P(log10_pl, gp, LOG10_RATIO_UB);
+      //cout << "### " << gp[0] << " " << gp[1] << " " << gp[2] << " " << endl;
+      genoProb_print(gp, fout, 6);
+      genoProb_print(gp, fout, 6);
     }
-    fin.close();
-  }  
-  //float pn_chr = 2. * pns.size();
-  ofstream fout( f_out.c_str() );
-  for (  dc = del_count.begin(); dc != del_count.end(); dc++ )
-    for (MapIIt dc2 = (dc->second).begin(); dc2 != (dc->second).end(); dc2++)
-      if (dc2->second > 1) fout << dc->first << " " << dc2->first << " " << dc2->second << endl;
+
+    // use more reads by their insert length 
+    if (unknowCnt) { 
+      int insert_len, idx;
+      string token;
+      for (int i = 0; i < 3; i++)  log10_pm[i] = log10_pl[i];
+      for (int i = 0; i < unknowCnt; i++) {
+	getline(ss, token, ':');
+	seqan::lexicalCast2(idx, token);
+	getline(ss, token, ' ');
+	seqan::lexicalCast2(insert_len, token);
+
+	float p_y = empiricalpdf_rg[idx]->pdf_obs(insert_len);
+        float p_z = empiricalpdf_rg[idx]->pdf_obs(insert_len + aluEnd - aluBegin );
+	log10_pm[0] += log10 (p_y);
+        log10_pm[1] += log10 (0.67 * p_y + 0.33 * p_z);
+        log10_pm[2] += log10 (p_z); 
+      }      
+      //cout << "time2 " << log10_pm[0] << " " << log10_pm[1] << " " << log10_pm[2] << endl;
+
+      if ( p00_is_dominant(log10_pl, - LOG10_RATIO_UB) and p00_is_dominant(log10_pm, - LOG10_RATIO_UB) ) 
+	continue;
+      fout << chrn << " " << aluBegin << " " << aluEnd << " " << unknowCnt ;
+      log10P_to_P(log10_pl, gp, LOG10_RATIO_UB);
+      genoProb_print(gp, fout, 6);
+      log10P_to_P(log10_pm, gp, LOG10_RATIO_UB);
+      genoProb_print(gp, fout, 6);
+    }
+
+    fout << endl;
+  }
+  fin.close();
   fout.close();
-  return true;
+  delete log10_pl;
+  delete log10_pm;
+  delete gp;
 }
-
-string phred_log (float p) {
-  if (p) return int_to_string ( -(int)(log10 (p) * 10));
-  else return "255";
-}
-
-string phred_scaled(float p0, float p1, float p2){
-  return phred_log(p0)  + "," + phred_log(p1) + "," + phred_log(p2);
-}
-
-void combine_pns_vcf(vector <string> &pns, string path1, string f_out, vector <string> &chrns){
+ 
+void combine_pns_vcf(vector <string> &pns, string path1, string f_out, vector <string> &chrns, bool use_all_reads){
   ifstream fin;
   stringstream ss;
   string line, chrn, tmp1, tmp2;
   int aluBegin, aluEnd, cii, flag;
 
   map < pair<int, int>, map<string, string> > pos_pn_prob;
-  float p0, p1, p2;      
   map < pair<int, int>, map<string, string> >::iterator ppp;
   map<string, string>::iterator pp;
   vector <string>::iterator ci, pi;
@@ -216,26 +218,40 @@ void combine_pns_vcf(vector <string> &pns, string path1, string f_out, vector <s
   record.filter = ".";
   record.info = ".";
   record.format = ".";
-    
+  float p0, p1, p2;      
+  string t0, t1, t2, unknowCnt;
   for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
     pos_pn_prob.clear();
     for ( pi = pns.begin(); pi != pns.end(); pi++) {
-      fin.open( get_name_tmp(path1, *pi, ".tmp1").c_str() );
+      fin.open( get_name_tmp(path1, *pi, ".tmp2").c_str() );
+      getline(fin, line); 
       assert(fin);
       flag = 1;
-      while ( getline(fin, line) ) {
-	ss.clear(); ss.str( line );
-	ss >> chrn >> tmp1 >> aluBegin >> aluEnd >> p0 >> p1 >> p2 ;
-	if (chrn != *ci) {
-	  if (flag) continue;
-	  else break;
+      if (use_all_reads ) {
+	while ( getline(fin, line) ) {
+	  ss.clear(); ss.str( line );
+	  ss >> chrn >>  aluBegin >> aluEnd >> unknowCnt >> t0 >> t1 >> t2 >> p0 >> p1 >> p2 ;
+	  if (chrn != *ci) {
+	    if (flag) continue;
+	    else break;
+	  }
+	  flag = 0;
+	  if (p1 > p0 or p2 > p0) pos_pn_prob[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled(p0, p1, p2);
 	}
-	flag = 0;
-	if (p1 > p0 or p2 > p0) pos_pn_prob[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled(p0, p1, p2);
+      } else {
+	while ( getline(fin, line) ) {
+	  ss.clear(); ss.str( line );
+	  ss >> chrn >>  aluBegin >> aluEnd >> unknowCnt >> p0 >> p1 >> p2 ;
+	  if (chrn != *ci) {
+	    if (flag) continue;
+	    else break;
+	  }
+	  flag = 0;
+	  if (p1 > p0 or p2 > p0) pos_pn_prob[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled(p0, p1, p2);	
+	}
       }
       fin.close();
     }
-
     // Write out the records.
     for (ppp = pos_pn_prob.begin(); ppp != pos_pn_prob.end(); ppp++) {
       record.beginPos = (ppp->first).first;
@@ -275,7 +291,10 @@ int main( int argc, char* argv[] )
   if ( opt == 1 ) {  // write down counts 
     seqan::lexicalCast2(idx_pn, argv[3]);
     string chrn = argv[4];
-
+    if (argc != 5) {
+      cerr << "not enough parameters \n";
+      exit(0);
+    }
     string pn = ID_pn[idx_pn];
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
     if (chrn != "chr0") { chrns.clear();  chrns.push_back(chrn); }
@@ -294,7 +313,7 @@ int main( int argc, char* argv[] )
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
     string fn_tmp1 = get_name_tmp(path1, pn, ".tmp1");
     string fn_log1 = get_name_tmp(path1, pn, ".log1");
-    delete_search(bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
+    // delete_search(bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
     if ( chrn != "chr0") 
       return 0;
     // step 2: calculate prob
@@ -305,22 +324,20 @@ int main( int argc, char* argv[] )
     while (fin >> rg) 
       empiricalpdf_rg[rg_to_idx[rg]] = new EmpiricalPdf( get_name_rg_pdf(file_dist_prefix, pn, rg, pdf_param));
     fin.close();
-    // calculate_geno_prob(fn_tmp1, fn_tmp2, rg_to_idx, empiricalpdf_rg); 
+    genoProb_by_read(fn_tmp1, fn_tmp2, empiricalpdf_rg); 
     for (map <int, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
       //cout << ri->first << " " << (ri->second)->pdf_obs(300) << " " << (ri->second)->pdf_obs(400) << endl;
       delete ri->second;
     
   } else if (opt == 2) {   // filter candidate
+
     vector <string> pns;
     ifstream fin(read_config(config_file, "file_pnIdx_used").c_str());
     while (fin >> idx_pn) pns.push_back( ID_pn[idx_pn]);
     fin.close();
     //print_vec(pns);
-    string f_out = path1+"test_pn";
-    //combine_pns_count(pns, path1, f_out); 
-    f_out = path1+"test_vcf";
-    combine_pns_vcf(pns, path1, f_out, chrns);
-    cerr << "output to " << f_out << endl;
+    combine_pns_vcf(pns, path1, path1+"test_mr_vcf", chrns, true);
+    combine_pns_vcf(pns, path1, path1+"test_lr_vcf", chrns, false);
 
   } else if (opt == 3) { // debugging and manually check some regions 
     string pn = "AACXPPZ";
