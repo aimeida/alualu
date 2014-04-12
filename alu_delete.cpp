@@ -59,7 +59,7 @@ int check_chr_alupos(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan
   return 1;
 }
 
-int delete_search( string & bam_input, string &bai_input, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_prefix, int coverage_max, map<string, int> &rg_to_idx) {    
+int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_prefix, int coverage_max, map<string, int> &rg_to_idx) {    
   // Open BGZF Stream for reading.
   seqan::Stream<seqan::Bgzf> inStream;
   if (!open(inStream, bam_input.c_str(), "r")) {
@@ -88,7 +88,7 @@ int delete_search( string & bam_input, string &bai_input, string file_fa_prefix,
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrn = *ci;
     string file_alupos = file_alupos_prefix + chrn;
-    AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, 200);
+    AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, minLen_alu_del); // default 200
     int rID = 0;
     if (!getIdByName(nameStore, chrn, rID, nameStoreCache)) {
       cerr << "ERROR: Reference sequence named "<< chrn << " not known.\n";
@@ -374,6 +374,8 @@ int main( int argc, char* argv[] )
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
     string fn_tmp1 = get_name_tmp(path1, pn, ".tmp1");
     string fn_log1 = get_name_tmp(path1, pn, ".log1");
+    int minLen_alu_del; // 200
+    seqan::lexicalCast2(minLen_alu_del, (read_config(config_file, "minLen_alu_del")));
     // delete_search(bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
     if ( chrn != "chr0") 
       return 0;
