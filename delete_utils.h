@@ -9,13 +9,21 @@
 #define DELETE_UTILS_H
 
 #define DEFAULT_READ_LEN 100 // if unknown, use default
-#define LOG10_RATIO_UB 5 // max log(OR) for a single read, estimated from quantile(0.95)/quantile(0.05), 1e3 to 1e4
+#define LOG10_RATIO_UB 3 // max log(OR) for a single read, estimated from quantile(0.95)/quantile(0.05), 1e3 to 1e4
+#define LOG10_GENO_PROB 5 // min genotype prob 
 #define ALU_FLANK 600
 #define BOUNDARY_OFFSET 10 
 #define CLIP_BP 10  // min length to be called soft clip 
 #define COVERAGE_HIGH 90
 
 enum T_READ {useless_read, unknow_read, mid_read, clip_read};
+
+class GENO_PROB {
+ public:
+  float g0, g1, g2;
+ GENO_PROB(float g0, float g1, float g2) : g0(g0), g1(g1), g2(g2) {}
+};
+
 
 inline int min_align_score(int align_len) { return round(0.75 * align_len - 2);}
 inline void genoProb_print(float *gp, ostream & os, int precision){ os << " " << setprecision(precision) << gp[0] << " " << gp[1] << " " << gp[2]; }
