@@ -19,6 +19,7 @@ void count_reads(map <seqan::CharString, T_READ> &special_read, map < T_READ, in
 int check_chr_alupos(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, seqan::FaiIndex &faiIndex, unsigned fa_idx, map <string, int> &rg_to_idx, TBamIOContext &context, int rID, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &special_read,  string &rg_str){
   
   special_read.clear();
+  map <string, int>::iterator rgi;
   stringstream rg_ss;
 
   bool hasAlignments = false;
@@ -46,7 +47,10 @@ int check_chr_alupos(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan
 	seqan::BamTagsDict tags(record.tags);
 	unsigned idx_rg;
 	assert (findTagKey(idx_rg, tags, "RG"));
-	rg_ss << rg_to_idx[seqan::toCString(getTagValue(tags, idx_rg))] << ":" << abs(record.tLen) << " ";
+	if (  (rgi = rg_to_idx.find(seqan::toCString(getTagValue(tags, idx_rg)))) != rg_to_idx.end() ) 
+	  rg_ss << rgi->second << ":" << abs(record.tLen) << " ";
+	else
+	  rg_ss <<  "0:" << abs(record.tLen) << " ";  // rare rg, no dist information. use group 0 as default 
     }	    
     /*    if ( rt_val == clip_read ) 
 	  if ( rt_val == useless_read and (!read_is_left) )  
@@ -376,7 +380,7 @@ int main( int argc, char* argv[] )
     string fn_log1 = get_name_tmp(path1, pn, ".log1");
     int minLen_alu_del; // 200
     seqan::lexicalCast2(minLen_alu_del, (read_config(config_file, "minLen_alu_del")));
-    // delete_search(bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
+    delete_search(minLen_alu_del, bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
     if ( chrn != "chr0") 
       return 0;
     // step 2: calculate prob
@@ -430,15 +434,15 @@ int main( int argc, char* argv[] )
 
     // check some regions 
     // genotype call /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/jon_chr0/pn1.check
-    pn = "AAFDUTV";
-    chrn = "chr3";
-    int pa = 160911683;
-    int pb = 160911872;
+    pn = "AADTNQN";
+    chrn = "chr4";
+    int pa = 73004592;
+    int pb = 73004888;
     bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     bai_input = bam_input + ".bai";  
     fa_input = file_fa_prefix + chrn + ".fa";    
     check_delete_region(bam_input, bai_input, fa_input, chrn, pa - 600,  pb + 600);
-    
+
   }
 
   cout << "time used " << clocki.elapsed() << endl;
