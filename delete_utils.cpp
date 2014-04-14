@@ -158,26 +158,21 @@ bool check_delete_region(string const & bam_input, string const &bai_input, stri
   if (!jumpToRegion(inStream, hasAlignments, context, rID, beginPos, endPos, baiIndex)) return false;
   if (!hasAlignments) return false;
 
-  map <seqan::CharString, T_READ> special_read;  
-  map <seqan::CharString, string> unknow_info;
-  map <seqan::CharString, string> special_info;
-
-  //int aluBegin = beginPos + 600;
-  //int aluEnd = endPos - 600;
+  int aluBegin = beginPos + 600;
+  int aluEnd = endPos - 600;
 
   while (!atEnd(inStream)) {
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
     if (record.rID != rID || record.beginPos >= endPos) break;
     if (record.beginPos < beginPos) continue;            
     if ( !QC_delete_read(record) ) continue;
-    //int align_len = getAlignmentLengthInRef(record);    
-
-    map <seqan::CharString, string>::iterator ii;
-    cout << special_info.size() << " " << unknow_info.size() << endl;
-    for ( ii = special_info.begin(); ii != special_info.end(); ii++)
-      cout << ii->first << " " << ii->second << endl;
-    for ( ii = unknow_info.begin(); ii != unknow_info.end(); ii++)
-      cout << ii->first << " " << ii->second << endl;
+    int align_len = getAlignmentLengthInRef(record);    
+    bool read_is_left = left_read(record);
+    T_READ rt_val = classify_read( record, align_len, aluBegin, aluEnd, faiIndex, fa_idx, read_is_left);
+    if (rt_val != useless_read) {
+      cout << aluBegin << " " << aluEnd << " " ;
+      print_read(record, cout);
+    }
   } 
   return true;
 }

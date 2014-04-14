@@ -124,20 +124,17 @@ int main( int argc, char* argv[] )
   string bamInput_file = read_config(config_file, "file_bam_prefix") + pn + ".bam";  
   string rg_lenCnt_file = path_count + pn + ".count."; /* + RG*/
 
-  //cout << "counting: " << pn << " now\n";
   if (chrn != "chr0") {
     rg_lenCnt_file += chrn + "."; /* + RG*/
     read_pn_chr(rg_lenCnt_file, bamInput_file, chrn);
   } else {
     map <seqan::CharString, map<int, int> > rg_lenCnt; // strata by reading group 
     read_pn(rg_lenCnt, bamInput_file, 5e3, 5e7);  // use only 5% reads to estimate
-
-    cout << rg_lenCnt_file << endl;
+    
     write_counts(rg_lenCnt, rg_lenCnt_file); 
-    // write down rg groups 
     ofstream fout( (path_prob + "RG." + pn).c_str()); 
     for (map <seqan::CharString, map<int, int> >::iterator ri = rg_lenCnt.begin(); ri != rg_lenCnt.end(); ri++ )
-      fout << ri->first << endl; 
+      fout << seqan::toCString(ri->first) << endl;  // need to use toCString, otherwise has ^@ in the ending (due to binary file)
     fout.close(); 
   }
   

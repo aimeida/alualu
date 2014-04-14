@@ -28,6 +28,8 @@ inline bool compare_list(const RowInfo& a, const RowInfo& b) {
   return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
 };
 
+
+bool alu_mate_flag_slow( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &fileMap); // consider too many possibilities 
 bool readbam_clip(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, size_t ref_begin, int ref_end, seqan::BamStream &bamStreamOut, vector<seqan::CharString> & qnames, size_t offset);
 void write_from_bam(string path_fout, string fin_read_bam, string fin_read_map, map <string, set< pair<int, int> > > & chr_clipReads, string format);
 

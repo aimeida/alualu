@@ -24,69 +24,6 @@ inline void region_to_ref_pos(int region_begin, int region_end, int &ref_begin, 
   ref_end = region_end + 2 * DEFAULT_READ_LEN;
 }
 
-//write down alu_mate and flag, 
-bool alu_mate_flag( string bam_input, map<int, seqan::CharString> &rID_chrn, MapFO &fileMap){
-  seqan::Stream<seqan::Bgzf> inStream;
-  assert (open(inStream, bam_input.c_str(), "r"));
-  TNameStore      nameStore;
-  TNameStoreCache nameStoreCache(nameStore);
-  TBamIOContext   context(nameStore, nameStoreCache);
-  seqan::BamHeader header;
-  seqan::BamAlignmentRecord record;
-  assert(!readRecord(header, context, inStream, seqan::Bam()) );
-
-  int rID_pre = -1, ia = 0;
-  map<seqan::CharString, pair<int,int> > same_chr_left; // value: (pos, count)
-  map<seqan::CharString, pair<int,int> >::iterator sc;
-
-  while (!atEnd(inStream)) {
-    assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    if ( !QC_insert_read(record) ) continue;
-    if ( rID_chrn.find(record.rID) == rID_chrn.end() ) continue;
-    if ( record.rID != rID_pre) {
-      if (same_chr_left.size() ) {  // do not print out left reads 
-	for (map<seqan::CharString, pair<int,int> >::iterator mc = same_chr_left.begin(); mc!= same_chr_left.end(); mc++)
-	  cerr << "left " << mc->first << " " << rID_pre << " " << (mc->second).first << " -1 -1 " << (mc->second).second << " " << length(record.seq) << endl;
-	same_chr_left.clear();
-      }
-      cerr << "done with " << rID_chrn[rID_pre] << " " << rID_pre << endl;
-      rID_pre = record.rID;	
-    }       
-    if (ia++ % 1000000 == 0) cerr << ia << " " << same_chr_left.size() << endl;
-    if (record.rID != record.rNextId) { // NB: redundant! one pair read twice, thus are written twice as well
-      if (rID_chrn.find(record.rNextId) != rID_chrn.end())  // both chrn exist
-	*(fileMap[record.rNextId]) << "dif_chr " << record.qName << " " << record.rNextId << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << numOfBestHits(record) << " " << length(record.seq) << endl;      
-      continue;
-    }
-    int hits = numOfBestHits(record);      
-    if (record.beginPos < record.pNext) {	// left read
-      if ( hits > 1 and not_all_match(record) ) { 
-	same_chr_left[record.qName] = make_pair(record.beginPos, hits);
-      } else if ( (abs(record.tLen) > DISCORDANT_LEN ) or (hasFlagNextRC(record) == hasFlagRC(record))) {  // here to define iLong_RC
-	same_chr_left[record.qName] = make_pair(record.beginPos, FLAG_LONG); // non-redundant
-      }	
-    } else if (record.beginPos > record.pNext) { // right read
-      sc = same_chr_left.find(record.qName);  
-      
-      if (sc == same_chr_left.end()) {   // left read is unique
-	if (hits > 1 and not_all_match(record) )
-	  *(fileMap[record.rID]) << "mul_map " << record.qName << " " << record.rID <<  " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << hits << " " << length(record.seq) << endl;
-      } else {                   // left read not multi_mapped
-	if ( (sc->second).second == FLAG_LONG) {  // NB, redundant! written twice when right reads are read
-	  *(fileMap[record.rID]) << "ilong_RC " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " 1" << hits << " " << length(record.seq) << endl;
-	  *(fileMap[record.rID]) << "ilong_RC " << record.qName << " " << record.rID << " " << record.beginPos << " " << record.rID << " " << record.pNext << " " << hits << " " << length(record.seq) << endl;
-	} else if (hits == 1) {  // at least one pair is ok
-	  *(fileMap[record.rID]) << "mul_map " << record.qName << " " << record.rID << " " << record.pNext << " " << record.rID << " " << record.beginPos << " " << (sc->second).second << " " << length(record.seq)  << endl;
-	}
-	same_chr_left.erase(sc); // rm left read
-      }
-     
-    }    
-  } 
-  seqan::close(inStream);     
-  return 0;
-}
-
 void read_line(ifstream &fin, list< READ_INFO *> &lr_reads, bool &readable){
   string line, type_flag, qname, alu_type;
   int this_chr, this_pos, bad_chr, bad_pos, hits, len_read;  
@@ -600,8 +537,8 @@ int main( int argc, char* argv[] )
   if (opt == 1) {    
     chrns.push_back("chrX");
     chrns.push_back("chrY");
-
     seqan::lexicalCast2(idx_pn, argv[3]);
+
     string pn = ID_pn[idx_pn];
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
@@ -614,7 +551,7 @@ int main( int argc, char* argv[] )
     
     string file1, file2, file3;
     string header = "flag qname bad_chr bad_pos this_chr this_pos bad_num_hits len_read"; // bad_*: potential, need check
-    /*
+
     // step 1, about 2h
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
       file1 = file1_prefix + "." + toCString(rc->second);
@@ -622,12 +559,13 @@ int main( int argc, char* argv[] )
       assert(fileMap[rc->first]);
       *(fileMap[rc->first]) << header << endl;
     }
-    alu_mate_flag(bam_input, rID_chrn, fileMap);
+    alu_mate_flag_slow(bam_input, rID_chrn, fileMap);
+    cerr << "read records, done\n";    
 
    // step 2, if mate mapped to alu. 5 min. 
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
-      //delete fileMap[rc->first];
+      delete fileMap[rc->first];
       string chrn = toCString(rc->second);
       file1 = file1_prefix + "." + chrn;
       file2 = file2_prefix + "." + chrn;
@@ -635,7 +573,7 @@ int main( int argc, char* argv[] )
       keep_alu_mate(file1, file2, alurefpos, header);       
       delete alurefpos;      
     } 
-    cerr << "searching alu mate, done\n";    
+    cerr << "filter alu mate, done\n";    
     
   // rewrite for counting, switch 2 column and sort by pos 
     header = "flag qname this_chr this_pos bad_chr bad_pos bad_num_hits len_read sub_type"; // bad_*: potential, need check 
@@ -649,9 +587,8 @@ int main( int argc, char* argv[] )
       reorder_column(file2_prefix + "." + toCString(rc->second), fileMap, true);
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) 
       delete fileMap[rc->first];    
-
    // sort by col
-    cerr << "sorting\n";
+    cerr << "sorting starts \n";
     for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
      file3 = file3_prefix + "." + toCString(rc->second);
      set< RowInfo, compare_row > rows;
@@ -662,10 +599,10 @@ int main( int argc, char* argv[] )
        fout << (*ri).second << endl;
      fout.close();
    }
-    */
-
+    cerr << "rewrite files and sorting done \n";
     // first pass for potential locations 
     alumate_counts_filter(file3_prefix, file3_prefix, chrns);
+    
   } else if (opt == 2) { // combine positions from multiple individuals
     string opt2 = "tmp3";
     if (argc > 3) opt2 = argv[3];  // tmp3 or tmp5
@@ -752,7 +689,6 @@ int main( int argc, char* argv[] )
     if ( access( fout_fa.c_str(), 0 ) != 0 ) system( ("mkdir " + fout_fa).c_str() );
 
     // step 1, write reads info for each position 
-    bool rm_old_fasta = true;
     map<string, set< pair<int, int> > > chr_clipReads;    
     ifstream fin(read_config(config_file, "file_pnIdx_used").c_str());
     while (fin >> idx_pn) {
@@ -762,6 +698,7 @@ int main( int argc, char* argv[] )
       /** fastq files of broken reads, distinguish forward and RC reads 
 	  useful if the last N bp of a read should be removed while calling splazers 
       */
+      //bool rm_old_fasta = true;
       //write_fastq_fr(fout_fastq, fin_read_bam, fin_read_map, idx_pn, chr_clipReads, rm_old_fasta);
       /* new version, write either fastq or fasta files for broken reads */      
       write_from_bam(fout_fa, fin_read_bam, fin_read_map, chr_clipReads, "fa");
