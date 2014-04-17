@@ -1,12 +1,97 @@
 // utils function for alu_insert 
 #include "insert_utils.h"
 
-//write down alu_mate and flag, 
-bool alu_mate_flag_slow( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &fileMap){
-  /* it considers ilong_RC, dif_chr and mul_map. too many cases and therefore might be slow
-     eg: count for chr1, 1320803 dif_chr, 127630 ilong_RC, 18 mul_map
-     to improve: ignore mul_map !!
-  */
+bool alu_mate_flag( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &fileMap){
+  seqan::Stream<seqan::Bgzf> inStream;
+  assert (open(inStream, bam_input.c_str(), "r"));
+  TNameStore      nameStore;
+  TNameStoreCache nameStoreCache(nameStore);
+  TBamIOContext   context(nameStore, nameStoreCache);
+  seqan::BamHeader header;
+  seqan::BamAlignmentRecord record;
+  assert(!readRecord(header, context, inStream, seqan::Bam()) );
+
+  int rID_pre = -1, ia = 0;
+  while (!atEnd(inStream)) {
+    assert (!readRecord(record, context, inStream, seqan::Bam())); 
+    if ( !QC_insert_read(record) ) continue;
+    if ( rID_chrn.find(record.rID) == rID_chrn.end() ) continue;
+    if ( record.rID != rID_pre) {
+      if (rID_pre > -1) {
+	cerr << "done with " << rID_pre << endl; 
+      }
+      rID_pre = record.rID;	
+    }       
+    if (ia++ % 1000000 == 0) cerr << ia << " " << endl;
+    int len_seq = length(record.seq);
+    if ( getAlignmentLengthInRef(record) < (size_t)(len_seq - 10)) continue; // want very good quality reads 
+    if (record.rID < record.rNextId and rID_chrn.find(record.rNextId) != rID_chrn.end() ) { 
+      *(fileMap[record.rNextId]) << "dif_chr " << record.qName << " " << record.rNextId << " " << record.pNext << " " 
+				 << record.rID << " " << record.beginPos << " " << len_seq << endl;      
+      *(fileMap[record.rID]) << "dif_chr " << record.qName << " " << record.rID << " " << record.beginPos << " " 
+				 << record.rNextId << " " << record.pNext << " " << len_seq << endl;            
+      continue;
+    } 
+
+    if (record.rID == record.rNextId and record.beginPos < record.pNext) { 
+      if (abs(record.tLen) > DISCORDANT_LEN) {
+	*(fileMap[record.rID]) << "ilong " << record.qName << " " << record.rID << " " << record.pNext << " " 
+			       << record.rID << " " << record.beginPos << " " << len_seq << endl;      
+	*(fileMap[record.rID]) << "ilong " << record.qName << " " << record.rID << " " << record.beginPos << " " 
+			       << record.rID << " " << record.pNext << " " << len_seq << endl;      
+      }    
+    }
+  }
+  seqan::close(inStream);     
+  return 0;
+}
+
+bool coverage_idx_pass(string &line, int &ref_begin, int &ref_end, int idx_pn_this){
+  int n_pn, n_reads, idx_pn;
+  float coverage;
+  string alu_type;
+  stringstream ss;
+  ss.str(line);
+  ss >> ref_begin >> ref_end >> n_pn >> n_reads >> alu_type ;
+  coverage = n_reads * DEFAULT_READ_LEN / (float) n_pn / (float)(ref_end - ref_begin + SCAN_WIN_LEN * 2);
+  if ( coverage >= INS_COVERAGE_MAX ) return false;
+  for (int i = 0; i < n_pn  ; i++) {
+    ss >> idx_pn;
+    if (idx_pn_this == idx_pn) return true;
+  }
+  return false;
+}
+
+// only support 4 types for now 
+string parse_alu_type(string alu_name){
+  assert ( !alu_name.empty() );
+  if ( alu_name.substr(0,4) == "AluY") return "AluY";
+  if ( alu_name.substr(0,4) == "AluS") return "AluSx";
+  if ( alu_name.substr(0,4) == "AluJ") {
+    if ( alu_name.substr(0,5) == "AluJo") return "AluJo";
+    if ( alu_name.substr(0,5) == "AluJb") return "AluJb";
+    return "AluJo";
+  }
+  return "AluY";
+}
+
+void get_alu_type(string fn, map<int, string> &pos_aluType){
+  stringstream ss;
+  int region_begin, region_end;
+  string line, tmp1, tmp2, alu_type;   
+  pos_aluType.clear();
+  ifstream fin(fn.c_str());
+  while (getline(fin, line)) {
+    ss.clear(); ss.str( line );
+    ss >> region_begin >> region_end >> tmp1 >> tmp2 >> alu_type;
+    pos_aluType[region_begin] = alu_type;
+  }
+  fin.close();
+}
+
+/** it considers ilong_RC, dif_chr and mul_map. too many cases and therefore might be slow
+    eg: count for chr1, 1320803 dif_chr, 127630 ilong_RC, 18 mul_map */
+bool alu_mate_flag_depreciate( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &fileMap){
   seqan::Stream<seqan::Bgzf> inStream;
   assert (open(inStream, bam_input.c_str(), "r"));
   TNameStore      nameStore;
@@ -69,95 +154,3 @@ bool alu_mate_flag_slow( string bam_input, map<int, seqan::CharString> const &rI
   return 0;
 }
 
-bool readbam_clip(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, size_t ref_begin, int ref_end, seqan::BamStream &bamStreamOut, vector<seqan::CharString> & qnames, size_t offset){
-  bool hasAlignments = false;
-  if (!jumpToRegion(inStream, hasAlignments, context, rID, ref_begin, ref_end, baiIndex)) return false;
-  if (!hasAlignments) return false;
-  seqan::BamAlignmentRecord record;
-  while (!atEnd(inStream)) {
-    assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    if ( record.rID != rID || record.beginPos >= ref_end) break;
-    if ( record.beginPos + getAlignmentLengthInRef(record) <= ref_begin) continue; // has overlap with this region           
-    if ( hasFlagQCNoPass(record) or hasFlagDuplicate(record) or hasFlagUnmapped(record) or hasFlagNextUnmapped(record) or (not hasFlagMultiple(record)) ) continue;
-    if ( has_soft_last(record, offset) or has_soft_first(record, offset) ) {
-      writeRecord(bamStreamOut, record);
-      qnames.push_back(record.qName);
-    }
-  }
-  return true;
-}
-
-void write_from_bam(string path_fout, string fin_read_bam, string fin_read_map, map <string, set< pair<int, int> > > & chr_clipReads, string format) {
-  int pre_pos = 0;
-  int region_begin, region_end;
-  string chrn, line; 
-  stringstream ss;
-  ofstream fout;
-
-  seqan::Stream<seqan::Bgzf> inStream;
-  assert (open(inStream, fin_read_bam.c_str(), "r"));
-  TNameStore      nameStore;
-  TNameStoreCache nameStoreCache(nameStore);
-  TBamIOContext   context(nameStore, nameStoreCache);
-  seqan::BamHeader header;
-  seqan::BamAlignmentRecord record;
-  assert(!readRecord(header, context, inStream, seqan::Bam()) );
-  ifstream fin(fin_read_map.c_str());
-  while (!atEnd(inStream)) {
-    assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    getline(fin, line);
-    ss.clear(); ss.str(line);
-    ss >> chrn >> region_begin >> region_end; // ignore rest of the row 
-    if ( (!pre_pos) or (region_begin != pre_pos ) ) { 
-      if (pre_pos)
-	fout.close();	
-      string fout_reads = path_fout + chrn + "_"+ int_to_string(region_begin) + "_"+ int_to_string(region_end) + "." + format;
-      if ( chr_clipReads[chrn].find( make_pair(region_begin, region_end) ) == chr_clipReads[chrn].end()) {
-	fout.open( fout_reads.c_str() );
-	chr_clipReads[chrn].insert( make_pair(region_begin, region_end) );
-      } else {
-	fout.open( fout_reads.c_str(), ios::app); 	
-      }
-    }
-    pre_pos = region_begin;
-    if (format == "fastq")
-      writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
-    else if  (format == "fa")
-      writeRecord(fout, record.qName, record.seq, seqan::Fasta());
-    else 
-      cerr <<  "unknown option. Only support fastq or fa format\n";
-  }
-  fin.close();
-  fout.close();
-  seqan::close(inStream);
-}
-
-
-// called by seqcons. eg:  611,634[id=ReadId,fragId=PairId,repeatId=0]
-// also need: simulated_reads.fastaF file. eg: >0[libId=1] mean, sd(libSize)
-// output record.tLen can be wrong !! set simulate data example 
-void write_fastq_seqcons(string path_fout, string fin_read_bam, string fin_read_map, map <string, set< pair<int, int> > > & chr_clipReads, string format) {
-  // NB THINK, what the input should be !
-  /*
-   >15,50[id=0,fragId=0,repeatId=0]
-TCACCAGCGCATAACACCTCTCACAACTCCCATTG
-    >1,39[id=1,fragId=1,repeatId=0]
-AAAGTCTGTGGACATCACCAGCGCATAACACCTCTCAC
-    >3,38[id=2,fragId=2,repeatId=0]
-AGTCTGTGGACATCACCAGCGCATAACACCTCTCA
-    >8,43[id=3,fragId=3,repeatId=0]
-  */  
-}
-
-void write_fastq_seqcons_nopair(string path_fout, string fin_read_bam, string fin_read_map, map <string, set< pair<int, int> > > & chr_clipReads, string format) {
-  // NB THINK, what the input should be !
-  /*
-   >15,50[id=0,fragId=0,repeatId=0]
-TCACCAGCGCATAACACCTCTCACAACTCCCATTG
-    >1,39[id=1,fragId=1,repeatId=0]
-AAAGTCTGTGGACATCACCAGCGCATAACACCTCTCAC
-    >3,38[id=2,fragId=2,repeatId=0]
-AGTCTGTGGACATCACCAGCGCATAACACCTCTCA
-    >8,43[id=3,fragId=3,repeatId=0]
-  */  
-}

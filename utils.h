@@ -19,15 +19,18 @@ struct MyUpper : public unary_function<char,char> {
   }
 };
 
-// without inline, compile error
+inline void check_folder_exists(string & path) {
+  if ( access( path.c_str(), 0 ) != 0 ) system( ("mkdir " + path).c_str() );    
+};
 inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);};
 
-inline bool QC_delete_read( seqan::BamAlignmentRecord &record){  // if this read is counted in calculating coverage
+// if this read is counted in calculating coverage
+inline bool QC_delete_read( seqan::BamAlignmentRecord &record){  
   return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and hasFlagAllProper(record) and abs(record.tLen) <= 2000);
   /// BAM_FLAG_ALL_PROPER: 0x0002 All fragments have been aligned properly.
 };
 
-inline bool QC_insert_read( seqan::BamAlignmentRecord &record){  // if this read is counted in calculating coverage
+inline bool QC_insert_read( seqan::BamAlignmentRecord &record){  
   return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and (!hasFlagUnmapped(record)) and (!hasFlagNextUnmapped(record)));
   // what about  ( ! hasFlagAllProper(record) )  ???
   //// useless FLAG ==> if (hasFlagSecondary(record)) writeRecord(bamStreamOut, record);

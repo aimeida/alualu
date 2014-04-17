@@ -63,6 +63,7 @@ void read_pn_chr(string &rg_lenCnt_file, string &bamInput_file, string &chrn){
 void read_pn(map <seqan::CharString, map<int, int> > &rg_lenCnt, string &bamInput_file, int jump_first, int max_read_num){
   seqan::BamAlignmentRecord record;  
   seqan::BamStream bamStreamIn(bamInput_file.c_str());
+  assert(isGood(bamStreamIn));
   unsigned idx_RG;
   int i = 0;
   while (!atEnd(bamStreamIn)) {
@@ -119,6 +120,7 @@ int main( int argc, char* argv[] )
   get_pn(read_config(config_file, "file_pn"), ID_pn);
   string pn = ID_pn[idx_pn];
   
+  cout << "reading " << pn << endl;
   string path_count = read_config(config_file,"file_insertlen_count");
   string path_prob = read_config(config_file,"file_dist_prefix");
   string bamInput_file = read_config(config_file, "file_bam_prefix") + pn + ".bam";  
@@ -127,10 +129,10 @@ int main( int argc, char* argv[] )
   if (chrn != "chr0") {
     rg_lenCnt_file += chrn + "."; /* + RG*/
     read_pn_chr(rg_lenCnt_file, bamInput_file, chrn);
+    
   } else {
     map <seqan::CharString, map<int, int> > rg_lenCnt; // strata by reading group 
     read_pn(rg_lenCnt, bamInput_file, 5e3, 5e7);  // use only 5% reads to estimate
-    
     write_counts(rg_lenCnt, rg_lenCnt_file); 
     ofstream fout( (path_prob + "RG." + pn).c_str()); 
     for (map <seqan::CharString, map<int, int> >::iterator ri = rg_lenCnt.begin(); ri != rg_lenCnt.end(); ri++ )

@@ -342,7 +342,8 @@ int main( int argc, char* argv[] )
   seqan::lexicalCast2(opt, argv[1]);
   string config_file = argv[2];
   string path1 = read_config(config_file, "file_alu_delete0");
-  if ( access( path1.c_str(), 0 ) != 0 ) system( ("mkdir " + path1).c_str() );
+  check_folder_exists(path1);
+  string path_move;
   
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
@@ -396,6 +397,13 @@ int main( int argc, char* argv[] )
     for (map <int, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
       delete ri->second;
     
+    path_move = path1 + "log1s/";
+    check_folder_exists(path_move);
+    system(("mv " + path1 + pn + ".log1 " + path_move).c_str());
+    path_move = path1 + "tmp1s/";
+    check_folder_exists(path_move);
+    system(("mv " + path1 + pn + ".tmp1 " + path_move).c_str());
+
   } else if (opt == 2) {   // write vcf for all pn
 
     vector <string> pns;
