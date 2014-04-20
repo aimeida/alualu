@@ -198,7 +198,7 @@ void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *
   delete gp;
 }
  
-void filter_by_llh(string path1, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
+void filter_by_llh(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
   stringstream ss;
   string line, chrn, tmpfield;
   int aluBegin, flag;
@@ -212,9 +212,10 @@ void filter_by_llh(string path1, string f_in_suffix, string f_out, vector <strin
   ofstream fout(f_out.c_str());  
   for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-      ifstream fin( get_name_tmp(path1, *pi, f_in_suffix).c_str() );
-      getline(fin, line); 
+      ifstream fin( get_name_tmp(path0, *pi, f_in_suffix).c_str() );
+      //cout << "reading " << get_name_tmp(path0, *pi, f_in_suffix) << endl;
       assert(fin);
+      getline(fin, line); 
       flag = 1;
       while ( getline(fin, line) ) {
 	ss.clear(); ss.str( line );
@@ -247,6 +248,8 @@ void filter_by_llh(string path1, string f_in_suffix, string f_out, vector <strin
       if (llh_alt > llh_00) 
 	fout << *ci << " " << pa->first << " " << altFreq << " " << llh_alt - llh_00 << endl;
     }
+    cout << "done with " << *ci << endl;
+
     pos_altCnt.clear();
     for (pp = pos_pnProb.begin(); pp != pos_pnProb.end(); pp++) {
       for ( ppi = (pp->second).begin(); ppi != (pp->second).end(); ppi++) 
@@ -257,7 +260,7 @@ void filter_by_llh(string path1, string f_in_suffix, string f_out, vector <strin
   fout.close();
 }
 
-void combine_pns_vcf(string path1, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
+bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
   ifstream fin;
   stringstream ss;
   string line, chrn, tmp1, tmp2;
@@ -268,7 +271,7 @@ void combine_pns_vcf(string path1, string f_in_suffix, string f_out, vector <str
   map < pair<int, int>, map<string, string> >::iterator ppp;
   map<string, string>::iterator pp;
   vector <string>::iterator ci, pi;
-  //seqan::VcfStream out("-", seqan::VcfStream::WRITE);
+  //seqan::VcfStream vcfout("-", seqan::VcfStream::WRITE);
   seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE);
   for ( ci = chrns.begin(); ci != chrns.end(); ci++)
     appendValue(vcfout.header.sequenceNames, *ci);
@@ -291,9 +294,9 @@ void combine_pns_vcf(string path1, string f_in_suffix, string f_out, vector <str
     pos_pnProb.clear();
     pos_pnProb_all.clear();
     for ( pi = pns.begin(); pi != pns.end(); pi++) {
-      fin.open( get_name_tmp(path1, *pi, f_in_suffix).c_str() );
-      getline(fin, line); 
+      fin.open( get_name_tmp(path0, *pi, f_in_suffix).c_str() );
       assert(fin);
+      getline(fin, line); 
       flag = 1;
       while ( getline(fin, line) ) {
 	ss.clear(); ss.str( line );
@@ -309,9 +312,10 @@ void combine_pns_vcf(string path1, string f_in_suffix, string f_out, vector <str
 	pos_pnProb_all[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
 	if (p1 > p0 or p2 > p0) pos_pnProb[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
       }
-
+      //cout << get_name_tmp(path0, *pi, f_in_suffix) << endl;
       fin.close();
     }
+    cout << *ci << " size " << pos_pnProb.size() << endl;
     // Write out the records.
     for (ppp = pos_pnProb.begin(); ppp != pos_pnProb.end(); ppp++) {
       record.beginPos = (ppp->first).first;
@@ -327,10 +331,13 @@ void combine_pns_vcf(string path1, string f_in_suffix, string f_out, vector <str
       }
       writeRecord(vcfout, record);
       clear(record.genotypeInfos);
+      //cout << *ci << " $$ " << record.beginPos << endl;
     }        
+    cout << "done with " << *ci << endl;
   }  // chrn finished
   clear(record);
   seqan::close(vcfout);
+  return true;
 }
 
 
@@ -341,7 +348,9 @@ int main( int argc, char* argv[] )
   int opt, idx_pn;
   seqan::lexicalCast2(opt, argv[1]);
   string config_file = argv[2];
-  string path1 = read_config(config_file, "file_alu_delete0");
+  string path0 = read_config(config_file, "file_alu_delete0");
+  string path1 = read_config(config_file, "file_alu_delete1");
+  check_folder_exists(path0);
   check_folder_exists(path1);
   string path_move;
   
@@ -377,15 +386,15 @@ int main( int argc, char* argv[] )
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
-    string fn_tmp1 = get_name_tmp(path1, pn, ".tmp1");
-    string fn_log1 = get_name_tmp(path1, pn, ".log1");
+    string fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
+    string fn_log1 = get_name_tmp(path0, pn, ".log1");
     int minLen_alu_del; // 200
     seqan::lexicalCast2(minLen_alu_del, (read_config(config_file, "minLen_alu_del")));
     delete_search(minLen_alu_del, bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
     if ( chrn != "chr0") 
       return 0;
     // step 2: calculate prob
-    string fn_tmp2 = get_name_tmp(path1, pn, ".tmp2");
+    string fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
     map <int, EmpiricalPdf *> empiricalpdf_rg;    
     string pdf_param = read_config(config_file, "pdf_param"); // 100_1000_5  
     fin.open( get_name_rg(file_dist_prefix, pn).c_str());
@@ -397,23 +406,26 @@ int main( int argc, char* argv[] )
     for (map <int, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
       delete ri->second;
     
-    path_move = path1 + "log1s/";
+    path_move = path0 + "log1s/";
     check_folder_exists(path_move);
-    system(("mv " + path1 + pn + ".log1 " + path_move).c_str());
-    path_move = path1 + "tmp1s/";
+    system(("mv " + path0 + pn + ".log1 " + path_move).c_str());
+    path_move = path0 + "tmp1s/";
     check_folder_exists(path_move);
-    system(("mv " + path1 + pn + ".tmp1 " + path_move).c_str());
+    system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
 
   } else if (opt == 2) {   // write vcf for all pn
-
+    string pn;
     vector <string> pns;
-    ifstream fin(read_config(config_file, "file_pnIdx_used").c_str());
-    while (fin >> idx_pn) pns.push_back( ID_pn[idx_pn]);
-    fin.close();
-    filter_by_llh(path1, ".tmp2", path1+"filter_mr.pos", pns, chrns, 8);
-    combine_pns_vcf(path1, ".tmp2", path1+"test_mr.vcf", pns, chrns, 8);
-    combine_pns_vcf(path1, ".tmp2", path1+"test_lr.vcf", pns, chrns, 5);
 
+    int i = 0, ni = 3000;
+    ifstream fin(read_config(config_file, "file_pn").c_str());
+    while ( i++ < ni and  fin >> pn) pns.push_back( pn );
+    fin.close();    
+    string fn_pos = path1 + int_to_string( pns.size()) + "_mr.pos";
+    filter_by_llh(path0, ".tmp2", fn_pos, pns, chrns, 8);
+    string fn_vcf = path1 + int_to_string( pns.size()) + "_mr.vcf";  
+    //combine_pns_vcf(path0, ".tmp2", fn_vcf, pns, chrns, 8);  //  10 mins
+    ////combine_pns_vcf(path0, ".tmp2", fn_vcf, pns, chrns, 5a);
   } else if (opt == 0) { // debugging and manually check some regions 
     string pn, chrn, bam_input, bai_input, fa_input;
     // check pdf 

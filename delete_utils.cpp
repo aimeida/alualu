@@ -177,6 +177,7 @@ bool check_delete_region(string const & bam_input, string const &bai_input, stri
   return true;
 }
 
+
 EmpiricalPdf::EmpiricalPdf(string pdf_file){ 
   int pos;
   float posp;
