@@ -46,22 +46,6 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> const &rID_chr
   return 0;
 }
 
-bool coverage_idx_pass(string &line, int &ref_begin, int &ref_end, int idx_pn_this){
-  int n_pn, n_reads, idx_pn;
-  float coverage;
-  string alu_type;
-  stringstream ss;
-  ss.str(line);
-  ss >> ref_begin >> ref_end >> n_pn >> n_reads >> alu_type ;
-  coverage = n_reads * DEFAULT_READ_LEN / (float) n_pn / (float)(ref_end - ref_begin + SCAN_WIN_LEN * 2);
-  if ( coverage >= INS_COVERAGE_MAX ) return false;
-  for (int i = 0; i < n_pn  ; i++) {
-    ss >> idx_pn;
-    if (idx_pn_this == idx_pn) return true;
-  }
-  return false;
-}
-
 // only support 4 types for now 
 string parse_alu_type(string alu_name){
   assert ( !alu_name.empty() );

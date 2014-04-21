@@ -1,5 +1,13 @@
 #include "delete_utils.h"
 
+string phred_scaled(float p0, float p1, float p2) {
+  float pmax = max(p0, max(p1, p2));
+  string s0 =  ( p0 == pmax ) ?  "0" : phred_log(p0/pmax);
+  string s1 =  ( p1 == pmax ) ?  "0" : phred_log(p1/pmax);
+  string s2 =  ( p2 == pmax ) ?  "0" : phred_log(p2/pmax);
+  return s0  + "," + s1 + "," + s2; 
+}
+
 bool get_align_pos(int aluBegin, int aluEnd, int beginPos, int endPos, int &ref_a, int &ref_b, int &read_a, int &read_b, seqan::BamAlignmentRecord &record){
   unsigned nl = length(record.cigar) - 1; // ignore complicated alignment between S and M
   int len_read = length(record.seq);

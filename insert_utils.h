@@ -11,12 +11,12 @@
 #define DEFAULT_READ_LEN 100 // if read length unknown, use this default
 #define CLIP_BP 10 
 #define DISCORDANT_LEN 2000 
-#define INS_COVERAGE_MAX 6 // approximate, not exact, remove some high coverage regions 
+#define INS_COVERAGE_MAX 6 // a random number, remove some high coverage regions 
 #define SCAN_WIN_LEN 400   // 0.99 quantile. 450 for 0.999 quantile. However different reading group differs, only approximate
 #define LEFT_PLUS_RIGHT 4  // minimum sum of left and right reads
 #define MAX_LEN_REGION 100 // max length of insert region
 #define MAX_POS_DIF 50  // combine scanned insertion loci 
-#define NUM_PN_JOIN 20  // max number of pns to sort and join. eg: not enough memeory for 1000 pns, need different batches
+#define NUM_PN_JOIN 10  // max number of pns to sort and join
 
 // to use, but not in use yet
 #define READ_CUT_BP 5      // cut 5 bp in the end of the reads
@@ -65,7 +65,6 @@ inline void regionPos_by_ref(int &region_begin, int &region_end, int ref_begin, 
 
 bool alu_mate_flag( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &fileMap); 
 bool alu_mate_flag_depreciate( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &filoeMap); 
-bool coverage_idx_pass(string &line, int &ref_begin, int &ref_end, int idx_pn_this);
 
 // to develop or not in use any more 
 string parse_alu_type(string alu_name);

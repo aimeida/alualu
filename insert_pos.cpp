@@ -28,6 +28,28 @@ void moveSplit_toRefBegin(int  & split_begin, TSeq const & ref, int nnn_begin, i
     split_begin++;
 } 
 
+bool coverage_idx_pass(string &line, int &ref_begin, int &ref_end, int idx_pn_this, float maf_min, float maf_max, int pn_cnt, stringstream & ss_highCov){
+  int n_reads, idx_pn;
+  float coverage;
+  stringstream ss;
+  ss.str(line);
+  int n_pn = 0, flag = 0;
+  ss >> n_reads >> ref_begin >> ref_end;
+  while ( ss >> idx_pn) {
+    n_pn ++;
+    if (idx_pn_this == idx_pn) flag = 1;
+  }
+
+  coverage = n_reads * DEFAULT_READ_LEN / (float) n_pn / (float)(ref_end - ref_begin + SCAN_WIN_LEN * 2);
+  if ( idx_pn_this == 0 and coverage >= INS_COVERAGE_MAX ) 
+    ss_highCov << ref_begin << " " << ref_end << endl;
+    
+  float n_freq = (float)n_pn / pn_cnt; 
+  n_freq = min(n_freq, 1 - n_freq);
+
+  return coverage < INS_COVERAGE_MAX and flag and n_freq <= maf_max and n_freq >= maf_min;
+}
+
 // write all reads that is useful for split mapping or inferring insert sequence !
 bool readbam_loci(string chrn, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, size_t region_begin, int region_end, ofstream &frecord) {
   
@@ -50,7 +72,7 @@ bool readbam_loci(string chrn, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamI
   return true;
 }
 
-void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, string bai_input, string fin_pos, string fout_reads_fa){
+void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, string bai_input, string fin_pos, string fout_reads_fa, float maf_min, float maf_max, int pn_cnt){
   seqan::BamIndex<seqan::Bai> baiIndex;
   assert (!read(baiIndex, bai_input.c_str()));
   TNameStore      nameStore;
@@ -69,14 +91,26 @@ void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, str
   int region_begin, region_end;
   string line;
   for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
-    string chrn = toCString(rc->second);
+    string chrn = toCString(rc->second); 
     ifstream fin( (fin_pos + chrn).c_str());
+    stringstream ss_highCov;
+    cout << "reading " << fin_pos + chrn << endl;
     if (!fin) continue;  // ignore random chr
+    int cnt = 0;
     while (getline(fin, line)) {
-      if ( coverage_idx_pass(line, region_begin, region_end, idx_pn) )
+      if ( coverage_idx_pass(line, region_begin, region_end, idx_pn, maf_min, maf_max, pn_cnt, ss_highCov) ) {
 	readbam_loci(chrn, inStream, baiIndex, context, rc->first, region_begin, region_end, frecord);
+	cnt++;
+      }
     }
     fin.close();
+    cout << cnt << " loci at " << chrn << " are read for " << idx_pn << endl;
+
+    if (idx_pn == 0) {
+      ofstream fLog( (fin_pos + chrn + ".hignCov").c_str());
+      fLog << ss_highCov.str();
+      fLog.close();
+    }
   }
   seqan::close(inStream);     
 }
@@ -90,8 +124,14 @@ int main( int argc, char* argv[] )
 
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-  string path1 = read_config(config_file, "file_alu_insert1") ;    
 
+#ifdef DEBUG_MODE   // only look at chr1 for now 
+    chrns.clear();
+    chrns.push_back("chr1");
+#endif       
+
+
+  string path1 = read_config(config_file, "file_alu_insert1") ;    
   boost::timer clocki;    
   clocki.restart();  
   map<int, string> ID_pn;
@@ -100,18 +140,25 @@ int main( int argc, char* argv[] )
   if (opt == 1) { 
     int idx_pn;
     seqan::lexicalCast2(idx_pn, argv[3]);
+    assert (argc == 4);
+
+    string pn = ID_pn[idx_pn];
     string fin_pos = path1 + "insert_pos.";
-    string fout_reads = read_config(config_file, "file_insert_reads");
-    if ( access( fout_reads.c_str(), 0 ) != 0 ) system( ("mkdir " + fout_reads).c_str() );          
-    string pn = get_pn(read_config(config_file, "file_pn"), idx_pn);
+    float maf_min = 0.002, maf_max = 0.05;  // small groups 
+    
+    string fout_reads = read_config(config_file, "file_clip_reads");
+    check_folder_exists(fout_reads);
+    stringstream ss;
+    ss << fout_reads << pn << "_" << setprecision(3) << maf_min << "_" << setprecision(3) << maf_max;
+    string fout_reads_fa = ss.str();
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
-    string fout_reads_fa = fout_reads + pn + ".clip" ; 
-    // takes 2 min
-    reads_insert_loci(idx_pn, chrns, bam_input, bai_input, fin_pos, fout_reads_fa);
-    //writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
-    //writeRecord(fout, record.qName, record.seq, seqan::Fasta());
 
-  }
+    reads_insert_loci(idx_pn, chrns, bam_input, bai_input, fin_pos, fout_reads_fa, maf_min, maf_max, ID_pn.size() );
+    cout << "output to "  << fout_reads_fa << endl;
+    ////writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
+    ////writeRecord(fout, record.qName, record.seq, seqan::Fasta());
+  } 
+
   return 0;
 }

@@ -260,7 +260,7 @@ void filter_by_llh(string path0, string f_in_suffix, string f_out, vector <strin
   fout.close();
 }
 
-bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
+bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
   ifstream fin;
   stringstream ss;
   string line, chrn, tmp1, tmp2;
@@ -303,6 +303,7 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
 	ss >> chrn >>  aluBegin >> aluEnd;
 	for (int ti = 0; ti < col_00 - 4; ti++) ss >> tmpfield;
 	ss >> p0 >> p1 >> p2 ;
+
 	if (chrn != *ci) {
 	  if (flag) continue;
 	  else break;
@@ -321,17 +322,19 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
       record.beginPos = (ppp->first).first;
       record.rID = cii;
       record.id = int_to_string((ppp->first).second);
+      int n_pn = 0;
       for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-	if ( (pp = ppp->second.find(*pi)) != ppp->second.end() )  
+	if ( (pp = ppp->second.find(*pi)) != ppp->second.end() ) { 
 	  appendValue(record.genotypeInfos, pp->second);
-	else if ((pp = pos_pnProb_all[ppp->first].find(*pi)) !=  pos_pnProb_all[ppp->first].end() )
+	  n_pn++ ;
+	} else if ((pp = pos_pnProb_all[ppp->first].find(*pi)) !=  pos_pnProb_all[ppp->first].end() ) {
 	  appendValue(record.genotypeInfos,  pos_pnProb_all[ppp->first][*pi]); 	  
-	else 
+	} else {
 	  appendValue(record.genotypeInfos, "0,255,255"); // otherwise vcf consider it as missing
+	}
       }
-      writeRecord(vcfout, record);
+      if (n_pn > 1) writeRecord(vcfout, record);  // don't output private loci
       clear(record.genotypeInfos);
-      //cout << *ci << " $$ " << record.beginPos << endl;
     }        
     cout << "done with " << *ci << endl;
   }  // chrn finished
@@ -422,9 +425,9 @@ int main( int argc, char* argv[] )
     while ( i++ < ni and  fin >> pn) pns.push_back( pn );
     fin.close();    
     string fn_pos = path1 + int_to_string( pns.size()) + "_mr.pos";
-    filter_by_llh(path0, ".tmp2", fn_pos, pns, chrns, 8);
+    //filter_by_llh(path0, ".tmp2", fn_pos, pns, chrns, 8);
     string fn_vcf = path1 + int_to_string( pns.size()) + "_mr.vcf";  
-    //combine_pns_vcf(path0, ".tmp2", fn_vcf, pns, chrns, 8);  //  10 mins
+    combine_pns_vcf_noPrivate(path0, ".tmp2", fn_vcf, pns, chrns, 8);  //  10 mins
     ////combine_pns_vcf(path0, ".tmp2", fn_vcf, pns, chrns, 5a);
   } else if (opt == 0) { // debugging and manually check some regions 
     string pn, chrn, bam_input, bai_input, fa_input;
