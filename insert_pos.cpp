@@ -3,6 +3,8 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
+inline string get_name_pos1(string prefix, string chrn){ return prefix + chrn + ".highCov"; }
+
 bool findSplit(int & beginPos,int &jump_len, seqan::BamAlignmentRecord &record) {
   char operation;
   int count;
@@ -28,7 +30,7 @@ void moveSplit_toRefBegin(int  & split_begin, TSeq const & ref, int nnn_begin, i
     split_begin++;
 } 
 
-bool coverage_idx_pass(string &line, int &ref_begin, int &ref_end, int idx_pn_this, float maf_min, float maf_max, int pn_cnt, stringstream & ss_highCov){
+bool coverage_idx_pass(string &line, int &ref_begin, int &ref_end, int idx_pn_this, float maf_min, float maf_max, int pn_cnt, bool &maf_pass, stringstream & ss_highCov){
   int n_reads, idx_pn;
   float coverage;
   stringstream ss;
@@ -39,15 +41,14 @@ bool coverage_idx_pass(string &line, int &ref_begin, int &ref_end, int idx_pn_th
     n_pn ++;
     if (idx_pn_this == idx_pn) flag = 1;
   }
-
   coverage = n_reads * DEFAULT_READ_LEN / (float) n_pn / (float)(ref_end - ref_begin + SCAN_WIN_LEN * 2);
   if ( idx_pn_this == 0 and coverage >= INS_COVERAGE_MAX ) 
     ss_highCov << ref_begin << " " << ref_end << endl;
-    
+
   float n_freq = (float)n_pn / pn_cnt; 
   n_freq = min(n_freq, 1 - n_freq);
-
-  return coverage < INS_COVERAGE_MAX and flag and n_freq <= maf_max and n_freq >= maf_min;
+  maf_pass = (n_freq <= maf_max and n_freq >= maf_min);
+  return maf_pass and coverage < INS_COVERAGE_MAX and flag ;
 }
 
 // write all reads that is useful for split mapping or inferring insert sequence !
@@ -72,7 +73,7 @@ bool readbam_loci(string chrn, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamI
   return true;
 }
 
-void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, string bai_input, string fin_pos, string fout_reads_fa, float maf_min, float maf_max, int pn_cnt){
+void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, string bai_input, string fin_pos, string fout_reads_fa, float maf_min, float maf_max, MapSFO & fileMap, int pn_cnt){
   seqan::BamIndex<seqan::Bai> baiIndex;
   assert (!read(baiIndex, bai_input.c_str()));
   TNameStore      nameStore;
@@ -94,22 +95,25 @@ void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, str
     string chrn = toCString(rc->second); 
     ifstream fin( (fin_pos + chrn).c_str());
     stringstream ss_highCov;
-    cout << "reading " << fin_pos + chrn << endl;
     if (!fin) continue;  // ignore random chr
     int cnt = 0;
+    bool maf_pass;
     while (getline(fin, line)) {
-      if ( coverage_idx_pass(line, region_begin, region_end, idx_pn, maf_min, maf_max, pn_cnt, ss_highCov) ) {
+      if ( coverage_idx_pass(line, region_begin, region_end, idx_pn, maf_min, maf_max, pn_cnt, maf_pass, ss_highCov) ) {
+	if ( maf_pass and !idx_pn) *(fileMap[chrn]) << region_begin << " " << region_end << endl;
 	readbam_loci(chrn, inStream, baiIndex, context, rc->first, region_begin, region_end, frecord);
-	cnt++;
+	cnt++;	  
       }
     }
     fin.close();
     cout << cnt << " loci at " << chrn << " are read for " << idx_pn << endl;
 
-    if (idx_pn == 0) {
-      ofstream fLog( (fin_pos + chrn + ".hignCov").c_str());
-      fLog << ss_highCov.str();
-      fLog.close();
+    if (!idx_pn) {
+      ofstream fPos;
+      fPos.open( get_name_pos1(fin_pos, chrn).c_str());
+      fPos << ss_highCov.str();
+      fPos.close();
+      ss_highCov.clear();
     }
   }
   seqan::close(inStream);     
@@ -135,30 +139,47 @@ int main( int argc, char* argv[] )
   boost::timer clocki;    
   clocki.restart();  
   map<int, string> ID_pn;
-  get_pn(read_config(config_file, "file_pn"), ID_pn);  
-  
+  get_pn(read_config(config_file, "file_pn"), ID_pn);    
+  string fin_pos = path1 + "insert_pos.";
+
   if (opt == 1) { 
     int idx_pn;
     seqan::lexicalCast2(idx_pn, argv[3]);
     assert (argc == 4);
-
-    string pn = ID_pn[idx_pn];
-    string fin_pos = path1 + "insert_pos.";
-    float maf_min = 0.002, maf_max = 0.05;  // small groups 
+    string pn = ID_pn[idx_pn];    
+    float maf_min = 0.02, maf_max = 0.5;  // small groups 
     
     string fout_reads = read_config(config_file, "file_clip_reads");
     check_folder_exists(fout_reads);
     stringstream ss;
-    ss << fout_reads << pn << "_" << setprecision(3) << maf_min << "_" << setprecision(3) << maf_max;
-    string fout_reads_fa = ss.str();
+    ss << "_" << setprecision(3) << maf_min << "_" << setprecision(3) << maf_max;
+    string fout_suffix = ss.str();
+    ss.clear();
+    string fout_reads_fa =  read_config(config_file, "file_clip_reads") + pn + fout_suffix;
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
+    
+    MapSFO fileMap;
+    if (!idx_pn) 
+      for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) 
+	fileMap[*ci] = new ofstream( (fin_pos + *ci + fout_suffix).c_str() );
+    reads_insert_loci(idx_pn, chrns, bam_input, bai_input, fin_pos, fout_reads_fa, maf_min, maf_max, fileMap, ID_pn.size() );
 
-    reads_insert_loci(idx_pn, chrns, bam_input, bai_input, fin_pos, fout_reads_fa, maf_min, maf_max, ID_pn.size() );
+    if (!idx_pn) 
+      for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) 
+	delete fileMap[*ci];
+    
     cout << "output to "  << fout_reads_fa << endl;
     ////writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
     ////writeRecord(fout, record.qName, record.seq, seqan::Fasta());
-  } 
+  } else if ( opt == 2 ) {
+    set< pair<int, int> > pos_of_highCovRegion;
+    //get_name_co(fin_pos, chrn);    
+    int region_begin, region_end;
+    set< pair<int, int> > pos_of_clippedReads;
+    
+    
+  }
 
   return 0;
 }
