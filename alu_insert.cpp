@@ -553,7 +553,7 @@ int main( int argc, char* argv[] )
 
     string output_prefix = path1 + "insert_pos.";
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      string file_pn_used = path1 + "insert_pos."+ *ci +".pn";
+      string file_pn_used = path1 + "pn.insert_pos."+ *ci;
       filter_outlier_pn(path0, ID_pn, *ci, file_pn_used, 0.85);
       map<int, string> id_pn_map;
       ifstream fin(file_pn_used.c_str());
