@@ -419,16 +419,17 @@ int main( int argc, char* argv[] )
   } else if (opt == 2) {   // write vcf for all pn
     string pn;
     vector <string> pns;
-
     int i = 0, ni = 3000;
     ifstream fin(read_config(config_file, "file_pn").c_str());
     while ( i++ < ni and  fin >> pn) pns.push_back( pn );
     fin.close();    
-    string fn_pos = path1 + int_to_string( pns.size()) + "_mr.pos";
+    string fn_pos, fn_vcf;
+    fn_pos = path1 + int_to_string( pns.size()) + "_mr.pos";
     //filter_by_llh(path0, ".tmp2", fn_pos, pns, chrns, 8);
-    string fn_vcf = path1 + int_to_string( pns.size()) + "_mr.vcf";  
-    combine_pns_vcf_noPrivate(path0, ".tmp2", fn_vcf, pns, chrns, 8);  //  10 mins
-    ////combine_pns_vcf(path0, ".tmp2", fn_vcf, pns, chrns, 5a);
+    fn_vcf = path1 + int_to_string( pns.size()) + "_mr.vcf";  
+    //combine_pns_vcf_noPrivate(path0, ".tmp2", fn_vcf, pns, chrns, 8);  //  10 mins
+    fn_vcf = path1 + int_to_string( pns.size()) + "_lr.vcf";  
+    combine_pns_vcf_noPrivate(path0, ".tmp2", fn_vcf, pns, chrns, 5);  //  10 mins
   } else if (opt == 0) { // debugging and manually check some regions 
     string pn, chrn, bam_input, bai_input, fa_input;
     // check pdf 

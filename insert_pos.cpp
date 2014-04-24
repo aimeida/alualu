@@ -3,7 +3,9 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
-#define SPLIT_POS_IS_PRIVATE 1  // only one pn has information for this region
+#define MAJOR_SPLIT_POS_FREQ 0.6
+#define FLANK_REGION_LEN 80
+typedef map <int, int> SplitPosInfo;
 
 inline string get_name_pos1(string prefix, string chrn){ return prefix + chrn + ".highCov"; }
 
@@ -160,35 +162,106 @@ void parse_cigar(string cigar, list <char> & opts, list <int> & cnts){
   cnts.push_back(cnt_int);  
 }
 
-bool find_insert_pos(string file_clip, int region_begin, int region_end, vector <int> & clip_pos){
-  clip_pos.clear();
-  ifstream fin( file_clip.c_str());
+float major_key_freq(map <int, int> &m, int & key)  {
+  if ( m.empty() ) return 0;
+  int max_count = 0, sum_count = 0;
+  key = m.begin()->first;
+  for (map <int, int>::iterator it = m.begin(); it != m.end(); it++) { 
+    sum_count +=  it->second;
+    if ( it->second > max_count ) {
+      max_count = it->second;
+      key = it->first;
+    }
+  }
+  //cout << "mk_freq " << max_count/(float) sum_count << endl;
+  return max_count/(float) sum_count;
+}
+
+float left_major_pos(map<int, int> &m, int pos_dif, int &pos) {
+  if ( m.empty() ) return 0;
+  map <int, int>::iterator it = m.begin();
+  pos = it->first;
+  int max_count = m[pos];
+  int sum_count = max_count;
+  for (; it != m.end(); it++) { 
+    sum_count +=  it->second;
+    if ( it->first <= pos + pos_dif) max_count += it->second;    
+  }
+  return max_count/(float) sum_count;
+}
+
+float right_major_pos(map<int, int> &m, int pos_dif, int &pos) {
+  if ( m.empty() ) return 0;
+  int max_count, sum_count;
+  map <int, int>::iterator it;
+  for (it = m.begin(); it != m.end(); it++) { pos = it->first; max_count = it->second;}
+  sum_count = max_count;
+  size_t i;
+  for (i = 0, it = m.begin(); i < m.size() - 1; i++, it++) {
+    sum_count +=  it->second;
+    if ( pos - it->first <= pos_dif ) max_count += it->second;
+  }
+  return max_count/(float) sum_count;
+}
+
+bool find_insert_pos(string file_clip, int region_begin, int region_end, int flanking_len, float major_freq, int & clipLeft, int & clipRight, set <string> &pn_set){
+  pn_set.clear();
   stringstream ss;
   string line, pn, cigar, seq;
   int beginPos, endPos, hasFlagRC; 
-  // 1. might add some filtering, such that not a single pn is dominant
-  // 2. might use information from neighboring regions, since no clear cutoff
-  map <string, int> pn_clipCnt;
-  int ri = 0;
-  list <char> cigar_opts;
-  list <int> cigar_cnts;
+  int ni = 0;
+  map <int, int> ni_pos;
+  map <int, string> ni_pn;
+  ifstream fin;
+  fin.open( file_clip.c_str());
+  SplitPosInfo splitPosLeft, splitPosRight;
   while ( getline(fin, line)) {
     ss.clear(); ss.str(line); 
     ss >> pn >> beginPos >> endPos >> cigar;
+    list <char> cigar_opts;
+    list <int> cigar_cnts;
     parse_cigar(cigar, cigar_opts, cigar_cnts);
-    if ( *cigar_opts.begin() == "S" and *cigar_cnts.begin() >= CLIP_BP) {
-      
-    } else if ( cigar_opts.back() == "S" and cigar_cnts.back() >= CLIP_BP) {
-
-    }
-
-    addKey(pn_clipCnt, pn);
-    ri++;
+    if ( *cigar_opts.begin() == 'S' and *cigar_cnts.begin() >= CLIP_BP) {
+      if ( beginPos >= region_begin - flanking_len and beginPos < region_end + flanking_len) {
+	addKey(splitPosLeft, beginPos);
+	// if ( region_begin == 84952) cout << "debug begin " << beginPos << " " << pn << endl;
+	ni_pos[ni] = beginPos;
+	ni_pn[ni] = pn;
+      } // to add: else {add info for next region}
+    } else if ( cigar_opts.back() == 'S' and cigar_cnts.back() >= CLIP_BP) {
+      if ( endPos >= region_begin - flanking_len and endPos < region_end + flanking_len) {
+	addKey(splitPosRight, endPos);
+	// if ( region_begin == 84952) cout << "debug end " << endPos <<  " " << pn << endl;	  
+	ni_pos[ni] = endPos;
+	ni_pn[ni] = pn;
+      }
+    }        
+    ni++;
   }
   fin.close();
-  /// ignore private mutations 
-  if (pn_clipCnt.size() == 1) return false; 
-  return clip_pos.size() == 2 or clip_pos.size() == 1;
+  
+  //if ( region_begin == ) cout << "debug " << splitPosLeft.size() << " " << splitPosRight.size() << endl;  
+  int pos1, pos2;
+  clipLeft = 0; clipRight = 0;
+  if ( major_key_freq(splitPosLeft, pos1) >= major_freq or left_major_pos(splitPosLeft, CLIP_BP, pos1) >= major_freq )
+    clipLeft = pos1;  
+  if ( major_key_freq(splitPosRight, pos2) >= major_freq or right_major_pos(splitPosRight, CLIP_BP, pos2) >= major_freq )
+    clipRight = pos2;
+  
+  if (!clipLeft) clipLeft = clipRight;
+  if (!clipRight) clipRight = clipLeft;
+  if ((!clipLeft) or clipRight - clipLeft > CLIP_BP) return false;
+  
+  map <int, int>::iterator si = ni_pos.begin();
+  map <int, string>::iterator pi = ni_pn.begin();  
+  for ( size_t i = 0; i < ni_pos.size(); i++ ) {
+    if ( abs( si->second - clipLeft ) <= CLIP_BP or  abs( si->second - clipRight ) <= CLIP_BP )
+      pn_set.insert(pi->second);
+    si++;
+    pi++;
+  }
+  // ignore private mutations 
+  return pn_set.size() > 1;  
 }
 
 int main( int argc, char* argv[] )
@@ -253,6 +326,7 @@ int main( int argc, char* argv[] )
     ////writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
     ////writeRecord(fout, record.qName, record.seq, seqan::Fasta());
   } else if ( opt == 2 ) { 
+    fstream fout;
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
       set<string> pns_used;
       set<string> beginPos_fn;
@@ -264,9 +338,8 @@ int main( int argc, char* argv[] )
 	assert(fin);
 	stringstream ss;
 	string line, tmp1, cigar, seq, region_begin, region_end, beginPos, endPos, hasFlagRC;
-	string region_begin_pre="";
 	getline(fin, line);
-	fstream fout;
+	string region_begin_pre="";
 	while ( getline(fin, line) ) {
 	  ss.clear(); ss.str(line); 
 	  ss >> tmp1 >> region_begin >> region_end >> beginPos >> endPos >> cigar >> hasFlagRC >> seq;
@@ -278,7 +351,7 @@ int main( int argc, char* argv[] )
 	      fout.open(file_output_clip.c_str(), fstream::out);
 	      beginPos_fn.insert(region_begin);
 	    } else {
-	      fout.open(file_output_clip.c_str(), fstream::app);
+	      fout.open(file_output_clip.c_str(), fstream::app|fstream::out);
 	    }
 	  }
 	  fout << *pi << " " << beginPos << " " << endPos << " " << cigar << " " << hasFlagRC << " " << seq << endl;
@@ -289,7 +362,7 @@ int main( int argc, char* argv[] )
     }    
   } else if ( opt == 3 ) {  // find exact split position
 
-    cerr << "NB: private insertion is ignore here !\n";
+    cerr << "NB: private insertion is ignored here !\n";
     string cnt, line;
     int region_begin, region_end;
     stringstream ss;
@@ -301,12 +374,16 @@ int main( int argc, char* argv[] )
 	ss.clear(); ss.str(line); 
 	ss >> cnt >> region_begin >> region_end;
 	string file_clip = fout_path + *ci + "_pos/" + int_to_string(region_begin) + "_" + int_to_string(region_end);
-	vector <int> clip_pos;
-	if (find_insert_pos(file_clip, region_begin, region_end, clip_pos) ) {
-	  for (vector <int>::iterator ci = clip_pos.begin(); ci != clip_pos.end(); ci++) {
-	    fout << *ci << endl;
-	  }
+	int clipLeft, clipRight;
+	//int clipLeft_next, clipRight_next;
+	set <string> pn_set;
+	if (find_insert_pos(file_clip, region_begin, region_end, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight, pn_set)) {
+	  fout << region_begin << " " << clipLeft << " " << clipRight;
+	  for (set<string>::iterator pni = pn_set.begin(); pni != pn_set.end(); pni++)
+	    fout << " " << *pni ;
+	  fout << endl;
 	}
+	//if ( region_begin == 226767) exit(0);	  
       }
       fin.close();
       fout.close();
