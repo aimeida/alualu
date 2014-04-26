@@ -229,7 +229,7 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
   string line, chrn, tmpfield;
   int aluBegin, flag;
   float p0, p1, p2;
-  int alleleCnt = pns.size() * 2;
+
   map < int, int > pos_altCnt; // count of alternative alleles 
   map < int, int > pos_pnCnt;  // count of pns having polymorphism at this loci
   map < int, map<string, GENO_PROB * > > pos_pnProb;  
@@ -237,6 +237,8 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
   map < string, GENO_PROB * >::iterator ppi;
 
   ofstream fout(f_out.c_str());  
+  fout <<  "chrn aluBegin pnCnt alleleFreq Log_LikelihoodRatio\n"; 
+  int alleleCnt = pns.size() * 2; 
   for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
       ifstream fin( get_name_tmp(path0, *pi, f_in_suffix).c_str() );
@@ -265,7 +267,7 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
     
     map<int, int>::iterator pan = pos_pnCnt.begin();
     for ( map<int, int>::iterator pa = pos_altCnt.begin(); pa != pos_altCnt.end(); pa++, pan++) {
-      if ( pan -> second <= 1) continue; // no private 
+      if ( pan->second <= 1) continue; // no private 
       float altFreq = (pa->second) / (float)alleleCnt;
       float freq0 = (1 - altFreq) * (1 - altFreq);
       float freq1 = 2 * altFreq * (1 - altFreq);
@@ -275,14 +277,14 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
 	if ( (ppi = pos_pnProb[pa->first].find(*pi)) != pos_pnProb[pa->first].end() ) {
 	  llh_00 +=  ( (ppi->second)->g0 > 0 ? log( (ppi->second)->g0 ) : ( - LOG10_GENO_PROB ) ) ;
 	  llh_alt += log (freq0 * (ppi->second)->g0 + freq1 * (ppi->second)->g1 + freq2 * (ppi->second)->g2);  
-	}
+	} else
+	  llh_alt += log (freq0);  // g0 = 1	
       }
-      if (llh_alt > llh_00) 
-	fout << *ci << " " << pa->first << " " << altFreq << " " << llh_alt - llh_00 << endl;
+      fout << *ci << " " << pa->first << " " << pan->second << " " << altFreq << " " << llh_alt - llh_00 << endl;
     }
     cout << "done with " << *ci << endl;
 
-    pos_altCnt.clear();
+    pos_altCnt.clear(); 
     pos_pnCnt.clear();
     for (pp = pos_pnProb.begin(); pp != pos_pnProb.end(); pp++) {
       for ( ppi = (pp->second).begin(); ppi != (pp->second).end(); ppi++) 
@@ -407,6 +409,8 @@ int main( int argc, char* argv[] )
       exit(0);
     }
     string pn = ID_pn[idx_pn];
+    string fn_tmp1, fn_log1, fn_tmp2;
+    
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
     if (chrn != "chr0") { chrns.clear();  chrns.push_back(chrn); }
     map<string, int> rg_to_idx;
@@ -422,16 +426,24 @@ int main( int argc, char* argv[] )
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
-    string fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
-    string fn_log1 = get_name_tmp(path0, pn, ".log1");
+    fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
+    fn_log1 = get_name_tmp(path0, pn, ".log1");
     int minLen_alu_del; // 200
     seqan::lexicalCast2(minLen_alu_del, (read_config(config_file, "minLen_alu_del")));
     ///delete_search(minLen_alu_del, bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
+    path_move = path0 + "log1s/";
+    check_folder_exists(path_move);
+    system(("mv " + path0 + pn + ".log1 " + path_move).c_str());
+    path_move = path0 + "tmp1s/";
+    check_folder_exists(path_move);
+    system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
+
     if ( chrn != "chr0") 
       return 0;
 
     // step 2: calculate prob
-    string fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
+    fn_tmp1 = get_name_tmp(path0+"tmp1s/", pn, ".tmp1");
+    fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
     map <int, EmpiricalPdf *> empiricalpdf_rg;    
     string pdf_param = read_config(config_file, "pdf_param"); // 100_1000_5  
     fin.open( get_name_rg(file_dist_prefix, pn).c_str());
@@ -443,12 +455,6 @@ int main( int argc, char* argv[] )
     for (map <int, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
       delete ri->second;
     
-    path_move = path0 + "log1s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".log1 " + path_move).c_str());
-    path_move = path0 + "tmp1s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
     path_move = path0 + "tmp2s/";
     check_folder_exists(path_move);
     system(("mv " + path0 + pn + ".tmp2 " + path_move).c_str());
@@ -463,9 +469,9 @@ int main( int argc, char* argv[] )
     string path_input = path0 + "tmp2s/";
     string fn_pos, fn_vcf;
     fn_pos = path1 + int_to_string( pns.size()) + "_mr.pos";
-    //filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, 8);
+    filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, 8);
     fn_pos = path1 + int_to_string( pns.size()) + "_lr.pos";
-    //filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, 5);
+    filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, 5);
     fn_vcf = path1 + int_to_string( pns.size()) + "_mr.vcf";  
     //combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf, pns, chrns, 8);  //  10 mins
     fn_vcf = path1 + int_to_string( pns.size()) + "_lr.vcf";  
