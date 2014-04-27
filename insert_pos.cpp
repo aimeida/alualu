@@ -209,9 +209,9 @@ bool find_insert_pos(string file_clip, int region_begin, int region_end, int fla
   stringstream ss;
   string line, pn, cigar, seq;
   int beginPos, endPos, hasFlagRC; 
-  int ni = 0;
   map <int, int> ni_pos;
   map <int, string> ni_pn;
+  int ni = 0;
   ifstream fin;
   fin.open( file_clip.c_str());
   SplitPosInfo splitPosLeft, splitPosRight;
@@ -221,29 +221,33 @@ bool find_insert_pos(string file_clip, int region_begin, int region_end, int fla
     list <char> cigar_opts;
     list <int> cigar_cnts;
     parse_cigar(cigar, cigar_opts, cigar_cnts);
+
+    /** one read can both tell splitPosLeft and splitPosRight, due to error in cigar string. 
+	eg. 556287 556309 S35M22S63 */
+    
     if ( *cigar_opts.begin() == 'S' and *cigar_cnts.begin() >= CLIP_BP) {
       if ( beginPos >= region_begin - flanking_len and beginPos < region_end + flanking_len) {
 	addKey(splitPosRight, beginPos);
-	//cout << "debug end " << endPos <<  " " << cigar << " "  << pn << endl;	  
+	//cout << "debug end " << beginPos <<  " " << cigar << " "  << pn << endl;	  
 	ni_pos[ni] = beginPos;
 	ni_pn[ni] = pn;
+	ni++;
       } // to add: else {add info for next region}
-      continue;
-    } 
-    
+    }     
     if ( cigar_opts.back() == 'S' and cigar_cnts.back() >= CLIP_BP) {
       if ( endPos >= region_begin - flanking_len and endPos < region_end + flanking_len) {
 	addKey(splitPosLeft, endPos);
         //cout << "debug begin " << beginPos << " " << cigar << " " << pn << endl;
 	ni_pos[ni] = endPos;
 	ni_pn[ni] = pn;
+	ni++;
       }
     }        
-    ni++;
   }
   fin.close();  
-  //cout << "debug " << splitPosLeft.size() << " " << splitPosRight.size() << endl;  
 
+  //cout << "debug " << splitPosLeft.size() << " " << splitPosRight.size() << endl;  
+  
   int pos1, pos2;
   clipLeft = 0; clipRight = 0;
   if ( major_key_freq(splitPosLeft, pos1) >= major_freq or left_major_pos(splitPosLeft, CLIP_BP, pos1) >= major_freq )
@@ -252,6 +256,7 @@ bool find_insert_pos(string file_clip, int region_begin, int region_end, int fla
     clipRight = pos2;
   
   //cout << "debug2 " << clipLeft << " " << clipRight << endl;
+  //print_map(splitPosRight);
 
   if (!clipLeft and !clipRight) return false;
   int clipMin = clipLeft;
@@ -278,6 +283,7 @@ bool find_insert_pos(string file_clip, int region_begin, int region_end, int fla
       si++;
       pi++;
     }
+
     //cout << "debug3 " << pn_set_left.size() << " " << pn_set_right.size() << endl;
     if ( pn_set_left.size() > pn_set_right.size() ) {
       pn_set_left.swap(pn_set);
@@ -411,7 +417,6 @@ int main( int argc, char* argv[] )
 	    fout << " " << *pni ;
 	  fout << endl;
 	}
-	//if ( region_begin == 226767) exit(0);	  
       }
       fin.close();
       fout.close();
@@ -422,13 +427,9 @@ int main( int argc, char* argv[] )
     set <string> pn_set;
     bool uniq_pos;
     
-    file_clip = fout_path + "chr1_pos/16926863_16927063";
-    uniq_pos = find_insert_pos(file_clip, 16926863, 16927063, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight, pn_set);
+    file_clip = fout_path + "chr1_pos/556298_556498";
+    uniq_pos = find_insert_pos(file_clip, 556298, 556498, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight, pn_set);
     cout << "uniq_pos exists " << uniq_pos << " " << clipLeft << " " << clipRight << endl;
-
-//    file_clip = fout_path + "chr1_pos/16926652_16926852";
-//    uniq_pos = find_insert_pos(file_clip, 16926652, 16926852, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight, pn_set);
-//    cout << "uniq_pos exists " << uniq_pos << " " << clipLeft << " " << clipRight << endl;
     
   }
   return 0;
