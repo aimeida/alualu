@@ -68,15 +68,14 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
   return ( align_len >= min_align_len and score >= min_align_score(align_len) );
 }
 
-
 T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, seqan::FaiIndex &faiIndex, unsigned fa_idx, bool read_is_left){  
   int beginPos = record.beginPos;
   int endPos = record.beginPos + align_len;  
-  // more unknow_read, more information used 
+  // 
   if ( (!read_is_left) and beginPos > aluEnd - BOUNDARY_OFFSET and  
        (!has_soft_first(record, CLIP_BP)) and record.pNext + DEFAULT_READ_LEN < aluBegin + BOUNDARY_OFFSET )
     return unknow_read;
-  // left reads, and we won't check its right pair afterwards
+  // left read, the pair cross alu, no need to check its right pair afterwards
   if ( read_is_left and endPos < aluBegin - BOUNDARY_OFFSET and  
        (!has_soft_last(record, CLIP_BP)) and record.pNext >=  aluEnd + ALU_FLANK )
     return unknow_read;
@@ -88,12 +87,19 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluB
       seqan::CharString fa_seq = fasta_seq(faiIndex, fa_idx, ref_a - BOUNDARY_OFFSET, ref_b + BOUNDARY_OFFSET, true);
       if (split_global_align(fa_seq, record, read_a, read_b)) return clip_read;
     }
-    return useless_read; // if left reads, we don't know the type yet
+    if (read_is_left) return useless_read; 
   }
-  // only consider as mid_read if very certain, otherwise look at its pair later
+  // only consider as mid_read if very certain, otherwise classify as unknown read
   if ( endPos > aluBegin + BOUNDARY_OFFSET and beginPos < aluEnd - BOUNDARY_OFFSET) 
     if (!not_all_match(record))  return mid_read;  
-  return useless_read;  // alu_flank is too larger, we have a lot reads not useful 
+  
+  /* no big difference if ignore this part
+    if ( (!read_is_left) and beginPos > aluEnd - BOUNDARY_OFFSET and 
+    record.pNext + DEFAULT_READ_LEN < aluBegin + BOUNDARY_OFFSET )
+    return unknow_read;
+  */
+  
+  return useless_read;  // alu_flank is too large, we have a lot reads not useful 
 }
 
 void get_min_value(map <int, float> & m, float & min_val, int & min_key) {
@@ -114,7 +120,10 @@ void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){
   assert( max_logp_dif > 0);
   map <int, float> idx_logp;
   int i, min_idx;
-  for ( i = 0; i < 3; i++) idx_logp[i] = log_gp[i];
+  for ( i = 0; i < 3; i++) {
+    idx_logp[i] = log_gp[i];
+    assert (log_gp[i] <= 0);
+  }
   float min_logp;
   get_min_value(idx_logp, min_logp, min_idx);
   for ( i = 0; i < 3; i++) {
@@ -145,7 +154,7 @@ void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){
     else gp[i] = pow(10, (idx_logp[i] - min_logp)) / ratio_sum;}    
 }
 
-bool check_delete_region(string const & bam_input, string const &bai_input, string const & fa_input,  string chrn, int beginPos, int endPos ){
+bool check_delete_region(string const & bam_input, string const &bai_input, string const & fa_input,  string chrn, int aluBegin, int aluEnd ){
   seqan::FaiIndex faiIndex;
   unsigned fa_idx = 0;
   assert (!read(faiIndex, fa_input.c_str()) );      
@@ -163,22 +172,19 @@ bool check_delete_region(string const & bam_input, string const &bai_input, stri
   assert ( getIdByName(nameStore, chrn, rID, nameStoreCache) ); // change context ??
   seqan::BamAlignmentRecord record;  
   bool hasAlignments = false;
-  if (!jumpToRegion(inStream, hasAlignments, context, rID, beginPos, endPos, baiIndex)) return false;
+  if (!jumpToRegion(inStream, hasAlignments, context, rID, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK, baiIndex)) return false;
   if (!hasAlignments) return false;
-
-  int aluBegin = beginPos + 600;
-  int aluEnd = endPos - 600;
 
   while (!atEnd(inStream)) {
     assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    if (record.rID != rID || record.beginPos >= endPos) break;
-    if (record.beginPos < beginPos) continue;            
+    if (record.rID != rID || record.beginPos >= aluEnd + ALU_FLANK) break;
+    if (record.beginPos + DEFAULT_READ_LEN < aluBegin - ALU_FLANK) continue;            
     if ( !QC_delete_read(record) ) continue;
     int align_len = getAlignmentLengthInRef(record);    
     bool read_is_left = left_read(record);
     T_READ rt_val = classify_read( record, align_len, aluBegin, aluEnd, faiIndex, fa_idx, read_is_left);
     if (rt_val != useless_read) {
-      cout << aluBegin << " " << aluEnd << " " ;
+      cout << enum_to_string(rt_val)  << " " << aluBegin << " " << aluEnd << " " << abs(record.tLen) << " ";
       print_read(record, cout);
     }
   } 
