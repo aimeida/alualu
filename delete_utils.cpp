@@ -69,6 +69,9 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
 }
 
 T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, seqan::FaiIndex &faiIndex, unsigned fa_idx, bool read_is_left){  
+
+  ////return unknow_read;  // just try it for fun! not serious 
+
   int beginPos = record.beginPos;
   int endPos = record.beginPos + align_len;  
   // 
