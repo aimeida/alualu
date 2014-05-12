@@ -6,34 +6,8 @@
 
 #define MAJOR_SPLIT_POS_FREQ 0.6
 #define FLANK_REGION_LEN 80
-typedef map <int, int> SplitPosInfo;
 
 inline string get_name_pos1(string prefix, string chrn){ return prefix + chrn + ".highCov"; }
-
-bool findSplit(int & beginPos,int &jump_len, seqan::BamAlignmentRecord &record) {
-  char operation;
-  int count;
-  if ( length(record.cigar) < 3) return false;
-  beginPos = record.beginPos;
-  jump_len = 0;
-  for (size_t i = 0; i < length(record.cigar); i++) {
-    operation = record.cigar[i].operation;
-    count = record.cigar[i].count;
-    if ( operation == 'M' or operation == 'D') //  ??? or operation == 'S') 
-      beginPos += count;
-    if ( operation == 'N') {
-      jump_len = count;
-      break;
-    }
-  }
-  return jump_len;
-}
-
-// move split pos further to refBegin
-void moveSplit_toRefBegin(int  & split_begin, TSeq const & ref, int nnn_begin, int jump_len){  
-  while (split_begin < nnn_begin and split_begin + jump_len < (int)length(ref) and ref[split_begin] == ref[ split_begin + jump_len] ) 
-    split_begin++;
-} 
 
 bool coverage_idx_pass(string &line, int &refBegin, int &refEnd, int idx_pn_this, float freq_min, float freq_max, int pn_cnt, bool & maf_pass, stringstream & ss_highCov){
   int n_reads, idx_pn;
@@ -164,7 +138,7 @@ void parse_cigar(string cigar, list <char> & opts, list <int> & cnts){
 }
 
 float major_key_freq(map <int, int> &m, int & key)  {
-  if ( m.empty() ) return 0;
+  if ( m.empty() ) return 1;  // if missing, return 1
   int max_count = 0, sum_count = 0;
   key = m.begin()->first;
   for (map <int, int>::iterator it = m.begin(); it != m.end(); it++) { 
@@ -206,150 +180,136 @@ float right_major_pos(map<int, int> &m, int pos_dif, int &pos) {
 }
 
 bool pn_has_clipPos( int & clipLeft, int & clipRight, vector <pair<char, int> > & splitori_pos, float major_freq) {
+  clipLeft = 0; clipRight = 0;
   map <int, int> clipLefts, clipRights;
   for ( vector <pair<char, int> >::iterator si = splitori_pos.begin(); si != splitori_pos.end(); si++) {
     if ((*si).first == 'L') addKey(clipLefts, (*si).second);
     else if ((*si).first == 'R') addKey(clipRights, (*si).second);
   }
-  clipLeft = 0; clipRight = 0;
-  if (major_key_freq(clipLefts, clipLeft) >= major_freq or
+
+  // both left and right major exists(or missing)
+  if (major_key_freq(clipLefts, clipLeft) >= major_freq and  
       major_key_freq(clipRights, clipRight) >= major_freq ) {
+    
     if (!clipLeft) clipLeft = clipRight;
     if (!clipRight) clipRight = clipLeft;
-    return clipLeft > 0 and clipRight > clipLeft and clipRight - clipLeft < INSERT_POS_GAP;
+    // if ( clipRight < clipLeft) cout << "## " << clipLeft << " " << clipRight << endl;	 	 
+    if (abs(clipRight - clipLeft) > INSERT_POS_GAP) return false;    
+    if ( clipRight < clipLeft ) clipRight = clipLeft;
+    return clipLeft > 0;
   }
   return false;
 }
 
-bool adjust_cigar(seqan::CharString & ref_fa, int refBegin, string file_clip,float major_freq, int & clipLeft, int & clipRight, map <string, int> &pn_splitCnt, int estimated_clipPos, int max_dist_to_splitPos){
+/** move to left until can't move */
+bool clipRight_move_left(string & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & _clipRight) {
+  int i = 1;  // i = 0 is the last match by BWA
+  while ( *cigar_cnts.begin() - i >= 0 and 
+	  ref_fa[_clipRight - refBegin - i] == read_seq[*cigar_cnts.begin() - i] )
+    i++;
+  if ( *cigar_cnts.begin() - (i-1) < CLIP_BP )
+    return false;
+  _clipRight -= (i-1);  
+  return true;
+}
+
+/** move to right until can't move */
+bool clipLeft_move_right(string & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & _clipLeft){
+  int align_len = read_seq.size() - cigar_cnts.back();
+  int i = 0;
+  while (align_len + i < (int)read_seq.size() and ref_fa[_clipLeft - refBegin + i] == read_seq[align_len + i]) i++;
+  if ( cigar_cnts.back() - i < CLIP_BP)
+    return false;
+  _clipLeft += i;    
+  return true;
+}
+
+bool find_insert_pos(seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_clip, int region_begin, int region_end, int flanking_len, float major_freq, int & clipLeft, int & clipRight, map <string,int> &pn_splitCnt) {
+  pn_splitCnt.clear();
   stringstream ss;
-  string line, pn, cigar, read_seq;
-  int beginPos, endPos, hasRCFlag, _clipLeft, _clipRight, align_len; 
+  string line, pn, cigar, seq, read_seq;
+  int beginPos, endPos, hasRCFlag, _clipRight, _clipLeft;
   map <string, vector <pair<char, int> > > pn_splitori_pos;
-  ifstream fin( file_clip.c_str());
+  
+  ifstream fin(file_clip.c_str());
   while ( getline(fin, line)) {
     ss.clear(); ss.str(line); 
     ss >> pn >> beginPos >> endPos >> cigar >> hasRCFlag >> read_seq;
     list <char> cigar_opts;
     list <int> cigar_cnts;
     parse_cigar(cigar, cigar_opts, cigar_cnts);
-    if ( abs(beginPos - estimated_clipPos) >= max_dist_to_splitPos and
-	 abs(endPos - estimated_clipPos) >= max_dist_to_splitPos )
-      continue;
-    
-    if ( *cigar_opts.begin() == 'S' and *cigar_cnts.begin() >= CLIP_BP) { // splitEnd, S*M*
-      align_len = read_seq.size() - *cigar_cnts.begin();
-      _clipRight = beginPos;      
-      int i = 1;  // i = 0 is the last match by BWA
-      while ( *cigar_cnts.begin() - i >= 0 and ref_fa[_clipRight - refBegin - i] == read_seq[*cigar_cnts.begin() - i] ) i++;
-      if ( *cigar_cnts.begin() - (i-1) < CLIP_BP) 
-	continue;
-      _clipRight -= (i-1);
-      pn_splitori_pos[pn].push_back( make_pair('R', _clipRight) );
+    /** one read can have strange cigar (eg S35M22S63), due to error. */    
+    int refBegin = region_begin - 200;
+    int refEnd = region_end + 200;
+    seqan::CharString ref_fa = fasta_seq(faiIndex, fa_idx, refBegin, refEnd, true);
 
-      //cout << "E " << _clipRight << " " << i-1 << " " << cigar << " " << estimated_clipPos << " " << beginPos << " " << endPos << " " << pn << endl;
-      /*
-      if ( i > 1) { 	
-	cout << infix(ref_fa, _clipRight - refBegin, _clipRight - refBegin + align_len) << endl;
-	cout << read_seq.substr(*cigar_cnts.begin(), align_len) << endl ;
-      }    */
+    // splitEnd, S*M*
+    if ( *cigar_opts.begin() == 'S' and *cigar_cnts.begin() >= CLIP_BP and
+	 beginPos >= region_begin - flanking_len and beginPos < region_end + flanking_len) {      
+      _clipRight = beginPos;                  
+      if (clipRight_move_left(read_seq, ref_fa, cigar_cnts, refBegin, _clipRight) )
+	pn_splitori_pos[pn].push_back( make_pair('R', _clipRight) );
+      
+//      if (pn == "AAFWOPH"){
+//        int align_len = read_seq.size() - *cigar_cnts.begin();
+//	cout << "E " << _clipRight << " " << i-1 << " " << cigar << endl;
+//	cout << infix(ref_fa, _clipRight - refBegin, _clipRight - refBegin + align_len) << endl;
+//    	  cout << read_seq.substr(*cigar_cnts.begin(), align_len) << endl ;
+//      }
+      
     }
+    // M*S*
+    if ( cigar_opts.back() == 'S' and cigar_cnts.back() >= CLIP_BP and
+	 endPos >= region_begin - flanking_len and endPos < region_end + flanking_len) {
+	_clipLeft = endPos;
+	if (clipLeft_move_right(read_seq, ref_fa, cigar_cnts, refBegin, _clipLeft))
+	  pn_splitori_pos[pn].push_back( make_pair('L', _clipLeft) );
 
-    if ( cigar_opts.back() == 'S' and cigar_cnts.back() >= CLIP_BP) {    // M*S*
-      align_len = read_seq.size() - cigar_cnts.back();
-      _clipLeft = endPos;
-      int i = 0;
-      while (align_len + i < read_seq.size() and ref_fa[_clipLeft - refBegin + i] == read_seq[align_len + i]) i++;
-      if ( cigar_cnts.back() - i < CLIP_BP)
-	continue;
-      _clipLeft += i;
-      pn_splitori_pos[pn].push_back( make_pair('L', _clipLeft) );
-
-      //cout << "B " << _clipLeft << " " << i << " " << cigar << " " << estimated_clipPos << " " << beginPos << " " << endPos << " " << pn << endl;
-      /*
-      if ( i > 0) {      // move to right until can't move
-	cout << infix(ref_fa, _clipLeft - refBegin - align_len, _clipLeft - refBegin) << endl;
-	cout << read_seq.substr(0, align_len) << endl ;
-	} */
-    }        
+// 	if ( pn == "MJMFGJU" ){
+// 	  int align_len = read_seq.size() - cigar_cnts.back();
+// 	  cout << "B " << _clipLeft << " " << i << cigar << endl;
+// 	  cout << infix(ref_fa, _clipLeft - refBegin - align_len, _clipLeft - refBegin+10) << endl;
+// 	  cout << read_seq.substr(0, align_len+10) << endl ;
+// 	}
+	
+    }
   }
-  fin.close();  
+  fin.close();
   
+  // check each pn
   map <int, int> clipLefts, clipRights;
   map <string, vector <pair<char, int> > >::iterator pi; 
   for (pi = pn_splitori_pos.begin(); pi != pn_splitori_pos.end(); pi++) {
     if (pn_has_clipPos(_clipLeft, _clipRight, pi->second, major_freq)) {
       addKey(clipLefts, _clipLeft);
       addKey(clipRights, _clipRight);
-      cout << _clipLeft << " " << _clipRight << " " << pi->first << endl;
+      //cout << _clipLeft << " " << _clipRight << " " << pi->first << endl;
     }    
   }
   
-  if ( major_key_freq(clipLefts, _clipLeft) < major_freq or
-       major_key_freq(clipRights, _clipRight) < major_freq ) 
+  bool clipLeft_freq = major_key_freq(clipLefts, clipLeft);
+  bool clipRight_freq = major_key_freq(clipRights, clipRight);
+
+  if ( clipLeft_freq < major_freq or clipRight_freq < major_freq )
     return false;
-
-  clipLefts.clear(); 
-  clipRights.clear();
-  pn_splitCnt.clear(); 
-  clipLeft = _clipLeft;
-  clipRight = _clipRight;
+  
   for (pi = pn_splitori_pos.begin(); pi != pn_splitori_pos.end(); pi++) {
-    vector <pair<char, int> >::iterator pii;
-    for ( pii = (pi->second).begin(); pii != (pi->second).end(); pii++) {
+    for (vector <pair<char, int> >::iterator pii = (pi->second).begin(); pii != (pi->second).end(); pii++) {
       if ( ( (*pii).first == 'L' and abs((*pii).second - clipLeft) <= 3 ) or 
-	   ( (*pii).first == 'R' and abs((*pii).second - clipRight) <= 3 ) )
+	   ( (*pii).first == 'R' and abs((*pii).second - clipRight) <= 3 ) ) 
 	addKey(pn_splitCnt, pi->first);      
-    }
-  }  
-
-  return pn_splitCnt.size() > 1; // ignore private mutations 
-}
-
-bool find_insert_pos(seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_clip, int region_begin, int region_end, int flanking_len, float major_freq, int & clipLeft, int & clipRight, map <string,int> &pn_splitCnt) {
-  pn_splitCnt.clear();
-  stringstream ss;
-  string line, pn, cigar, seq;
-  int beginPos, endPos;
-  ifstream fin;
-  fin.open( file_clip.c_str());
-  SplitPosInfo splitPosLeft, splitPosRight;
-  while ( getline(fin, line)) {
-    ss.clear(); ss.str(line); 
-    ss >> pn >> beginPos >> endPos >> cigar;
-    list <char> cigar_opts;
-    list <int> cigar_cnts;
-    parse_cigar(cigar, cigar_opts, cigar_cnts);
-    /** one read can have both splitPosLeft and splitPosRight, due to error in cigar string. 
-	eg. 556287 556309 S35M22S63 */    
-    if ( *cigar_opts.begin() == 'S' and *cigar_cnts.begin() >= CLIP_BP) {
-      if ( beginPos >= region_begin - flanking_len and beginPos < region_end + flanking_len) 
-	addKey(splitPosRight, beginPos);
-    }     
-    if ( cigar_opts.back() == 'S' and cigar_cnts.back() >= CLIP_BP) {
-      if ( endPos >= region_begin - flanking_len and endPos < region_end + flanking_len) 
-	addKey(splitPosLeft, endPos);
-        //cout << "debug begin " << beginPos << " " << cigar << " " << pn << endl;
-    }        
+    } 	
   }
-  fin.close();  
-  int pos1, pos2;
-  clipLeft = 0; clipRight = 0;
-  if ( major_key_freq(splitPosLeft, pos1) >= major_freq or left_major_pos(splitPosLeft, CLIP_BP, pos1) >= major_freq )
-    clipLeft = pos1;  
-  if ( major_key_freq(splitPosRight, pos2) >= major_freq or right_major_pos(splitPosRight, CLIP_BP, pos2) >= major_freq )
-    clipRight = pos2;
-  //cout << "debug " << splitPosLeft.size() << " " << splitPosRight.size() << endl;  
-  //cout << "debug2 " << clipLeft << " " << clipRight << endl;
-  //print_map(splitPosRight);
-  if (!clipLeft and !clipRight) return false;
+  
+//   for (pi = pn_splitori_pos.begin(); pi != pn_splitori_pos.end(); pi++) {  
+//     if ( pn_splitCnt.find(pi->first) == pn_splitCnt.end() ) { // can't find
+//       if ( pn_has_clipPos(_clipLeft, _clipRight, pi->second, major_freq) ) 
+// 	cout << (pi->second).size() << " "<< pi->first << " " << _clipLeft << " " << _clipRight << endl;
+//       if ( pi->first == "AADTNQN") debug_print1( pi->second, cout);         
+//     } 
+//   }  
 
-  int estimated_clipPos = clipLeft ? clipLeft : clipRight;
-  int ref_flanking = 200;
-  int refBegin = estimated_clipPos - ref_flanking;
-  int refEnd = estimated_clipPos + ref_flanking;
-  seqan::CharString ref_fa = fasta_seq(faiIndex, fa_idx, refBegin, refEnd, true);
-  return adjust_cigar(ref_fa, refBegin, file_clip, major_freq, clipLeft, clipRight, pn_splitCnt, estimated_clipPos, INSERT_POS_GAP);
+  return pn_splitCnt.size() > 1; // ignore private mutations   
 }
 
 int main( int argc, char* argv[] )
@@ -450,8 +410,7 @@ int main( int argc, char* argv[] )
       }
     }    
   } else if ( opt == 3 ) {  // find exact split position
-    cerr << "NB: private insertion is ignored here !\n";
-    
+    cerr << "NB: private insertion is ignored here !\n";    
     seqan::FaiIndex faiIndex;
     unsigned fa_idx = 0;    
     string file_fa_prefix = read_config(config_file, "file_fa_prefix");    
@@ -459,7 +418,13 @@ int main( int argc, char* argv[] )
     int region_begin, region_end;
     stringstream ss;
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      assert (!read(faiIndex, (file_fa_prefix + *ci + ".fa").c_str()) );
+      string file_fa = file_fa_prefix + *ci + ".fa";
+      string file_fai = file_fa_prefix + *ci + ".fa.fai";
+      if ( read(faiIndex, file_fa.c_str()) ) {
+	build(faiIndex, file_fa.c_str() ); 
+	write(faiIndex, file_fai.c_str() ); 
+      }
+      
       assert (getIdByName(faiIndex, *ci, fa_idx));
       ifstream fin( (fin_pos + *ci + fout_suffix).c_str());
       assert (fin);
@@ -470,14 +435,20 @@ int main( int argc, char* argv[] )
 	string file_clip = fout_path + *ci + "_pos/" + int_to_string(region_begin) + "_" + int_to_string(region_end);
 	int clipLeft, clipRight;
 	map <string, int> pn_splitCnt;
-	if (find_insert_pos(faiIndex, fa_idx, file_clip, region_begin, region_end, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight, pn_splitCnt)) {
+	
+	if ( is_nonempty_file(file_clip) <= 0) continue;	
+	
+	bool insert_pos_found = find_insert_pos(faiIndex, fa_idx, file_clip, region_begin, region_end, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight, pn_splitCnt); 
+	
+	if ( insert_pos_found ) {
 	  fout << region_begin << " " << region_end << " " << clipLeft << " " << clipRight;
 	  for (map<string, int>::iterator pni = pn_splitCnt.begin(); pni != pn_splitCnt.end(); pni++)
 	    fout << " " << pni->first << "," << pni->second;
 	  fout << endl;
-	}
-      }
-      fin.close();
+	} else
+	  cerr << region_begin << " " << region_end << " " << pn_splitCnt.size() << endl;
+	  	  
+      }		      
       fout.close();
     }
   } else if ( opt == 0 ) {  // find exact split position
@@ -489,11 +460,12 @@ int main( int argc, char* argv[] )
     assert (!read(faiIndex, (file_fa_prefix + "chr1.fa").c_str()) );
     assert (getIdByName(faiIndex, "chr1", fa_idx));
     file_clip = fout_path + "chr1_pos/1574161_1574329";
-    int region_begin = 1574161;
+    int region_begin = 1574161; 
     int region_end = 1574329;
     int clipLeft, clipRight;
     map <string, int> pn_splitCnt;
     insert_pos_found = find_insert_pos(faiIndex, fa_idx, file_clip, region_begin, region_end, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight, pn_splitCnt);
+    cout << "found " << insert_pos_found << " " << clipLeft << " " << clipRight << endl;
   }
   return 0;
 }
