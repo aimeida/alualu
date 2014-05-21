@@ -140,7 +140,7 @@ void alumate_counts_filter(string fn_input, string fn_output, vector<string>  &c
     fin.close();
     fout.close();
     join_location(f_output, f_output, MAX_POS_DIF, MAX_LEN_REGION);    		       
-    cout << "done " << f_output << endl;
+    cerr << "done " << f_output << endl;
   }
 }
 
@@ -257,12 +257,14 @@ bool write_tmpFile_all_loci( vector<string> &fn_inputs, vector <int> & fn_idx, s
   ofstream fout;
   vector<int>::iterator di;
   if (!fn_idx.empty()) di = fn_idx.begin();
-  cout << "write to " << fn_output << " " << fn_inputs.size() << " " << fn_idx.size() << endl;
+  //cerr << "write to " << fn_output << " " << fn_inputs.size() << " " << fn_idx.size() << endl;
   fout.open(fn_output.c_str());
   for (vector<string>::iterator fi = fn_inputs.begin(); fi != fn_inputs.end(); fi ++ ) {
-    //cout << "@@read " << *fi << endl;
     ifstream fin( (*fi).c_str());
-    assert(fin);
+    if (!fin) {
+      cerr << "#### !!! " << *fi << " does not exists! skip it\n";
+      continue;
+    }
     if ( fn_idx.empty() ) 
       while (getline(fin, line)) fout << line << endl;
     else 
@@ -283,7 +285,7 @@ bool write_tmpFile_all_loci( vector<string> &fn_inputs, vector <int> & fn_idx, s
 }
 
 void write_insert_fasta(string bam_input, string fin_pos, MapFO & fileMap, map<int, seqan::CharString> const &rID_chrn){
-  cout << "fixme: to be implemented\n";
+  cerr << "fixme: to be implemented\n";
  }
 
 void filter_outlier_pn(string path_input, map<int, string> &ID_pn, string chrn, string file_pn_used, float pn_keep_ratio) {
@@ -301,15 +303,13 @@ void filter_outlier_pn(string path_input, map<int, string> &ID_pn, string chrn, 
     pn_lineCnt[pi->second] = ni;
   }  
   set <int>::iterator li = lineCnt.begin();
+  int cnt_th ;
   ni = 0;
-  while ( ni++ < pn_keep_ratio * lineCnt.size() ) li++;
-
-  int cnt_th = *li;
-  cout << "count th " << cnt_th << endl;
-
+  while ( ni++ < pn_keep_ratio * lineCnt.size())
+    if ( ++li != lineCnt.end() ) cnt_th = *li;
   ofstream fout(file_pn_used.c_str());
   for (map < string, int >::iterator pi = pn_lineCnt.begin(); pi != pn_lineCnt.end(); pi++)
-    if ( pi->second < cnt_th) fout << pi->first << endl;
+    if ( pi->second <= cnt_th) fout << pi->first << endl;
   fout.close();
 }
 
@@ -354,13 +354,15 @@ void join_all_loci(string f_in, string f_out, int block_dist, int block_len) {
 }
 
 void combine_fn(vector<string> & fn_inputs, string fn_output, vector<int> & fn_idx){
+  //cout <<  "combine_fn "  << fn_inputs.size() << " " << *(fn_inputs.begin())  << endl;
+  //cout <<  "combine_fn "  << fn_output << endl;
   write_tmpFile_all_loci(fn_inputs, fn_idx, fn_output + ".tmp");
   join_all_loci(fn_output + ".tmp", fn_output, MAX_POS_DIF, 2 * MAX_LEN_REGION);
   system( ("rm " + fn_output + ".tmp").c_str() );  
 }
 
 bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string output_prefix, int group_size, string path0) {
-  string fn_prefix = output_prefix + chrn ; // some random names, in case i want to run paralle afterwards
+  string fn_prefix = output_prefix + chrn ; // some random names
   // first iteration
   map <string, vector<string> > fnOut_fnInput;   
   map <string, vector<string> >::iterator fni;
@@ -402,7 +404,7 @@ bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string output_pre
       for ( j = n_group * group_size; j < n_size; j++)   fnOut_fnInput[fnOut].push_back( fn_prefix + "." + int_to_string(j) +  ".tmp" + int_to_string(fn_idx) );	
       for (fni = fnOut_fnInput.begin(); fni != fnOut_fnInput.end(); fni ++) 
 	combine_fn(fni->second, fni->first, empty_vec);		
-      //cout << fn_idx << " " << fnOut_fnInput.size() << " " << fni->first << " " << (fni->second).size() << endl;	
+       //cout << fn_idx << " " << fnOut_fnInput.size() << " " << fni->first << " " << (fni->second).size() << endl;	
       fn_idx++;
       if ( fnOut_fnInput.size() <= 1) 	break;
     }
@@ -416,8 +418,16 @@ int main( int argc, char* argv[] )
   seqan::lexicalCast2(opt, argv[1]);
   string config_file = argv[2];
 
+#ifdef DEBUG_MODE   // only look at chr1 for now 
+  cerr << "!!!! DEBUG_MODE: only chr1 tested\n ";
+  cerr << "!!!! please recompile if you want to run on all chromosomes\n";
+#endif       
+    
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
+  chrns.push_back("chrX");
+  chrns.push_back("chrY");
+
   string path0 = read_config(config_file, "file_alu_insert0") ;    
   string path1 = read_config(config_file, "file_alu_insert1") ;    
   string path_move;
@@ -432,13 +442,21 @@ int main( int argc, char* argv[] )
   map<int, seqan::CharString> rID_chrn;
   
   if (opt == 1) {     // takes about 2.5 hrs 
-    chrns.push_back("chrX");
-    chrns.push_back("chrY");
     seqan::lexicalCast2(idx_pn, argv[3]);
     string pn = ID_pn[idx_pn];
-    cout << "reading pn: " << idx_pn << " " << pn << "..................\n";
+    cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+
+#ifdef GRCH37_DECOY
+    vector<string> chrns_altHead;
+    for (int i = 1; i < 23; i++)  chrns_altHead.push_back(int_to_string(i) );
+    chrns_altHead.push_back("X");
+    chrns_altHead.push_back("Y");
+    get_rID_chrn(bam_input, chrns_altHead, rID_chrn, "chr");    
+#else       
     get_rID_chrn(bam_input, chrns, rID_chrn);    
+#endif
+
     MapFO fileMap;
     string file1_prefix = get_name(path0, pn, ".tmp1");
     string file2_prefix = get_name(path0, pn, ".tmp2");
@@ -453,7 +471,8 @@ int main( int argc, char* argv[] )
       *(fileMap[rc->first]) << header << endl;
     }
     alu_mate_flag(bam_input, rID_chrn, fileMap);
-    cerr << "read records, done\n";    
+    cerr << "read records, done, time used " << clocki.elapsed() << endl;
+    clocki.restart();
 
     // step 2, if mate mapped to alu. 5 min. 
     string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
@@ -504,7 +523,6 @@ int main( int argc, char* argv[] )
     chrns.clear();
     chrns.push_back("chr1");
 #endif       
-   
     string file4_prefix = get_name(path0, pn, ".tmp4");    
     alumate_counts_filter(file3_prefix, file4_prefix, chrns);  //  20 mins
     path_move = path0+"tmp3s/";
@@ -519,8 +537,8 @@ int main( int argc, char* argv[] )
     
 
   } else if (opt == 2) { // get alu sequence for building consensus sequence of the inserted region 
-    chrns.push_back("chrX");
-    chrns.push_back("chrY");
+    cerr << "to be implemented!\n";
+    return 0;
     seqan::lexicalCast2(idx_pn, argv[3]);
     string pn = ID_pn[idx_pn];
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
@@ -543,8 +561,17 @@ int main( int argc, char* argv[] )
       delete fileMap[rc->first];
 
   }  else if (opt == 3) { // combine positions from multiple individuals
-    chrns.push_back("chrX");
-    chrns.push_back("chrY");
+    
+    if (argc != 4){
+      cerr << "example usage (use 85% samples): debug/alu_insert 3 config.properties 0.85\n";
+      cerr << "example usage (use all samples): debug/alu_insert 3 config.properties 1\n";
+      exit(1);
+    }
+
+    float pn_to_use;
+    seqan::lexicalCast2(pn_to_use, argv[3]);
+    cerr << (int)(100 * pn_to_use) << "% pn are used\n";
+    cerr << (int)(100 * (1 - pn_to_use)) << "% pn with too many alu mate are ignored\n";
 
 #ifdef DEBUG_MODE   // only look at chr1 for now 
     chrns.clear();
@@ -554,18 +581,17 @@ int main( int argc, char* argv[] )
     string output_prefix = path1 + "insert_pos.";
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
       string file_pn_used = path1 + "pn.insert_pos."+ *ci;
-      filter_outlier_pn(path0, ID_pn, *ci, file_pn_used, 0.85);
+      filter_outlier_pn(path0, ID_pn, *ci, file_pn_used, pn_to_use);
       map<int, string> id_pn_map;
       ifstream fin(file_pn_used.c_str());
       int i = 0;
       string pn;
       while (fin >> pn) id_pn_map[i++] = pn;
       fin.close();      
-      combine_pn_pos(*ci, id_pn_map, output_prefix, 10, path0);  // takes about 12 mins to run !    
-      system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );
-    }
-    
+      combine_pn_pos(*ci, id_pn_map, output_prefix, 10, path0);  // takes about 12 mins to run !   
+      system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
+    }    
   }
-  cout << "time used " << clocki.elapsed() << endl;
+  cerr << "time used " << clocki.elapsed() << endl;
   return 0;  
 }

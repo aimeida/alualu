@@ -9,7 +9,7 @@
 
 inline string get_name_pos1(string prefix, string chrn){ return prefix + chrn + ".highCov"; }
 
-bool coverage_idx_pass(string &line, int &refBegin, int &refEnd, int idx_pn_this, float freq_min, float freq_max, int pn_cnt, bool & maf_pass, stringstream & ss_highCov){
+bool coverage_idx_pass(string line, int &refBegin, int &refEnd, int idx_pn_this, float freq_min, float freq_max, int pn_cnt, bool & maf_pass, stringstream & ss_highCov){
   int n_reads, idx_pn;
   float coverage;
   stringstream ss;
@@ -65,8 +65,14 @@ void reads_insert_loci(int idx_pn, string chrn, string bam_input, string bai_inp
   assert(!readRecord(header, context, inStream, seqan::Bam()));    
   map<int, seqan::CharString> rID_chrn;
   vector<string> chrns;
+
+#ifdef GRCH37_DECOY
+  chrns.push_back(chrn.substr(3));  // no "chr" in prefix
+  get_rID_chrn(bam_input, chrns, rID_chrn, "chr");    
+#else       
   chrns.push_back(chrn);
-  get_rID_chrn(bam_input, chrns, rID_chrn);
+  get_rID_chrn(bam_input, chrns, rID_chrn);    
+#endif
 
   ofstream frecord(fout_reads_fa.c_str());
   frecord << "chrn region_begin region_end beginPos endPos cigar hasFlagRC seq\n" ;
@@ -137,8 +143,8 @@ void parse_cigar(string cigar, list <char> & opts, list <int> & cnts){
   cnts.push_back(cnt_int);  
 }
 
-float major_key_freq(map <int, int> &m, int & key)  {
-  if ( m.empty() ) return 1;  // if missing, return 1
+float major_key_freq(map <int, int> & m, int & key)  {
+  if ( m.empty() ) return 2.0; 
   int max_count = 0, sum_count = 0;
   key = m.begin()->first;
   for (map <int, int>::iterator it = m.begin(); it != m.end(); it++) { 
@@ -188,9 +194,13 @@ bool pn_has_clipPos( int & clipLeft, int & clipRight, vector <pair<char, int> > 
   }
 
   // both left and right major exists(or missing)
-  if (major_key_freq(clipLefts, clipLeft) >= major_freq and  
-      major_key_freq(clipRights, clipRight) >= major_freq ) {
-    
+  float clipLeft_freq = major_key_freq(clipLefts, clipLeft);
+  float clipRight_freq = major_key_freq(clipRights, clipRight);
+  
+  if (clipLeft_freq > 1 and clipRight_freq > 1) 
+    return false;
+
+  if (clipLeft_freq >= major_freq and clipRight_freq >= major_freq) {
     if (!clipLeft) clipLeft = clipRight;
     if (!clipRight) clipRight = clipLeft;
     if (abs(clipRight - clipLeft) > INSERT_POS_GAP) return false;    
@@ -285,23 +295,25 @@ bool insert_pos_exists(seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_c
 	pn_splitori_pos[pn].push_back( make_pair('L', _clipLeft) );
     }
   }
-  
+    
   // check each pn
   map <int, int> clipLefts, clipRights;
   map <string, vector <pair<char, int> > >::iterator pi; 
-  for (pi = pn_splitori_pos.begin(); pi != pn_splitori_pos.end(); pi++) {
+  for (pi = pn_splitori_pos.begin(); pi != pn_splitori_pos.end(); pi++) {    
     if (pn_has_clipPos(_clipLeft, _clipRight, pi->second, major_freq)) {
       addKey(clipLefts, _clipLeft);
       addKey(clipRights, _clipRight);
     }    
   }  
-  bool clipLeft_freq = major_key_freq(clipLefts, clipLeft);
-  bool clipRight_freq = major_key_freq(clipRights, clipRight);
   
-  if ( clipLeft_freq < major_freq or clipRight_freq < major_freq )
+  clipLeft = clipRight = 0;
+  float clipLeft_freq = major_key_freq(clipLefts, clipLeft);
+  float clipRight_freq = major_key_freq(clipRights, clipRight);
+  if (clipLeft_freq > 1 or clipRight_freq > 1) 
     return false;
+    
+  return ( clipLeft_freq >= major_freq and clipRight_freq >= major_freq );
   
-  return true;
   /*
     for (pi = pn_splitori_pos.begin(); pi != pn_splitori_pos.end(); pi++) 
     for (vector <pair<char, int> >::iterator pii = (pi->second).begin(); pii != (pi->second).end(); pii++) 
@@ -313,6 +325,7 @@ bool insert_pos_exists(seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_c
 
 void read_insert_pos(string file_input, map< pair<int, int>, vector<string> > & insertPos_fn){
   ifstream fin(file_input.c_str());
+  //if (!fin) cout << "error " << file_input << " is missing\n";
   assert(fin);
   string line, region_begin, region_end;
   int clipLeft, clipRight, pre_clipLeft = 0;
@@ -325,13 +338,13 @@ void read_insert_pos(string file_input, map< pair<int, int>, vector<string> > & 
   fin.close();
 }
 
-bool global_align(int hasRCFlag, seqan::CharString seq_read, seqan::CharString seq_ref, int cutEnd = 15){
+bool global_align(int hasRCFlag, seqan::CharString seq_read, seqan::CharString seq_ref, int &score, int cutEnd = 15){
+  score = 0;
   size_t align_len = length(seq_read);
   if ( align_len != length(seq_ref) ) return false;
   if ( align_len <= CLIP_BP) return false;
   seqan::Score<int> scoringScheme(1, -2, -2, -2); // match, mismatch, gap extend, gap open
   TAlign align;
-  int score;
   resize(rows(align), 2);
   assignSource(row(align,0), seq_read); // 2,3, true means free gap
   assignSource(row(align,1), seq_ref);   // 1,4
@@ -377,7 +390,7 @@ void pn_with_insertion(map <string, int> & pn_splitCnt, seqan::FaiIndex &faiInde
     int read_seq_size = read_seq.size();
     int refFlank = read_seq_size + 10;
     seqan::CharString ref_fa = fasta_seq(faiIndex, fa_idx, clipLeft - refFlank, clipRight + refFlank, true);
-    int adj_bp, align_len;
+    int adj_bp, align_len, score;
 
     // cigar string is not perfect 
     if ( *cigar_opts.begin() == 'S' and abs(adj_bp = beginPos - clipRight) < 30 ) {
@@ -385,11 +398,12 @@ void pn_with_insertion(map <string, int> & pn_splitCnt, seqan::FaiIndex &faiInde
       if (read_begin > 0 and read_begin <= read_seq_size - CLIP_BP) {
 	align_len = read_seq_size - read_begin;
 	int ref_begin = clipRight - clipLeft + refFlank ;
-	cout << "SM " << cigar <<  " " << read_seq.substr(read_begin, align_len) << endl; 
-	cout << "SM " << cigar <<  " "<< infix(ref_fa, ref_begin, ref_begin + align_len) << endl;      
+	//cout << "SM " << cigar <<  " " << read_seq.substr(read_begin, align_len) << endl; 
+	//cout << "SM " << cigar <<  " "<< infix(ref_fa, ref_begin, ref_begin + align_len) << endl;      
 	if ( global_align(hasRCFlag, read_seq.substr(read_begin, align_len), 
-			  infix(ref_fa, ref_begin, ref_begin + align_len) ))  {
+			  infix(ref_fa, ref_begin, ref_begin + align_len), score))  {
 	  addKey(pn_splitCnt, pn);
+	  //cout << "cigar " << cigar << endl;
 	  continue;
 	}
       }	
@@ -397,10 +411,10 @@ void pn_with_insertion(map <string, int> & pn_splitCnt, seqan::FaiIndex &faiInde
     if ( cigar_opts.back() == 'S' and abs(adj_bp = endPos - clipLeft) < 30 ) {  
       align_len = read_seq_size - cigar_cnts.back() + adj_bp;
       if (align_len < CLIP_BP or align_len >= read_seq_size) continue;
-      cout << "MS " << cigar << " " << read_seq.substr(0, align_len) << endl;
-      cout << "MS " << cigar << " " << infix(ref_fa, refFlank - align_len, refFlank) << endl;      
+      //cout << "MS " << cigar << " " << read_seq.substr(0, align_len) << endl;
+      //cout << "MS " << cigar << " " << infix(ref_fa, refFlank - align_len, refFlank) << endl;      
       if ( global_align(hasRCFlag, read_seq.substr(0, align_len), 
-			infix(ref_fa, refFlank - align_len, refFlank) )) {
+			infix(ref_fa, refFlank - align_len, refFlank), score )) {
 	addKey(pn_splitCnt, pn);
       } 
     }    
@@ -423,10 +437,15 @@ int main( int argc, char* argv[] )
   string fout_path = read_config(config_file, "file_clip_reads");
   check_folder_exists(fout_path);
   vector<string> chrns;
+
+  for (int i = 1; i < 23; i++) 
+    chrns.push_back("chr" + int_to_string(i));
+  chrns.push_back("chrX");
+  chrns.push_back("chrY");
+
   string tmp_path;
-  for (int i = 1; i < 23; i++) {
-    string chrn = "chr" + int_to_string(i);
-    chrns.push_back(chrn);
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci ++) {
+    string chrn = *ci;
     tmp_path = fout_path + chrn + "_pos/";
     check_folder_exists( tmp_path);
     tmp_path = fout_path + chrn + "/";
@@ -459,8 +478,8 @@ int main( int argc, char* argv[] )
     ofstream fout_pos;
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
       set<string> pns_used;
-      read_file_pn_used(file_pn_used_prefix + *ci, pns_used); // some pn are not used 
-      // if this pn is ignored, due to too many reads
+      read_file_pn_used(file_pn_used_prefix + *ci, pns_used); 
+      // some pn is ignored, due to too many reads
       if ( idx_pn and pns_used.find(pn) == pns_used.end() ) continue; 
       if (!idx_pn)  fout_pos.open( (fin_pos + *ci + fout_suffix).c_str());
       string fout_reads_fa = fout_path + *ci + "/" + pn + fout_suffix;
@@ -470,17 +489,20 @@ int main( int argc, char* argv[] )
     ////writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
     ////writeRecord(fout, record.qName, record.seq, seqan::Fasta());
   } else if ( opt == 2 ) { // for each insertion loci, combine reads from different pns 
-
     fstream fout;
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
       set<string> pns_used;
       set<string> beginPos_fn;
       read_file_pn_used(file_pn_used_prefix + *ci, pns_used);
+      cout << "reading " << *ci << "  " << pns_used.size() << endl; 
       for (set<string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
 	string file_input_clip, file_output_clip;
 	file_input_clip = fout_path + *ci + "/" + *pi + fout_suffix;
 	ifstream fin(file_input_clip.c_str());
-	assert(fin);
+	if (!fin) {
+	  cout << "error " << file_input_clip <<  " missing \n";
+	  continue;
+	}	
 	stringstream ss;
 	string line, tmp1, cigar, seq, region_begin, region_end, beginPos, endPos, hasFlagRC;
 	getline(fin, line);
@@ -522,7 +544,7 @@ int main( int argc, char* argv[] )
       ifstream fin( (fin_pos + *ci + fout_suffix).c_str());
       assert (fin);
       string file_insert_pos = path1 + "clip/" + *ci + fout_suffix;
-      /*
+
       fout.open ( (file_insert_pos + ".tmp").c_str() ); 
       fout << "region_begin region_end clipLeft clipRight\n";
       int region_begin, region_end;
@@ -537,7 +559,6 @@ int main( int argc, char* argv[] )
       }
       fout.close();
       cout << "position file written into " << file_insert_pos + ".tmp" << endl;
-      */
 
       cout << "NB: private insertion is ignored !\n";    
       map< pair<int, int>, vector<string> > insertPos_fileNameOfReads;
@@ -567,12 +588,19 @@ int main( int argc, char* argv[] )
     string file_fa_prefix = read_config(config_file, "file_fa_prefix");    
     assert (!read(faiIndex, (file_fa_prefix + "chr1.fa").c_str()) );
     assert (getIdByName(faiIndex, "chr1", fa_idx));
-    file_clip = fout_path + "chr1_pos/9152703_9152895";
-    int clipLeft = 9152881;
-    int clipRight = 9152881;
+    file_clip = fout_path + "chr1_pos/7000778_7000978";
+    //int clipLeft = 7000791;
+    //int clipRight = 7000791;
+
+    int clipLeft = 7000703;
+    int clipRight = 7000703;
 
     map <string, int> pn_splitCnt;      	
     pn_with_insertion(pn_splitCnt, faiIndex, fa_idx, file_clip, clipLeft, clipRight);
+    cout << pn_splitCnt.size() << endl;
+//    for (map<string, int>::iterator pni = pn_splitCnt.begin(); pni != pn_splitCnt.end(); pni++)
+//      fout << " " << pni->first << "," << pni->second;
+//    fout << endl;
   }
   return 0;
 }

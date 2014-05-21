@@ -1,4 +1,5 @@
 #define DEBUG_MODE  // test only chr1 for now
+#define GRCH37_DECOY // if mapped to GRCH37_DECOY, that is: hg19
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
 #include <seqan/seq_io.h>
@@ -10,6 +11,7 @@
 #define ALU_MIN_LEN 50  // min overlap in alu region
 #define DEFAULT_READ_LEN 100 // if read length unknown, use this default
 #define CLIP_BP 10 
+#define INSERT_POS_GAP 40  // seq ... || ref/alu_insertion || seq ..., max length of ref (that should be replaced by alu_insert)
 #define DISCORDANT_LEN 2000 
 #define INS_COVERAGE_MAX 6 // a random number, remove some high coverage regions 
 #define SCAN_WIN_LEN 400   // 0.99 quantile. 450 for 0.999 quantile. However different reading group differs, only approximate
@@ -63,6 +65,7 @@ inline void regionPos_by_ref(int &region_begin, int &region_end, int ref_begin, 
   region_end = ref_end - 2 * DEFAULT_READ_LEN;
 }
 
+void debug_print1(vector <pair<char, int> > & splitori_pos, ostream & os);
 bool alu_mate_flag( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &fileMap); 
 bool alu_mate_flag_depreciate( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &filoeMap); 
 

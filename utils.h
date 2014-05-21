@@ -26,14 +26,14 @@ inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPo
 
 // if this read is counted in calculating coverage
 inline bool QC_delete_read( seqan::BamAlignmentRecord &record){  
-  return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and hasFlagAllProper(record) and abs(record.tLen) <= 2000);
+  return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and hasFlagAllProper(record) and abs(record.tLen) <= 2000) and (!hasFlagSecondary(record));
   /// BAM_FLAG_ALL_PROPER: 0x0002 All fragments have been aligned properly.
 };
 
 inline bool QC_insert_read( seqan::BamAlignmentRecord &record){  
-  return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and (!hasFlagUnmapped(record)) and (!hasFlagNextUnmapped(record)));
+  return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and (!hasFlagUnmapped(record)) and (!hasFlagNextUnmapped(record)) and (!hasFlagSecondary(record)));
   // what about  ( ! hasFlagAllProper(record) )  ???
-  //// useless FLAG ==> if (hasFlagSecondary(record)) writeRecord(bamStreamOut, record);
+  // added hasFlagSecondary() 
 };
 
 inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
