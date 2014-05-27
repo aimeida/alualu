@@ -1,5 +1,4 @@
 // build distribution file based on flow cells (reading group)
-//#define USING_MAIN_1
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
 #include "common.h"
@@ -70,6 +69,7 @@ void read_pn(map <seqan::CharString, map<int, int> > &rg_lenCnt, string &bamInpu
     i++;
 
     readRecord(record, bamStreamIn);
+    if ( record.rID > 20 ) break;  // only count from chr0 - chr21
     if ( i < jump_first) continue;
     if ( max_read_num and i > max_read_num ) break;    
     
@@ -132,7 +132,8 @@ int main( int argc, char* argv[] )
     
   } else {
     map <seqan::CharString, map<int, int> > rg_lenCnt; // strata by reading group 
-    read_pn(rg_lenCnt, bamInput_file, 5e3, 5e7);  // use only 5% reads to estimate
+    //read_pn(rg_lenCnt, bamInput_file, 5e3, 5e7);  // use only 5% reads to estimate
+    read_pn(rg_lenCnt, bamInput_file, 5e3, 0);  
     write_counts(rg_lenCnt, rg_lenCnt_file); 
     ofstream fout( (path_prob + "RG." + pn).c_str()); 
     for (map <seqan::CharString, map<int, int> >::iterator ri = rg_lenCnt.begin(); ri != rg_lenCnt.end(); ri++ )

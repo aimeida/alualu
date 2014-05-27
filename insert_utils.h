@@ -1,5 +1,4 @@
 #define DEBUG_MODE  // test only chr1 for now
-#define GRCH37_DECOY // if mapped to GRCH37_DECOY, that is: hg19
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
 #include <seqan/seq_io.h>

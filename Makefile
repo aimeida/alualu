@@ -1,18 +1,15 @@
 #-*-makefile-*-
 OD=debug
-## make debug/trybam
+## make debug/alu_delete
 include Makefile.vars
 
-INCLUDE = -I../libraries $(B_INC) 
+INCLUDE = -I/home/qianyuxx/local/include/
 WARN= -W -Wall
 
 CPPFLAGS = $(WARN) $(FLAG) $(INCLUDE) 
 CC = g++ -fno-merge-constants -fopenmp
 
 LIB = -lz -lbz2 $(B_LIB)
-
-BAM2FASTQ_FILES_CPP = bam2fastq.cpp
-BAM2FASTQ_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BAM2FASTQ_FILES_CPP))
 
 ALU_DELETE_FILES_CPP = utils.cpp alu_delete.cpp common.cpp delete_utils.cpp
 ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
@@ -26,13 +23,13 @@ INSERT_POS_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INSERT_POS_FILES_CPP))
 ALU_HG18_FILES_CPP = utils.cpp alu_hg18.cpp common.cpp 
 ALU_HG18_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_HG18_FILES_CPP))
 
-ALU_NOW_FILES_CPP = utils.cpp alu_now.cpp common.cpp diststat.cpp 
+ALU_NOW_FILES_CPP = alu_now.cpp common.cpp utils.cpp insert_utils.cpp
 ALU_NOW_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_NOW_FILES_CPP)) 
 
 UTILS_DEBUG_FILES_CPP = utils_debug.cpp common.cpp utils.cpp
 UTILS_DEBUG_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(UTILS_DEBUG_FILES_CPP))
 
-BUILD_DIST_FILES_CPP = build_dist.cpp common.cpp 
+BUILD_DIST_FILES_CPP = build_dist.cpp common.cpp utils.cpp
 BUILD_DIST_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_FILES_CPP))
 
 FILES_CPP = *cpp *h 
@@ -81,6 +78,6 @@ depend:
 	make test.dep 
 
 clean:
-	/bin/rm -rf $(OD)/*.o $(addprefix $(OD)/,$(EXE))
+	/bin/rm -rf $(OD)/* $(addprefix $(OD)/,$(EXE))
 
 ##fixme: add all.dep

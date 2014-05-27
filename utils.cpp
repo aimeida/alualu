@@ -22,6 +22,27 @@ string read_config(string config_file, string key){
   }     
 }
 
+void parse_cigar(string cigar, list <char> & opts, list <int> & cnts){
+  string cnt;
+  int cnt_int;
+  opts.clear();
+  cnts.clear();
+  for (size_t i = 0; i < cigar.size(); i++) {
+    if ( !isdigit(cigar[i]) ) {
+      opts.push_back(cigar[i]);
+      if (!cnt.empty()) {
+	seqan::lexicalCast2(cnt_int, cnt);
+	cnts.push_back(cnt_int);
+      }
+      cnt = "";
+    } else {
+      cnt += cigar[i];
+    }
+  }
+  seqan::lexicalCast2(cnt_int, cnt);
+  cnts.push_back(cnt_int);  
+}
+
 string get_cigar(seqan::BamAlignmentRecord &record) {
   stringstream ss;
   for (unsigned li = 0; li < length(record.cigar); li++) 
@@ -50,7 +71,11 @@ void get_rID_chrn(string & bam_input, vector<string> &chrns, map<int, seqan::Cha
   assert(!readRecord(header, context, inStream, seqan::Bam()) );
   int rID;
   for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-    assert(getIdByName(nameStore, *ci, rID, nameStoreCache));
+    if ( ! getIdByName(nameStore, *ci, rID, nameStoreCache)) 
+      if ( ! getIdByName(nameStore, (*ci).substr(3), rID, nameStoreCache)) {
+	cerr << "ERROR: Reference sequence named "<< *ci << " not known.\n";
+	exit(0);
+      }
     rID_chrn[rID] = *ci;
   }  
   seqan::close(inStream);

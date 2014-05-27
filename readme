@@ -32,9 +32,6 @@ config.properties: include most of the paths of input/output files, parameters t
 ##################################
 #### alu insertion
 1. alu_insert.cpp 
-   /** 
-       
-       */
    opt = 1: 
        write results: (@C)file_alu_insert0
        for each pn, scan the genome and find potention loci for alu insertion, this generate a lot of temporary files. 
@@ -54,5 +51,20 @@ config.properties: include most of the paths of input/output files, parameters t
               (search 0.85 in alu_insert.cpp in order to modify this number)
 	
 2. insert_pos.cpp
-   
+
+   opt = 1:
+     only insertions with freq in [minfreq, maxfreq] are considered, eg [0.02, 1]
+     for each pn, write the broken reads at these insertion positions to files at (@C)file_clip_reads/chr1/pn_minfreq_maxfreq.
+     This information will be used to infer exact insertion positions later. 
+
+   opt = 2:
+     write files at  (@C)file_clip_reads/chr1_pos/regionBegin_regionEnd
+     all broken reads with insertion between regionBegin and regionEnd are written into corresponding files. 
+
+   opt = 3:
+     exact position is written at (@C)file_alu_insert1/chr1_0.02_1.tmp
+     exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
+               
+	       
+
       

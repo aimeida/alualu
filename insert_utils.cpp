@@ -1,6 +1,12 @@
 // utils function for alu_insert 
 #include "insert_utils.h"
 
+void debug_print1(vector <pair<char, int> > & splitori_pos, ostream & os) {
+  for (vector <pair<char, int> >::iterator si = splitori_pos.begin(); si != splitori_pos.end(); si++)
+    os << (*si).first << " " << (*si).second << ", "; 
+  os << endl;
+}
+
 bool alu_mate_flag( string bam_input, map<int, seqan::CharString> const &rID_chrn, MapFO &fileMap){
   seqan::Stream<seqan::Bgzf> inStream;
   assert (open(inStream, bam_input.c_str(), "r"));
@@ -22,7 +28,7 @@ bool alu_mate_flag( string bam_input, map<int, seqan::CharString> const &rID_chr
       }
       rID_pre = record.rID;	
     }       
-    if (ia++ % 1000000 == 0) cerr << ia << " " << endl;
+    //if (ia++ % 1000000 == 0) cerr << ia << " " << endl;
     int len_seq = length(record.seq);
     if ( getAlignmentLengthInRef(record) < (size_t)(len_seq - 10)) continue; // want very good quality reads 
     if (record.rID < record.rNextId and rID_chrn.find(record.rNextId) != rID_chrn.end() ) { 

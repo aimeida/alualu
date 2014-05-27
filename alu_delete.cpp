@@ -94,11 +94,18 @@ int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, str
     string file_alupos = file_alupos_prefix + chrn;
     AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, minLen_alu_del); // default 200
     int rID = 0;
-    if (!getIdByName(nameStore, chrn, rID, nameStoreCache)) {
-      cerr << "ERROR: Reference sequence named "<< chrn << " not known.\n";
-      return 1;
-    }    
-    assert (!read(faiIndex, (file_fa_prefix + chrn + ".fa").c_str()) );      
+    if (!getIdByName(nameStore, chrn, rID, nameStoreCache)) 
+      if (!getIdByName(nameStore, chrn.substr(3), rID, nameStoreCache)) {
+	cerr << "ERROR: Reference sequence named "<< chrn << " not known.\n";
+	exit(0);
+      }    
+    string fa_input = file_fa_prefix + chrn + ".fa";
+    string fai_input = file_fa_prefix + chrn + ".fai";
+    if ( read(faiIndex, fa_input.c_str() ) ) {
+      build(faiIndex, fa_input.c_str() );
+      write(faiIndex, fai_input.c_str() );
+    }
+    
     assert (getIdByName(faiIndex, chrn, fa_idx));
     for (int count_loci = 0; ; count_loci++) {
       float coverage_mean = 0;

@@ -288,7 +288,7 @@ void write_insert_fasta(string bam_input, string fin_pos, MapFO & fileMap, map<i
   cerr << "fixme: to be implemented\n";
  }
 
-void filter_outlier_pn(string path_input, map<int, string> &ID_pn, string chrn, string file_pn_used, float pn_keep_ratio) {
+void filter_outlier_pn(string path_input, map<int, string> &ID_pn, string chrn, string file_pn_used, float pn_to_use) {
   string line;
   int ni;
   map < string, int > pn_lineCnt;
@@ -305,7 +305,7 @@ void filter_outlier_pn(string path_input, map<int, string> &ID_pn, string chrn, 
   set <int>::iterator li = lineCnt.begin();
   int cnt_th ;
   ni = 0;
-  while ( ni++ < pn_keep_ratio * lineCnt.size())
+  while ( ni++ < pn_to_use * lineCnt.size())
     if ( ++li != lineCnt.end() ) cnt_th = *li;
   ofstream fout(file_pn_used.c_str());
   for (map < string, int >::iterator pi = pn_lineCnt.begin(); pi != pn_lineCnt.end(); pi++)
@@ -446,16 +446,7 @@ int main( int argc, char* argv[] )
     string pn = ID_pn[idx_pn];
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
-
-#ifdef GRCH37_DECOY
-    vector<string> chrns_altHead;
-    for (int i = 1; i < 23; i++)  chrns_altHead.push_back(int_to_string(i) );
-    chrns_altHead.push_back("X");
-    chrns_altHead.push_back("Y");
-    get_rID_chrn(bam_input, chrns_altHead, rID_chrn, "chr");    
-#else       
     get_rID_chrn(bam_input, chrns, rID_chrn);    
-#endif
 
     MapFO fileMap;
     string file1_prefix = get_name(path0, pn, ".tmp1");
@@ -568,20 +559,21 @@ int main( int argc, char* argv[] )
       exit(1);
     }
 
-    float pn_to_use;
-    seqan::lexicalCast2(pn_to_use, argv[3]);
-    cerr << (int)(100 * pn_to_use) << "% pn are used\n";
+    float pn_to_use; 
+    seqan::lexicalCast2(pn_to_use, argv[3]);    
+    string file_pn_used = path1 + "pn.insert_pos";
+    filter_outlier_pn(path0, ID_pn, "chr1", file_pn_used, pn_to_use);
+    cerr << (int)(100 * pn_to_use) << "% pn are used, written in " << file_pn_used << endl;
     cerr << (int)(100 * (1 - pn_to_use)) << "% pn with too many alu mate are ignored\n";
-
+    
 #ifdef DEBUG_MODE   // only look at chr1 for now 
     chrns.clear();
     chrns.push_back("chr1");
 #endif               
+    
 
     string output_prefix = path1 + "insert_pos.";
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      string file_pn_used = path1 + "pn.insert_pos."+ *ci;
-      filter_outlier_pn(path0, ID_pn, *ci, file_pn_used, pn_to_use);
       map<int, string> id_pn_map;
       ifstream fin(file_pn_used.c_str());
       int i = 0;

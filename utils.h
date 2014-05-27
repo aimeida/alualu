@@ -52,6 +52,7 @@ inline bool not_all_match(seqan::BamAlignmentRecord &record, int max_err_bp = 5)
   return non_match_len > max_err_bp;  // if <= 5bp, consider as full match
 };
 
+void parse_cigar(string cigar, list <char> & opts, list <int> & cnts);
 string read_config(string config_file, string key);
 string get_cigar(seqan::BamAlignmentRecord &record);
 void print_cigar(seqan::BamAlignmentRecord &record, ostream & os = cout);

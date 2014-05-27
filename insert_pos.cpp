@@ -51,7 +51,7 @@ bool readbam_loci(string chrn, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamI
   return true;
 }
 
-void reads_insert_loci(int idx_pn, string chrn, string bam_input, string bai_input, string fin_pos, string fout_reads_fa, float freq_min, float freq_max, ofstream &fout_pos, int pn_cnt){
+void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, string bai_input, string fin_pos, string fout_reads_fa, float freq_min, float freq_max, ofstream &fout_pos, int pn_cnt){
 
   seqan::BamIndex<seqan::Bai> baiIndex;
   assert (!read(baiIndex, bai_input.c_str()));
@@ -64,16 +64,8 @@ void reads_insert_loci(int idx_pn, string chrn, string bam_input, string bai_inp
   assert(open(inStream, bam_input.c_str(), "r"));
   assert(!readRecord(header, context, inStream, seqan::Bam()));    
   map<int, seqan::CharString> rID_chrn;
-  vector<string> chrns;
 
-#ifdef GRCH37_DECOY
-  chrns.push_back(chrn.substr(3));  // no "chr" in prefix
-  get_rID_chrn(bam_input, chrns, rID_chrn, "chr");    
-#else       
-  chrns.push_back(chrn);
   get_rID_chrn(bam_input, chrns, rID_chrn);    
-#endif
-
   ofstream frecord(fout_reads_fa.c_str());
   frecord << "chrn region_begin region_end beginPos endPos cigar hasFlagRC seq\n" ;
   int region_begin, region_end;
@@ -120,27 +112,6 @@ void read_file_pn_used(string fn, set<int> & ids_used, map<string, int> & pn_ID)
   string pn;
   while (fin >> pn) ids_used.insert(pn_ID[pn]);
   fin.close();
-}
-
-void parse_cigar(string cigar, list <char> & opts, list <int> & cnts){
-  string cnt;
-  int cnt_int;
-  opts.clear();
-  cnts.clear();
-  for (size_t i = 0; i < cigar.size(); i++) {
-    if ( !isdigit(cigar[i]) ) {
-      opts.push_back(cigar[i]);
-      if (!cnt.empty()) {
-	seqan::lexicalCast2(cnt_int, cnt);
-	cnts.push_back(cnt_int);
-      }
-      cnt = "";
-    } else {
-      cnt += cigar[i];
-    }
-  }
-  seqan::lexicalCast2(cnt_int, cnt);
-  cnts.push_back(cnt_int);  
 }
 
 float major_key_freq(map <int, int> & m, int & key)  {
@@ -459,7 +430,7 @@ int main( int argc, char* argv[] )
 
   map<int, string> ID_pn;
   get_pn(read_config(config_file, "file_pn"), ID_pn);      
-  string file_pn_used_prefix = path1 + "pn.insert_pos.";
+  string file_pn_used = path1 + "pn.insert_pos";
   string fin_pos = path1 + "insert_pos.";
   float freq_min = 0.02, freq_max = 1;  // small groups 
   stringstream ss;
@@ -476,25 +447,23 @@ int main( int argc, char* argv[] )
     string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";      
     ofstream fout_pos;
-    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      set<string> pns_used;
-      read_file_pn_used(file_pn_used_prefix + *ci, pns_used); 
-      // some pn is ignored, due to too many reads
+    set<string> pns_used;
+    read_file_pn_used(file_pn_used, pns_used); // some pn is ignored, due to too many reads
+    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {      
       if ( idx_pn and pns_used.find(pn) == pns_used.end() ) continue; 
       if (!idx_pn)  fout_pos.open( (fin_pos + *ci + fout_suffix).c_str());
       string fout_reads_fa = fout_path + *ci + "/" + pn + fout_suffix;
-      reads_insert_loci(idx_pn, *ci, bam_input, bai_input, fin_pos, fout_reads_fa, freq_min, freq_max, fout_pos, ID_pn.size() );
+      reads_insert_loci(idx_pn, chrns, bam_input, bai_input, fin_pos, fout_reads_fa, freq_min, freq_max, fout_pos, ID_pn.size() );
       if (!idx_pn) fout_pos.close();
     }
     ////writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
     ////writeRecord(fout, record.qName, record.seq, seqan::Fasta());
   } else if ( opt == 2 ) { // for each insertion loci, combine reads from different pns 
     fstream fout;
+    set<string> pns_used;
+    read_file_pn_used(file_pn_used, pns_used);
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      set<string> pns_used;
       set<string> beginPos_fn;
-      read_file_pn_used(file_pn_used_prefix + *ci, pns_used);
-      cout << "reading " << *ci << "  " << pns_used.size() << endl; 
       for (set<string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
 	string file_input_clip, file_output_clip;
 	file_input_clip = fout_path + *ci + "/" + *pi + fout_suffix;
