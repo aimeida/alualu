@@ -11,6 +11,8 @@ typedef seqan::StringSet<seqan::CharString> TNameStore;
 typedef seqan::NameStoreCache<TNameStore>   TNameStoreCache;
 typedef seqan::BamIOContext<TNameStore>     TBamIOContext;
 typedef seqan::Align<seqan::CharString, seqan::ArrayGaps> TAlign;
+typedef seqan::Row<TAlign>::Type TRow; 
+typedef seqan::Iterator<TRow>::Type TRowIterator;
 
 struct MyUpper : public unary_function<char,char> {
   inline char operator()(char x) const  {

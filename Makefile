@@ -20,6 +20,9 @@ ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 INSERT_POS_FILES_CPP = insert_pos.cpp common.cpp utils.cpp insert_utils.cpp
 INSERT_POS_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INSERT_POS_FILES_CPP))
 
+INS_DEL_FILES_CPP = ins_del.cpp common.cpp utils.cpp 
+INS_DEL_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INS_DEL_FILES_CPP))
+
 ALU_HG18_FILES_CPP = utils.cpp alu_hg18.cpp common.cpp 
 ALU_HG18_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_HG18_FILES_CPP))
 
@@ -58,6 +61,9 @@ $(OD)/alu_insert: $(OD) $(ALU_INSERT_FILES_O)
 $(OD)/insert_pos: $(OD) $(INSERT_POS_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(INSERT_POS_FILES_O)
 
+$(OD)/ins_del: $(OD) $(INS_DEL_FILES_O) 
+	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(INS_DEL_FILES_O)
+
 $(OD)/alu_hg18: $(OD) $(ALU_HG18_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_HG18_FILES_O)
 
@@ -78,6 +84,6 @@ depend:
 	make test.dep 
 
 clean:
-	/bin/rm -rf $(OD)/* $(addprefix $(OD)/,$(EXE))
+	/bin/rm -rf $(OD)/*.o $(addprefix $(OD)/,$(EXE))
 
 ##fixme: add all.dep

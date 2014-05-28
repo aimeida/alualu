@@ -386,16 +386,9 @@ void remove_highCov_region(string f_input, string f_output, int offset, map <str
 int main( int argc, char* argv[] )
 {
   if (argc < 3) exit(1);
-
-  int opt, idx_pn;
-  seqan::lexicalCast2(opt, argv[1]);
+  string opt = argv[1];
   string config_file = argv[2];
-  string path0 = read_config(config_file, "file_alu_delete0");
-  string path1 = read_config(config_file, "file_alu_delete1");
-  check_folder_exists(path0);
-  check_folder_exists(path1);
-  string path_move;
-  
+
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   map<int, string> ID_pn;
@@ -405,18 +398,14 @@ int main( int argc, char* argv[] )
   boost::timer clocki;    
   clocki.restart();
 
-  if ( opt == 1 ) {  // write down counts 
+  if ( opt == "write_tmp1" ) { 
+    int idx_pn;
     seqan::lexicalCast2(idx_pn, argv[3]);
-    string chrn = argv[4];
-    if (argc != 5) {
-      cerr << "not enough parameters \n";
-      exit(0);
-    }
     string pn = ID_pn[idx_pn];
-    string fn_tmp1, fn_log1, fn_tmp2;
-    
+    string path0 = read_config(config_file, "file_alu_delete0");
+    check_folder_exists(path0);
+    string fn_tmp1, fn_log1, fn_tmp2;    
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
-    if (chrn != "chr0") { chrns.clear();  chrns.push_back(chrn); }
     map<string, int> rg_to_idx;
     int idx = 0; 
     ifstream fin;
@@ -435,38 +424,39 @@ int main( int argc, char* argv[] )
     int minLen_alu_del; // 200
     seqan::lexicalCast2(minLen_alu_del, (read_config(config_file, "minLen_alu_del")));
     delete_search(minLen_alu_del, bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
-    path_move = path0 + "log1s/";
+    string path_move = path0 + "log1s/";
     check_folder_exists(path_move);
-
     system(("mv " + path0 + pn + ".log1 " + path_move).c_str());
     path_move = path0 + "tmp1s/";
     check_folder_exists(path_move);
     system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
 
-    if ( chrn != "chr0") 
-      return 0;
-
-    // step 2: calculate prob
-    fn_tmp1 = get_name_tmp(path0+"tmp1s/", pn, ".tmp1");
-    //    fn_tmp1 = get_name_tmp(path0+"apr25_tmp1s/", pn, ".tmp1");
-    fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
-
+  } else if ( opt == "write_tmp2" ) {
+    int idx_pn;
+    seqan::lexicalCast2(idx_pn, argv[3]);
+    string pn = ID_pn[idx_pn];
+    string path0 = read_config(config_file, "file_alu_delete0");    
+    string fn_tmp1 = get_name_tmp(path0 + "tmp1s/", pn, ".tmp1");
+    string fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
     map <int, EmpiricalPdf *> empiricalpdf_rg;    
     string pdf_param = read_config(config_file, "pdf_param"); // 100_1000_5  
-    fin.open( get_name_rg(file_dist_prefix, pn).c_str());
-    idx = 0; 
+    ifstream fin( get_name_rg(file_dist_prefix, pn).c_str());
+    int idx = 0; 
+    string rg;
     while (fin >> rg) 
       empiricalpdf_rg[idx++] = new EmpiricalPdf( get_name_rg_pdf(file_dist_prefix, pn, rg, pdf_param));
     fin.close();
     calculate_genoProb(fn_tmp1, fn_tmp2, empiricalpdf_rg); 
     for (map <int, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
       delete ri->second;
-    
-    path_move = path0 + "tmp2s/";
+    string path_move = path0 + "tmp2s/";
     check_folder_exists(path_move);
     system(("mv " + path0 + pn + ".tmp2 " + path_move).c_str());
-
-  } else if (opt == 2) {   // write vcf for all pn
+    
+  } else if (opt == "write_vcf") {   // write vcf for all pn
+    string path0 = read_config(config_file, "file_alu_delete0");
+    string path1 = read_config(config_file, "file_alu_delete1");
+    check_folder_exists(path1);
     string pn;
     vector <string> pns;
     int i = 0, ni = 3000;
@@ -488,13 +478,11 @@ int main( int argc, char* argv[] )
     remove_highCov_region(fn_pos+".tmp", fn_pos, 0, chrn_aluBegin);
     remove_highCov_region(fn_vcf+".tmp", fn_vcf, -1, chrn_aluBegin);
 
-  } else if (opt == 0) { // debugging and manually check some regions 
-
+  } else if (opt == "debug") { // debugging and manually check some regions 
     string pn, chrn, bam_input, bai_input, fa_input;   
     /// check pdf 
     float *log10_pl = new float[3];
     float *gp = new float[3];
-
     /*
     log10_pm[0] = -4.168 + 4;
     log10_pm[1] = -0.60814 + 4;
@@ -503,7 +491,6 @@ int main( int argc, char* argv[] )
     genoProb_print(gp, cout, 6);
     cout << endl;    
     */
-
     pn = "AAWBFCO";
     map <int, EmpiricalPdf *> empiricalpdf_rg;    
     string rg;

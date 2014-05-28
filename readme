@@ -13,14 +13,17 @@ config.properties: include most of the paths of input/output files, parameters t
    /** reads are classified as mid reads (cross alu region, indication of no deletion), clip reads (clip mapped at alu boundary, indication of 
        deletion) and unknown reads (can't know for sure if it is mid or clip read, use insert length instead) .   
        */
-   opt = 1: 
+   opt = write_tmp1: 
        write temporary results: (@C)file_alu_delete0
        generate *log1: high coverage region
        generate *tmp1: counts of 3 types of read, and insert length for unknow reads. 
+
+   opt = write_tmp2: 
        generate *tmp2: calculte genotype prob based on *tmp1 files. 
                        header l0, l1, l2: genotype prob based on mid/clip reads
                        header m0, m1, m2: genotype prob based on mid/clip/unknow reads
-   opt = 2:
+
+   opt = write_vcf:
        write final results: (@C)file_alu_delete0
        mutation that is private (only 1 individual has) is ignore. 
        generate *vcf and *pos files: as before, "lr" used mid/clip reads,  "mr" used mid/clip/unknow reads
@@ -30,17 +33,19 @@ config.properties: include most of the paths of input/output files, parameters t
        debug purpose
        
 ##################################
-#### alu insertion
+#### alu insertion (3 steps: alu_insert.cpp, insert_pos.cpp, ins_del.cpp)
 1. alu_insert.cpp 
    opt = 1: 
        write results: (@C)file_alu_insert0
        for each pn, scan the genome and find potention loci for alu insertion, this generate a lot of temporary files. 
        *tmp1, *tmp2 and *tmp3 files can be ignored after this step
-       *tmp4: 
-
-   opt = 2:       
-       to be implemented if necessary (to construct consensus inserted sequence )
-
+       *tmp1, reads mapped at dif chrn or far away
+       *tmp2, subset of *tmp1, where one end is mapped to alu 
+              keep_alu_mate(), read_sort_by_col(tmp1)
+       *tmp3, rewrite *tmp2 and sort rows by position, read_sort_by_col()
+       *tmp4, subset of *tmp3, where only left_alu_cnt + right_alu_cnt >= 4 is considered. 
+       *tmp4st, subset of *tmp4, with pos in repetitive regions are excluded 
+       
    opt = 3:
         write results: (@C)file_alu_insert1
         find common insertion positions of multiple individuals
@@ -51,6 +56,7 @@ config.properties: include most of the paths of input/output files, parameters t
               (search 0.85 in alu_insert.cpp in order to modify this number)
 	
 2. insert_pos.cpp
+   this file find the exact insertion positions (insertBegin, insertEnd) ==> needs improvement
 
    opt = 1:
      only insertions with freq in [minfreq, maxfreq] are considered, eg [0.02, 1]
@@ -60,11 +66,21 @@ config.properties: include most of the paths of input/output files, parameters t
    opt = 2:
      write files at  (@C)file_clip_reads/chr1_pos/regionBegin_regionEnd
      all broken reads with insertion between regionBegin and regionEnd are written into corresponding files. 
-
    opt = 3:
      exact position is written at (@C)file_alu_insert1/chr1_0.02_1.tmp
      exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
-               
-	       
+                    
+3. ins_del.cpp
+   
+   opt = write_tmp1:
+       write *tmp1 files, which can be used as input files for debug/alu_delete
 
+   opt = write_tmp2:
+       to be implemented (small modification based on alu_delete)
+
+   opt = debug:
+       for some debugging 
+
+   opt = write_testbam:
+       write small test bam files 
       

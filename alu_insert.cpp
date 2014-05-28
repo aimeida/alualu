@@ -526,31 +526,6 @@ int main( int argc, char* argv[] )
     string file4st_prefix = get_name(path0, pn, ".tmp4st");  // subset of *tmp4
     filter_location_rep(file4_prefix, file4st_prefix, chrns, repmaskPos);
     
-
-  } else if (opt == 2) { // get alu sequence for building consensus sequence of the inserted region 
-    cerr << "to be implemented!\n";
-    return 0;
-    seqan::lexicalCast2(idx_pn, argv[3]);
-    string pn = ID_pn[idx_pn];
-    cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
-    string path_aluseq = read_config(config_file, "file_alu_seq");
-    check_folder_exists(path_aluseq);
-    path_move = path0 + "tmp2s/";
-    string fin_pos = get_name(path_move, pn, ".tmp2");
-    string fout_fa = get_name(path_aluseq, pn, ".tmp1");
-    MapFO fileMap;
-    string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
-    get_rID_chrn(bam_input, chrns, rID_chrn);
-    for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
-      string chrn = toCString(rc->second);
-      fileMap[rc->first] = new ofstream( (fout_fa + "." + chrn).c_str() );
-      assert(fileMap[rc->first]);
-      *(fileMap[rc->first]) << "pos hasRC pair_hasRC pair_seq\n";
-    }
-    write_insert_fasta(bam_input, fin_pos, fileMap, rID_chrn);
-    for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) 
-      delete fileMap[rc->first];
-
   }  else if (opt == 3) { // combine positions from multiple individuals
     
     if (argc != 4){
