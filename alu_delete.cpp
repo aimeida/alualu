@@ -16,46 +16,28 @@ void count_reads(map <seqan::CharString, T_READ> &special_read, map < T_READ, in
     addKey(readCnt, rt->second); 
 }
  
-int check_chr_alupos(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, seqan::FaiIndex &faiIndex, unsigned fa_idx, map <string, int> &rg_to_idx, TBamIOContext &context, int rID, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &special_read,  string &rg_str){
-  
+int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <string, int> &rg_to_idx, string chrn, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &special_read,  string &rg_str){  
   special_read.clear();
-  map <string, int>::iterator rgi;
   stringstream rg_ss;
-
-  bool hasAlignments = false;
-  if (aluBegin <= ALU_FLANK  or !jumpToRegion(inStream, hasAlignments, context, rID, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK, baiIndex)) return 0;
-  if (!hasAlignments) return 0;
   int reads_cnt = 0;
   T_READ rt_val;
   seqan::BamAlignmentRecord record;
-  while (!atEnd(inStream)) {
-    assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    //  flank_bound -- alu_begin -- alu_end --(begin)-- flank_bound
-    if (record.rID != rID || record.beginPos >= aluEnd + ALU_FLANK) break;
-    if (record.beginPos + DEFAULT_READ_LEN < aluBegin - ALU_FLANK) continue;
-    if ( !QC_delete_read(record) )  continue;    // ignore extreme large tLen 
-    
+  
+  while ( true ) {
+    string read_status = bam_fh->fetch_a_read(chrn, aluBegin - ALU_FLANK, aluEnd + ALU_FLANK, record);
+    if (read_status == "stop" ) break;
+    if (read_status == "skip" or !QC_delete_read(record)) continue;
     reads_cnt ++;  
     int align_len = getAlignmentLengthInRef(record);    
     bool read_is_left = left_read(record);
     if ( (!read_is_left) and special_read.find(record.qName) != special_read.end() ) continue;    	
-    rt_val = classify_read( record, align_len, aluBegin, aluEnd, faiIndex, fa_idx, read_is_left);
-    
+    rt_val = classify_read( record, align_len, chrn, aluBegin, aluEnd, fasta_fh, read_is_left);
     if ( rt_val != useless_read)  
       special_read[record.qName] = rt_val;
     if ( rt_val == unknow_read ) { // (unknow = jump across alu region)
-	seqan::BamTagsDict tags(record.tags);
-	unsigned idx_rg;
-	assert (findTagKey(idx_rg, tags, "RG"));
-	if (  (rgi = rg_to_idx.find(seqan::toCString(getTagValue(tags, idx_rg)))) != rg_to_idx.end() ) 
-	  rg_ss << rgi->second << ":" << abs(record.tLen) << " ";
-	else
-	  rg_ss <<  "0:" << abs(record.tLen) << " ";  // rare rg, no dist information. use group 0 as default 
+      int rgIdx = get_rgIdx(rg_to_idx, record);
+      rg_ss << rgIdx << ":" << abs(record.tLen) << " ";
     }	    
-    /*    if ( rt_val == clip_read ) 
-	  if ( rt_val == useless_read and (!read_is_left) )  
-	  cout << "useless " << record.beginPos << " " << get_cigar(record) << " " << record.pNext << " " << record.tLen << endl;
-    */
   }
   coverage_mean = length(record.seq) * (float) reads_cnt / (aluEnd - aluBegin + 2 * ALU_FLANK) ;
   if ( coverage_mean > coverage_max) return COVERAGE_HIGH;
@@ -64,54 +46,27 @@ int check_chr_alupos(seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan
 }
 
 int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_prefix, int coverage_max, map<string, int> &rg_to_idx) {    
-  // Open BGZF Stream for reading.
-  seqan::Stream<seqan::Bgzf> inStream;
-  if (!open(inStream, bam_input.c_str(), "r")) {
-    std::cerr << "ERROR: Could not open " << bam_input << " for reading.\n";
-    return 1;
-  }  
-  seqan::BamIndex<seqan::Bai> baiIndex;
-  if (read(baiIndex, bai_input.c_str()) != 0){
-    cerr << "ERROR: Could not read BAI index file " << bai_input << endl;
-    return 1;
-  }
-  TNameStore      nameStore;
-  TNameStoreCache nameStoreCache(nameStore);
-  TBamIOContext   context(nameStore, nameStoreCache);
-  seqan::BamHeader header;
-  seqan::BamAlignmentRecord record;
-  assert(!readRecord(header, context, inStream, seqan::Bam()));
-  seqan::FaiIndex faiIndex;
-  unsigned fa_idx = 0;
-  int aluBegin, aluEnd;      
   map < seqan::CharString, T_READ> special_read;  
   ofstream f_tmp1( f_out.c_str()); 
   f_tmp1 << "chr aluBegin aluEnd mean_coverage midCnt clipCnt unknowCnt unknowStr\n";
   ofstream f_log1( f_log.c_str());  // print out info for clip reads 
 
+  BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, bai_input);
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrn = *ci;
     string file_alupos = file_alupos_prefix + chrn;
     AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, minLen_alu_del); // default 200
-    int rID = 0;
-    if (!getIdByName(nameStore, chrn, rID, nameStoreCache)) 
-      if (!getIdByName(nameStore, chrn.substr(3), rID, nameStoreCache)) {
-	cerr << "ERROR: Reference sequence named "<< chrn << " not known.\n";
-	exit(0);
-      }    
-    string fa_input = file_fa_prefix + chrn + ".fa";
-    string fai_input = file_fa_prefix + chrn + ".fai";
-    if ( read(faiIndex, fa_input.c_str() ) ) {
-      build(faiIndex, fa_input.c_str() );
-      write(faiIndex, fai_input.c_str() );
-    }
-    
-    assert (getIdByName(faiIndex, chrn, fa_idx));
+    FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa");
+
+    int aluBegin, aluEnd;
     for (int count_loci = 0; ; count_loci++) {
       float coverage_mean = 0;
-      if (! alurefpos->updatePos(aluBegin, aluEnd)) break;      
+      if (! alurefpos->updatePos(aluBegin, aluEnd)) 
+	break;      
+      if (aluBegin <= ALU_FLANK or !bam_fh->jump_to_region(chrn, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK))
+	continue;
       string rg_str;
-      int check_alu = check_chr_alupos(inStream, baiIndex, faiIndex, fa_idx, rg_to_idx, context, rID, aluBegin, aluEnd, coverage_max, coverage_mean, special_read, rg_str);
+      int check_alu = check_chr_alupos(bam_fh, fasta_fh, rg_to_idx, chrn, aluBegin, aluEnd, coverage_max, coverage_mean, special_read, rg_str);
       if ( check_alu == 0 ) continue;
       if ( check_alu == COVERAGE_HIGH) {
 	f_log1 << "COVERAGE_HIGH " << chrn << " " << aluBegin << " " << aluEnd << " " << setprecision(2) << coverage_mean << endl;
@@ -124,11 +79,12 @@ int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, str
 	       << " " << readCnt[clip_read] << " " << readCnt[unknow_read] << " " << rg_str << endl;      
     }
     delete alurefpos;
+    delete fasta_fh;
     cerr << "file_alupos:done  " << file_alupos << endl;  
   }
   f_tmp1.close();
   f_log1.close();
-  seqan::close(inStream);     
+  delete bam_fh;
   return 0;
 }
 
@@ -169,8 +125,7 @@ bool genoProb_per_line(string &line, string & output_line, map <int, EmpiricalPd
   }
   if ( p00_is_dominant(log10_pl, - LOG10_GENO_PROB) )
     return false;
-  
-  //cout << "debug2## " << aluBegin << " " << log10_pl[0] << " " << log10_pl[1] << " " << log10_pl[2] << " " << endl;          
+    //cout << "debug2## " << aluBegin << " " << log10_pl[0] << " " << log10_pl[1] << " " << log10_pl[2] << " " << endl;          
   ss_out << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
   log10P_to_P(log10_pl, gp, LOG10_GENO_PROB);
   genoProb_print(gp, ss_out, 6);
@@ -389,40 +344,38 @@ int main( int argc, char* argv[] )
   string opt = argv[1];
   string config_file = argv[2];
 
+  boost::timer clocki;    
+  clocki.restart();  
+  ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
+  map<int, string> ID_pn;
+  get_pn(cf_fh.get_conf("file_pn"), ID_pn);
+
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-  map<int, string> ID_pn;
-  get_pn(read_config(config_file, "file_pn"), ID_pn);
-  string file_fa_prefix = read_config(config_file, "file_fa_prefix");
-  string file_dist_prefix = read_config(config_file, "file_dist_prefix");
-  boost::timer clocki;    
-  clocki.restart();
+  string file_fa_prefix = cf_fh.get_conf("file_fa_prefix");
+  string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
 
   if ( opt == "write_tmp1" ) { 
     int idx_pn;
     seqan::lexicalCast2(idx_pn, argv[3]);
     string pn = ID_pn[idx_pn];
-    string path0 = read_config(config_file, "file_alu_delete0");
-    check_folder_exists(path0);
-    string fn_tmp1, fn_log1, fn_tmp2;    
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
+
+    string path0 = cf_fh.get_conf("file_alu_delete0");
+    check_folder_exists(path0);
     map<string, int> rg_to_idx;
-    int idx = 0; 
-    ifstream fin;
-    string rg;
-    fin.open( get_name_rg(file_dist_prefix, pn).c_str());
-    assert(fin);
-    while (fin >> rg) rg_to_idx[rg] = idx++;
-    fin.close();    
+    parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
+    
     unsigned coverage_max;
-    seqan::lexicalCast2(coverage_max, (read_config(config_file, "coverage_max")));
-    string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+    seqan::lexicalCast2(coverage_max, cf_fh.get_conf("coverage_max"));
+    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
-    string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
-    fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
-    fn_log1 = get_name_tmp(path0, pn, ".log1");
+    string file_alupos_prefix = cf_fh.get_conf("file_alupos_prefix"); 
+    string fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
+    string fn_log1 = get_name_tmp(path0, pn, ".log1");
     int minLen_alu_del; // 200
-    seqan::lexicalCast2(minLen_alu_del, (read_config(config_file, "minLen_alu_del")));
+    seqan::lexicalCast2(minLen_alu_del, (cf_fh.get_conf("minLen_alu_del")));
+
     delete_search(minLen_alu_del, bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
     string path_move = path0 + "log1s/";
     check_folder_exists(path_move);
@@ -435,11 +388,11 @@ int main( int argc, char* argv[] )
     int idx_pn;
     seqan::lexicalCast2(idx_pn, argv[3]);
     string pn = ID_pn[idx_pn];
-    string path0 = read_config(config_file, "file_alu_delete0");    
+    string path0 = cf_fh.get_conf("file_alu_delete0");    
     string fn_tmp1 = get_name_tmp(path0 + "tmp1s/", pn, ".tmp1");
     string fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
     map <int, EmpiricalPdf *> empiricalpdf_rg;    
-    string pdf_param = read_config(config_file, "pdf_param"); // 100_1000_5  
+    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     ifstream fin( get_name_rg(file_dist_prefix, pn).c_str());
     int idx = 0; 
     string rg;
@@ -454,13 +407,13 @@ int main( int argc, char* argv[] )
     system(("mv " + path0 + pn + ".tmp2 " + path_move).c_str());
     
   } else if (opt == "write_vcf") {   // write vcf for all pn
-    string path0 = read_config(config_file, "file_alu_delete0");
-    string path1 = read_config(config_file, "file_alu_delete1");
+    string path0 = cf_fh.get_conf("file_alu_delete0");
+    string path1 = cf_fh.get_conf("file_alu_delete1");
     check_folder_exists(path1);
     string pn;
     vector <string> pns;
     int i = 0, ni = 3000;
-    ifstream fin(read_config(config_file, "file_pn").c_str());
+    ifstream fin(cf_fh.get_conf("file_pn").c_str());
     while ( i++ < ni and  fin >> pn) pns.push_back( pn );
     fin.close();    
     string path_input = path0 + "tmp2s/";
@@ -495,7 +448,7 @@ int main( int argc, char* argv[] )
     map <int, EmpiricalPdf *> empiricalpdf_rg;    
     string rg;
     int idx = 0;
-    string pdf_param = read_config(config_file, "pdf_param"); // 100_1000_5  
+    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     ifstream fin( get_name_rg(file_dist_prefix, pn).c_str());
     while (fin >> rg) 
       empiricalpdf_rg[idx++] = new EmpiricalPdf( get_name_rg_pdf(file_dist_prefix, pn, rg, pdf_param));
@@ -514,21 +467,10 @@ int main( int argc, char* argv[] )
 
     delete log10_pl;
     delete gp;
-
-    return 0;
-    /// check some regions 
     // genotype call /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/jon_chr0/pn1.check
-    pn = "AAWBFCO";
-    chrn = "chr1";
-    int pa = 1455790;
-    int pb = 1456098;
-    bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
-    bai_input = bam_input + ".bai";  
-    fa_input = file_fa_prefix + chrn + ".fa";    
-    check_delete_region(bam_input, bai_input, fa_input, chrn, pa,  pb);
-
   }
 
+  
   cout << "time used " << clocki.elapsed() << endl;
   return 0;  
 }

@@ -1,5 +1,113 @@
 #include "utils.h"
 
+BamFileHandler::BamFileHandler(vector<string> &chrns, string bam_input, string bai_input, string bam_output) 
+  : fn_bai(bai_input)
+  , fn_bam_out(bam_output)
+  , nameStoreCache(nameStore)
+  , context(nameStore, nameStoreCache)
+{
+  if (fn_bai != "" and read(baiIndex, fn_bai.c_str()) != 0){
+    cerr << "ERROR: Could not read BAI index file " << fn_bai << endl;
+    exit(1);
+  }
+  if (!open(inStream, bam_input.c_str(), "r")) {
+    std::cerr << "ERROR: Could not open " << bam_input << " for reading.\n";
+    exit(1);
+  }
+  seqan::BamHeader header;
+  seqan::BamAlignmentRecord record;
+  assert(!readRecord(header, context, inStream, seqan::Bam()) );
+  if (!fn_bam_out.empty()) {
+    assert(open(outStream, bam_output.c_str(), "w") );
+    assert(write2(outStream, header, context, seqan::Bam()) == 0);
+  }
+  int rID;
+  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
+    assert ( (*ci).substr(0,3) == "chr");
+    if ( !getIdByName(nameStore, *ci, rID, nameStoreCache) )
+      if (!getIdByName(nameStore, (*ci).substr(3), rID, nameStoreCache)) {
+	cerr << "ERROR: Reference sequence named "<< *ci << " not known.\n";
+	exit(1);
+      }
+    //cout << *ci << " " << rID  << endl;
+    chrn_rID[*ci] = rID;
+    rID_chrn[rID] = *ci;
+  }    
+} 
+
+BamFileHandler::~BamFileHandler(void){
+  seqan::close(inStream); 
+  if (!fn_bam_out.empty())
+    seqan::close(outStream); 
+}
+
+bool BamFileHandler::jump_to_region(string chrn, int region_begin, int region_end) {
+  if ( fn_bai.empty())  // bai file not available
+    return false;
+  bool hasAlignments = false;	
+  if (!jumpToRegion(inStream, hasAlignments, context, chrn_rID[chrn], region_begin, region_end, baiIndex))
+    return false;
+  return hasAlignments;
+}
+
+string BamFileHandler::fetch_a_read(string chrn, int region_begin, int region_end, seqan::BamAlignmentRecord & record) {
+  if (atEnd(inStream)) return "stop";
+  assert (!readRecord(record, context, inStream, seqan::Bam())); 
+  if (record.rID != chrn_rID[chrn] || record.beginPos >= region_end) return "stop";
+  if (record.beginPos + (int)getAlignmentLengthInRef(record) < region_begin) return "skip";
+  return "record";
+}
+
+bool BamFileHandler::get_chrn(int query_rid, string & pairChrn) {
+  map <int, string>::iterator ri;
+  if ( (ri = rID_chrn.find(query_rid)) == rID_chrn.end() )
+    return false;
+  pairChrn = ri->second;
+  return true;
+}
+
+bool BamFileHandler::write_a_read(seqan::BamAlignmentRecord & record) {
+  if (fn_bam_out.empty())  return false;
+  return write2(outStream, record, context, seqan::Bam()) == 0;
+}
+
+FastaFileHandler::FastaFileHandler(string fn_fa) {
+  string fn_fai = fn_fa + ".fai";
+  if ( read(faiIndex, fn_fa.c_str()) ) {
+    build(faiIndex, fn_fa.c_str() ); 
+    write(faiIndex, fn_fai.c_str() ); 
+  }      
+}
+
+void FastaFileHandler::fetch_fasta_upper(string seq_name, int beginPos, int endPos, seqan::CharString &seq){
+  unsigned idx = 0;
+  assert (getIdByName(faiIndex, seq_name, idx));
+  //cout << beginPos << " " << endPos << endl;
+  assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
+  seqan::toUpper(seq);
+}
+
+void parse_reading_group(string file_rg, map<string, int> & rg_to_idx){
+  ifstream fin (file_rg.c_str() );
+  int idx = 0;
+  assert(fin);
+  string rg;
+  while (fin >> rg) rg_to_idx[rg] = idx++;
+  fin.close();
+  //cout << rg_to_idx.size() << " reading groups exist\n";
+}
+
+int get_rgIdx(map<string, int> & rg_to_idx, seqan::BamAlignmentRecord & record) {
+  seqan::BamTagsDict tags(record.tags);
+  unsigned idx_rg1;  // idx in bam file
+  assert (findTagKey(idx_rg1, tags, "RG"));
+  string rg_name = seqan::toCString(getTagValue(tags, idx_rg1));
+  int idx_rg2 = 0; // idx in my file 
+  map <string, int>::iterator rgi = rg_to_idx.find(rg_name);
+  if (rgi != rg_to_idx.end()) idx_rg2 = rgi->second;
+  return idx_rg2;
+}
+
 string read_config(string config_file, string key){
   string _key, _value;
   ifstream fin( config_file.c_str());
@@ -50,14 +158,9 @@ string get_cigar(seqan::BamAlignmentRecord &record) {
   return ss.str();
 }
 
-void print_cigar(seqan::BamAlignmentRecord &record,  ostream & os) {
-  for (unsigned li = 0; li < length(record.cigar); li++) os << record.cigar[li].operation << record.cigar[li].count; 
-}
-
 void print_read(seqan::BamAlignmentRecord &record, ostream & os) {
   os << record.qName << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record)  << " " ;
-  print_cigar(record, os);
-  os << " " << record.pNext << " " << record.beginPos + record.tLen << endl;
+  os << get_cigar(record) << " " << record.pNext << " " << record.beginPos + record.tLen << endl;
 }
 
 void get_rID_chrn(string & bam_input, vector<string> &chrns, map<int, seqan::CharString> &rID_chrn){
@@ -81,33 +184,11 @@ void get_rID_chrn(string & bam_input, vector<string> &chrns, map<int, seqan::Cha
   seqan::close(inStream);
 }
 
-char mappingType(seqan::BamAlignmentRecord &record){
-  seqan::BamTagsDict tagsDict(record.tags);
-  unsigned myIdx = 0;
-  char valChar = 0;  
-  if ( findTagKey(myIdx, tagsDict, "X0") and extractTagValue(valChar, tagsDict, myIdx)) return valChar;
-  return 0;
-}
-
 int numOfBestHits(seqan::BamAlignmentRecord &record){
   seqan::BamTagsDict tagsDict(record.tags);
   unsigned myIdx = 0, valInt = 1;  
   if ( findTagKey(myIdx, tagsDict, "X0")) extractTagValue(valInt, tagsDict, myIdx);
   return max((int)valInt, 1);
-}
-
-void read_fasta_by_name( seqan::Dna5String &fa_seq, string file_fa, seqan::CharString fa_name){
-  seqan::FaiIndex fai_seq;
-  assert( !access( file_fa.c_str(), 0 ) );
-  if (read(fai_seq, seqan::toCString( file_fa))) {
-    build(fai_seq, seqan::toCString( file_fa));
-    seqan::CharString file_fai =  file_fa;
-    file_fai += ".fai";
-    write(fai_seq, toCString(file_fai));
-  }
-  unsigned idx = 0;  
-  assert (getIdByName(fai_seq, fa_name, idx));
-  readSequence(fa_seq, fai_seq, idx);
 }
 
 seqan::CharString fasta_seq(string fa_input, string chrn, int beginPos, int endPos, bool upper){
@@ -154,22 +235,10 @@ bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_
     if (record.beginPos < that_begin) continue;
     if (record.qName == this_qName) {
       if ((flank_region > 0 and record.beginPos != this_pos) or (flank_region == 0) ) {
-	//cerr << flank_region << " " <<  record.beginPos << " " << this_pos << endl;
 	that_record = record;
 	return true;
       }
     }
-  }
-  return false;
-}
-
-bool find_read(seqan::Stream<seqan::Bgzf> &inStream, TBamIOContext &context, int rID, int this_pos, string this_qName, seqan::BamAlignmentRecord &record){
-  //bool find_read(seqan::Stream<seqan::Bgzf> &inStream, int rID, int this_pos, string &this_qName ){
-  while (!atEnd(inStream)) {
-    assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    if (record.rID != rID || record.beginPos >= this_pos + 5) break;
-    if (record.beginPos < this_pos-5 ) continue;
-    if (record.qName == this_qName and record.beginPos == this_pos) return true;
   }
   return false;
 }

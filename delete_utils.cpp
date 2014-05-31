@@ -34,14 +34,6 @@ bool get_align_pos(int aluBegin, int aluEnd, int beginPos, int endPos, int &ref_
   return read_a < read_b;
 }
 
-string enum_to_string(T_READ x){
-  if ( x == useless_read ) return "useless_read";
-  if ( x == unknow_read ) return "unknow_read";
-  if ( x == mid_read ) return "mid_read";
-  if ( x == clip_read ) return "clip_read";
-  return "ERROR!" ;
-};
-
 bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &record, int read_a, int read_b){
   // no need to use seed or chain, since don't know exact position to start mapping
   seqan::Score<int> scoringScheme(1, -3, -2, -5); // match, mismatch, gap extend, gap open
@@ -58,7 +50,6 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
     - max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
   //cout << clippedBeginPosition(row(align, 0)) << " " << clippedBeginPosition(row(align, 1)) << " " <<  endl;
   //cout << "score1 " << score << " " << align_len << " " << min_align_score(align_len) << " " << min_align_len << " " << endl;
-  //cout << align << endl;
   if ( align_len >= min_align_len and score >= min_align_score(align_len) ) return true; 
   
   // AlignConfig 2=true: free end gaps for record.seq
@@ -68,10 +59,9 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
   return ( align_len >= min_align_len and score >= min_align_score(align_len) );
 }
 
-T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, seqan::FaiIndex &faiIndex, unsigned fa_idx, bool read_is_left){  
+T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, string chrn, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool read_is_left){
 
   ////return unknow_read;  // just try it for fun! not serious 
-
   int beginPos = record.beginPos;
   int endPos = record.beginPos + align_len;  
   // 
@@ -87,8 +77,8 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluB
        ( has_soft_last(record, CLIP_BP) and abs(endPos - aluBegin) <= BOUNDARY_OFFSET ) ) {    
     int ref_a, ref_b, read_a, read_b;
     if ( get_align_pos(aluBegin, aluEnd, beginPos, endPos, ref_a, ref_b, read_a, read_b, record)) {
-      seqan::CharString fa_seq = fasta_seq(faiIndex, fa_idx, ref_a - BOUNDARY_OFFSET, ref_b + BOUNDARY_OFFSET, true);
-      if (split_global_align(fa_seq, record, read_a, read_b)) return clip_read;
+      seqan::CharString fa_seq;
+      fasta_fh->fetch_fasta_upper(chrn, ref_a - BOUNDARY_OFFSET, ref_b + BOUNDARY_OFFSET, fa_seq);          if (split_global_align(fa_seq, record, read_a, read_b)) return clip_read;
     }
     if (read_is_left) return useless_read; 
   }
@@ -100,8 +90,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluB
     if ( (!read_is_left) and beginPos > aluEnd - BOUNDARY_OFFSET and 
     record.pNext + DEFAULT_READ_LEN < aluBegin + BOUNDARY_OFFSET )
     return unknow_read;
-  */
-  
+  */  
   return useless_read;  // alu_flank is too large, we have a lot reads not useful 
 }
 
@@ -156,44 +145,6 @@ void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){
     if (idx_logp[i] > 0) gp[i] = 0;
     else gp[i] = pow(10, (idx_logp[i] - min_logp)) / ratio_sum;}    
 }
-
-bool check_delete_region(string const & bam_input, string const &bai_input, string const & fa_input,  string chrn, int aluBegin, int aluEnd ){
-  seqan::FaiIndex faiIndex;
-  unsigned fa_idx = 0;
-  assert (!read(faiIndex, fa_input.c_str()) );      
-  assert (getIdByName(faiIndex, chrn, fa_idx));
-  TNameStore      nameStore;
-  TNameStoreCache nameStoreCache(nameStore);
-  TBamIOContext   context(nameStore, nameStoreCache);
-  seqan::BamHeader header;
-  seqan::Stream<seqan::Bgzf> inStream;  
-  open(inStream, bam_input.c_str(), "r");
-  seqan::BamIndex<seqan::Bai> baiIndex;
-  assert( !read(baiIndex, bai_input.c_str())) ;
-  assert ( !readRecord(header, context, inStream, seqan::Bam()) );
-  int rID = 0;
-  assert ( getIdByName(nameStore, chrn, rID, nameStoreCache) ); // change context ??
-  seqan::BamAlignmentRecord record;  
-  bool hasAlignments = false;
-  if (!jumpToRegion(inStream, hasAlignments, context, rID, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK, baiIndex)) return false;
-  if (!hasAlignments) return false;
-
-  while (!atEnd(inStream)) {
-    assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    if (record.rID != rID || record.beginPos >= aluEnd + ALU_FLANK) break;
-    if (record.beginPos + DEFAULT_READ_LEN < aluBegin - ALU_FLANK) continue;            
-    if ( !QC_delete_read(record) ) continue;
-    int align_len = getAlignmentLengthInRef(record);    
-    bool read_is_left = left_read(record);
-    T_READ rt_val = classify_read( record, align_len, aluBegin, aluEnd, faiIndex, fa_idx, read_is_left);
-    if (rt_val != useless_read) {
-      cout << enum_to_string(rt_val)  << " " << aluBegin << " " << aluEnd << " " << abs(record.tLen) << " ";
-      print_read(record, cout);
-    }
-  } 
-  return true;
-}
-
 
 EmpiricalPdf::EmpiricalPdf(string pdf_file){ 
   int pos;
