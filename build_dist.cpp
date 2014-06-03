@@ -66,12 +66,11 @@ void write_pdf(string &f_count, string &f_prob, int len_min, int len_max, int bi
 
 int main( int argc, char* argv[] )
 {
-  if (argc < 3) exit(1);
   string config_file = argv[1];
   ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
+  int idx_pn = seqan::lexicalCast <int> (argv[2]);
+  if (argc != 3) exit(1);
 
-  int idx_pn;  // start from 0, run diff pn parallel 
-  seqan::lexicalCast2(idx_pn, argv[2]);  
   map<int, string> ID_pn;
   get_pn(cf_fh.get_conf("file_pn"), ID_pn);
   string pn = ID_pn[idx_pn];

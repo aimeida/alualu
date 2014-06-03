@@ -1,5 +1,41 @@
 #include "utils.h"
 
+EmpiricalPdf::EmpiricalPdf(string pdf_file){ 
+  int pos;
+  float posp;
+  bin_width = 0;
+  ifstream fin( pdf_file.c_str());
+  assert (fin);
+  fin >> pos >> posp;
+  prob_vec[pos] = posp;
+  min_len = pos;
+  min_prob = posp;
+  while (fin >> pos >> posp) {
+    prob_vec[pos] = posp;
+    min_prob = min_prob > posp ? posp : min_prob;      
+    if (!bin_width) bin_width = pos - min_len;
+  }
+  max_len = pos;
+  fin.close();
+  //cerr << "read pdf dist " << pdf_file << endl;
+  cerr << "min_len max_len bin_width min_prob\n";
+  cerr << min_len << " " << max_len << " " << bin_width << " " << min_prob << endl;
+}
+
+float EmpiricalPdf::pdf_obs(int insertlen) {
+  if (insertlen >= max_len || insertlen <= min_len) return min_prob;
+  int nearby_pos = min_len + (insertlen-min_len)/bin_width*bin_width;
+  map<int, float >::iterator it = prob_vec.find(nearby_pos);
+  if ( it != prob_vec.end())  return it->second;
+  return min_prob;
+}   
+
+void EmpiricalPdf::delete_map(map <int, EmpiricalPdf *> & epdf_rg){
+  for (map <int, EmpiricalPdf *>::iterator ri = epdf_rg.begin(); ri != epdf_rg.end(); ri++) 
+    delete ri->second;
+  epdf_rg.clear();
+}
+
 BamFileHandler::BamFileHandler(vector<string> &chrns, string bam_input, string bai_input, string bam_output) 
   : fn_bai(bai_input)
   , fn_bam_out(bam_output)
@@ -42,12 +78,17 @@ BamFileHandler::~BamFileHandler(void){
 }
 
 bool BamFileHandler::jump_to_region(string chrn, int region_begin, int region_end) {
-  if ( fn_bai.empty())  // bai file not available
-    return false;
+  assert ( !fn_bai.empty()); // need bai file if want to jump 
   bool hasAlignments = false;	
   if (!jumpToRegion(inStream, hasAlignments, context, chrn_rID[chrn], region_begin, region_end, baiIndex))
     return false;
   return hasAlignments;
+}
+
+bool BamFileHandler::fetch_a_read(seqan::BamAlignmentRecord & record) {
+  if (atEnd(inStream)) return false;
+  assert (!readRecord(record, context, inStream, seqan::Bam())); 
+  return true;
 }
 
 string BamFileHandler::fetch_a_read(string chrn, int region_begin, int region_end, seqan::BamAlignmentRecord & record) {
@@ -72,19 +113,42 @@ bool BamFileHandler::write_a_read(seqan::BamAlignmentRecord & record) {
 }
 
 FastaFileHandler::FastaFileHandler(string fn_fa) {
-  string fn_fai = fn_fa + ".fai";
   if ( read(faiIndex, fn_fa.c_str()) ) {
     build(faiIndex, fn_fa.c_str() ); 
-    write(faiIndex, fn_fai.c_str() ); 
+    write(faiIndex, (fn_fa+".fai").c_str() ); 
   }      
+  only_one_seq = false;
 }
 
-void FastaFileHandler::fetch_fasta_upper(string seq_name, int beginPos, int endPos, seqan::CharString &seq){
-  unsigned idx = 0;
+FastaFileHandler::FastaFileHandler(string fn_fa, string seq_name) {
+  if ( read(faiIndex, fn_fa.c_str()) ) {
+    build(faiIndex, fn_fa.c_str() ); 
+    write(faiIndex, (fn_fa+".fai").c_str() ); 
+  }      
+  idx = 0;
   assert (getIdByName(faiIndex, seq_name, idx));
-  //cout << beginPos << " " << endPos << endl;
+  only_one_seq = true;
+}
+
+void FastaFileHandler::fetch_fasta_upper(int beginPos, int endPos, seqan::CharString &seq){
+  assert (only_one_seq);
   assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
   seqan::toUpper(seq);
+}
+
+void FastaFileHandler::fetch_fasta_upper(int beginPos, int endPos, seqan::CharString &seq, string seq_name){
+  assert (!only_one_seq);
+  assert (getIdByName(faiIndex, seq_name, idx));
+  assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
+  seqan::toUpper(seq);
+}
+
+seqan::CharString FastaFileHandler::fasta_seq(string fa_input, string seq_name,int beginPos, int endPos) {
+  FastaFileHandler * fasta_fh = new FastaFileHandler(fa_input, seq_name);
+  seqan::CharString fa_seq;
+  fasta_fh -> fetch_fasta_upper(beginPos, endPos, fa_seq);
+  delete fasta_fh;
+  return fa_seq;
 }
 
 void parse_reading_group(string file_rg, map<string, int> & rg_to_idx){
@@ -106,28 +170,6 @@ int get_rgIdx(map<string, int> & rg_to_idx, seqan::BamAlignmentRecord & record) 
   map <string, int>::iterator rgi = rg_to_idx.find(rg_name);
   if (rgi != rg_to_idx.end()) idx_rg2 = rgi->second;
   return idx_rg2;
-}
-
-string read_config(string config_file, string key){
-  string _key, _value;
-  ifstream fin( config_file.c_str());
-  if (!fin) 
-    try {
-      throw 1;    
-    } catch(int e) {
-      cerr << "#### ERROR #### file: "<< config_file << " not exists!!!" << endl;
-    }   
-  while (fin >> _key >> _value) {
-    if (_key == key) 
-      return _value;
-  }
-  fin.close();  
-  try {
-    throw 1;    
-  } catch(int e) {
-    cerr << "#### ERROR #### key: " << key <<" doesn't exist in file:" << config_file << endl;
-    exit(0);
-  }     
 }
 
 void parse_cigar(string cigar, list <char> & opts, list <int> & cnts){
@@ -158,30 +200,9 @@ string get_cigar(seqan::BamAlignmentRecord &record) {
   return ss.str();
 }
 
-void print_read(seqan::BamAlignmentRecord &record, ostream & os) {
+void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os) {
   os << record.qName << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record)  << " " ;
   os << get_cigar(record) << " " << record.pNext << " " << record.beginPos + record.tLen << endl;
-}
-
-void get_rID_chrn(string & bam_input, vector<string> &chrns, map<int, seqan::CharString> &rID_chrn){
-  seqan::Stream<seqan::Bgzf> inStream;
-  assert (open(inStream, bam_input.c_str(), "r"));
-  TNameStore      nameStore;
-  TNameStoreCache nameStoreCache(nameStore);
-  TBamIOContext   context(nameStore, nameStoreCache);
-  seqan::BamHeader header;
-  seqan::BamAlignmentRecord record;
-  assert(!readRecord(header, context, inStream, seqan::Bam()) );
-  int rID;
-  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-    if ( ! getIdByName(nameStore, *ci, rID, nameStoreCache)) 
-      if ( ! getIdByName(nameStore, (*ci).substr(3), rID, nameStoreCache)) {
-	cerr << "ERROR: Reference sequence named "<< *ci << " not known.\n";
-	exit(0);
-      }
-    rID_chrn[rID] = *ci;
-  }  
-  seqan::close(inStream);
 }
 
 int numOfBestHits(seqan::BamAlignmentRecord &record){
@@ -189,26 +210,6 @@ int numOfBestHits(seqan::BamAlignmentRecord &record){
   unsigned myIdx = 0, valInt = 1;  
   if ( findTagKey(myIdx, tagsDict, "X0")) extractTagValue(valInt, tagsDict, myIdx);
   return max((int)valInt, 1);
-}
-
-seqan::CharString fasta_seq(string fa_input, string chrn, int beginPos, int endPos, bool upper){
-  seqan::FaiIndex faiIndex;
-  assert (!read(faiIndex, fa_input.c_str()) );
-  unsigned idx = 0;
-  assert (getIdByName(faiIndex, chrn, idx));
-  seqan::CharString seq;
-  assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
-  if (upper) seqan::toUpper(seq);
-  return seq;
-//    seqan::ModifiedString< seqan::CharString, seqan::ModView<MyUpper> > SEQ(seq);
-//    return SEQ;
-}
-
-seqan::CharString fasta_seq(seqan::FaiIndex &faiIndex, unsigned idx, int beginPos, int endPos, bool upper){
-  seqan::CharString seq;
-  assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
-  if (upper) seqan::toUpper(seq);
-  return seq;
 }
 
 bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region) { // flank_region = 0, print this read; otherwise, print its pair
@@ -277,16 +278,6 @@ RepMaskPos::RepMaskPos(string file_rmsk, int join_len){
 //    assert(beginP[*ci].size() == endP[*ci].size() );
 //    cerr << *ci << " " <<  beginP[*ci].size() << endl;
 //  }
-}
-
-void RepMaskPos::print_begin(int ni){
-  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
-    cerr << *ci << " " << beginP[*ci].size() << endl;
-    vector<int>::iterator pi = beginP[*ci].begin(); 
-    vector<int>::iterator ei = endP[*ci].begin(); 
-    for (int i = 0; i < ni and pi != beginP[*ci].end(); i++) 
-      cerr << *pi++ << " " << *ei++ << endl;
-  }
 }
 
 AluRefPosRead::AluRefPosRead(string file_alupos, int minLen) {
@@ -363,6 +354,74 @@ AluRefPos::~AluRefPos(void){
   beginV.clear();
   endV.clear();
   typeV.clear();
+}
+
+string phred_scaled(float p0, float p1, float p2) {
+  float pmax = max(p0, max(p1, p2));
+  string s0 =  ( p0 == pmax ) ?  "0" : phred_log(p0/pmax);
+  string s1 =  ( p1 == pmax ) ?  "0" : phred_log(p1/pmax);
+  string s2 =  ( p2 == pmax ) ?  "0" : phred_log(p2/pmax);
+  return s0  + "," + s1 + "," + s2; 
+}
+
+void read_pdf_pn( string prefix, string pn, string pdf_param,  map <int, EmpiricalPdf *> & pdf_rg) {
+  ifstream fin( get_name_rg(prefix, pn).c_str() );
+  int idx = 0; 
+  string rg;
+  while (fin >> rg) 
+    pdf_rg[idx++] = new EmpiricalPdf( get_name_rg_pdf(prefix, pn, rg, pdf_param));
+  fin.close();
+}
+
+void get_min_value(map <int, float> & m, float & min_val, int & min_key) {
+  map <int, float>::iterator mi = m.begin();
+  min_val = mi->second;
+  min_key = mi->first ;
+  mi++;
+  while ( mi != m.end() ) {
+    if ( min_val > mi->second) {
+      min_val = mi->second;
+      min_key = mi->first;
+    }
+    mi++;
+  }
+}
+
+void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){  
+  assert( max_logp_dif > 0);
+  map <int, float> idx_logp;
+  int i, min_idx;
+  for ( i = 0; i < 3; i++) {
+    idx_logp[i] = log_gp[i];
+    assert (log_gp[i] <= 0);
+  }
+  float min_logp;
+  get_min_value(idx_logp, min_logp, min_idx);
+  for ( i = 0; i < 3; i++) {
+    if ( idx_logp[i] - min_logp > max_logp_dif ) {
+      idx_logp[min_idx] = 1;   // set p[i] = 0 afterwards
+      min_logp = 1; 
+      break;
+    }
+  }  
+  if (min_logp > 0) { // check the two elements left
+    get_min_value(idx_logp, min_logp, min_idx);
+    for ( i = 0; i < 3; i++) { 
+      if ( idx_logp[i] < 1 and idx_logp[i] - min_logp > max_logp_dif ) {
+	idx_logp[min_idx] = 1;
+	break;
+      }
+    }
+  }
+  get_min_value(idx_logp, min_logp, min_idx);
+  //cout << "log " << min_logp << " " << max_logp_dif << " " << endl;
+  float ratio_sum = 0;
+  for ( i = 0; i < 3; i++) 
+    if (idx_logp[i] < 1) ratio_sum += pow(10, (idx_logp[i] - min_logp));
+  for ( i = 0; i < 3; i++) {
+    if (idx_logp[i] > 0) gp[i] = 0;
+    else gp[i] = pow(10, (idx_logp[i] - min_logp)) / ratio_sum;
+  }    
 }
 
 

@@ -23,122 +23,6 @@ void RecordInfo::debugprint_thisBegin(list <RecordInfo *> & records, ostream & o
   os << endl;
 }
 
-ConfigFileHandler::ConfigFileHandler(string config_file) {
-  ifstream fin(config_file.c_str());
-  if (!fin) 
-    try {
-      throw 1;    
-    } catch(int e) {
-      cerr << "#### ERROR #### file: "<< config_file << " not exists!!!" << endl;
-    }   
-  stringstream ss;
-  string line, key, value;
-  while (getline(fin, line)) {
-    if (line[0] == '#')  continue;
-    ss.clear(); ss.str( line );  
-    ss >> key >> value;
-    configs[key] = value;
-  }
-  fin.close();
-}
-
-string ConfigFileHandler::get_cf_val(string key) {
-  map <string, string>::iterator ci;
-  if ( (ci = configs.find(key)) == configs.end() ) {
-    cerr << "#### ERROR #### key: " << key <<" doesn't exist\n";
-    exit(1);
-  }
-  return ci->second;
-}
-
-BamFileHandler::BamFileHandler(vector<string> &chrns, string bam_input, string bai_input, string bam_output) 
-  : fn_bai(bai_input)
-  , fn_bam_out(bam_output)
-  , nameStoreCache(nameStore)
-  , context(nameStore, nameStoreCache)
-{
-  if (fn_bai != "" and read(baiIndex, fn_bai.c_str()) != 0){
-    cerr << "ERROR: Could not read BAI index file " << fn_bai << endl;
-    exit(1);
-  }
-  if (!open(inStream, bam_input.c_str(), "r")) {
-    std::cerr << "ERROR: Could not open " << bam_input << " for reading.\n";
-    exit(1);
-  }
-  seqan::BamHeader header;
-  seqan::BamAlignmentRecord record;
-  assert(!readRecord(header, context, inStream, seqan::Bam()) );
-  if (!fn_bam_out.empty()) {
-    assert(open(outStream, bam_output.c_str(), "w") );
-    assert(write2(outStream, header, context, seqan::Bam()) == 0);
-  }
-  int rID;
-  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-    assert ( (*ci).substr(0,3) == "chr");
-    if ( !getIdByName(nameStore, *ci, rID, nameStoreCache) )
-      if (!getIdByName(nameStore, (*ci).substr(3), rID, nameStoreCache)) {
-	cerr << "ERROR: Reference sequence named "<< *ci << " not known.\n";
-	exit(1);
-      }
-    //cout << *ci << " " << rID  << endl;
-    chrn_rID[*ci] = rID;
-    rID_chrn[rID] = *ci;
-  }    
-} 
-
-BamFileHandler::~BamFileHandler(void){
-  seqan::close(inStream); 
-  if (!fn_bam_out.empty())
-    seqan::close(outStream); 
-}
-
-bool BamFileHandler::jump_to_region(string chrn, int region_begin, int region_end) {
-  if ( fn_bai.empty())  // bai file not available
-    return false;
-  bool hasAlignments = false;	
-  if (!jumpToRegion(inStream, hasAlignments, context, chrn_rID[chrn], region_begin, region_end, baiIndex))
-    return false;
-  return hasAlignments;
-}
-
-string BamFileHandler::fetch_a_read(string chrn, int region_begin, int region_end, seqan::BamAlignmentRecord & record) {
-  if (atEnd(inStream)) return "stop";
-  assert (!readRecord(record, context, inStream, seqan::Bam())); 
-  if (record.rID != chrn_rID[chrn] || record.beginPos >= region_end) return "stop";
-  if (record.beginPos + (int)getAlignmentLengthInRef(record) < region_begin) return "skip";
-  if (!QC_insert_read(record) ) return "skip";
-  return "record";
-}
-
-bool BamFileHandler::get_chrn(int query_rid, string & pairChrn) {
-  map <int, string>::iterator ri;
-  if ( (ri = rID_chrn.find(query_rid)) == rID_chrn.end() )
-    return false;
-  pairChrn = ri->second;
-  return true;
-}
-
-bool BamFileHandler::write_a_read(seqan::BamAlignmentRecord & record) {
-  if (fn_bam_out.empty())  return false;
-  return write2(outStream, record, context, seqan::Bam()) == 0;
-}
-
-FastaFileHandler::FastaFileHandler(string fn_fa) {
-  string fn_fai = fn_fa + ".fai";
-  if ( read(faiIndex, fn_fa.c_str()) ) {
-    build(faiIndex, fn_fa.c_str() ); 
-    write(faiIndex, fn_fai.c_str() ); 
-  }      
-}
-
-void FastaFileHandler::fetch_fasta_upper(string seq_name, int beginPos, int endPos, seqan::CharString &seq){
-  unsigned idx = 0;
-  assert (getIdByName(faiIndex, seq_name, idx));
-  //cout << beginPos << " " << endPos << endl;
-  assert (!readRegion(seq, faiIndex, idx, beginPos, endPos));
-  seqan::toUpper(seq);
-}
-
 AluconsHandler::AluconsHandler(string fn_fa, string sn):
   FastaFileHandler(fn_fa) {
   update_seq_name(sn);
@@ -247,7 +131,7 @@ void filter_alu_read(list <RecordInfo *> & records, AluconsHandler *alucons_fh, 
       chrn = (*ri)->pairChrn;
       fasta_fh = new FastaFileHandler(file_fa + chrn + ".fa");      
     }
-    fasta_fh -> fetch_fasta_upper(chrn, (*ri)->pairBegin, (*ri)->pairEnd, ref_fa);
+    fasta_fh -> fetch_fasta_upper((*ri)->pairBegin, (*ri)->pairEnd, ref_fa);
     float sim_rate;    
     int align_consBegin, align_len;    
     int cons_ori = align_alu_cons_call(ref_fa, alucons_fh, sim_rate, align_consBegin, align_len, ALUCONS_SIMILARITY);
@@ -420,52 +304,6 @@ bool writeReads_insertLen(RecordInfo * ii, int alu_ins_len, map <seqan::CharStri
   return false;
 }
 
-void write_cnt0(string chrn, list <RecordInfo *> & records, map <seqan::CharString, qNameInfo > & qName_info,map <int, int> & insertBegin_consLen, int alu_ins_len_fixed, ofstream &fout, int num_informative_read) {
-  bool use_fixed_consLen = insertBegin_consLen.empty() ? true : false;
-  int alu_ins_len;
-  records.sort( RecordInfo::sort_insertPos );      
-  list <RecordInfo *>::iterator ri;  
-  int midCnt, clipCnt, unknowCnt;
-  int insertBegin = 0, insertEnd;
-  stringstream ss;
-  for (list <RecordInfo *>::iterator ri = records.begin(); ri != records.end(); ri++) {
-    if ( (*ri)->insertBegin != insertBegin ) {
-      if (insertBegin != 0) 
-	fout << chrn << " " << (*ri)->insertBegin << " " << (*ri)->insertEnd << " -1 "
-	     << midCnt << " " << clipCnt << " " << unknowCnt << " " << ss.str() << endl;
-      insertBegin = (*ri)->insertBegin;
-      alu_ins_len = use_fixed_consLen ? alu_ins_len_fixed : insertBegin_consLen[insertBegin];
-      insertEnd = (*ri)->insertEnd;
-      midCnt = 0, clipCnt = 0, unknowCnt = 0;
-      ss.clear(); ss.str("");
-    }
-    writeReads_type(*ri, alu_ins_len, qName_info, midCnt, clipCnt, unknowCnt, ss);  
-    //writeReads_insertLen(*ri, alu_ins_len, qName_info, midCnt, clipCnt, unknowCnt, ss);  
-  }
-  fout << chrn << " " << insertBegin << " " << insertEnd << " -1 "
-       << midCnt << " " << clipCnt << " " << unknowCnt << ss.str() << endl;
-}
-
-void parse_reading_group(string file_rg, map<string, int> & rg_to_idx){
-  ifstream fin (file_rg.c_str() );
-  int idx = 0;
-  assert(fin);
-  string rg;
-  while (fin >> rg) rg_to_idx[rg] = idx++;
-  fin.close();
-  //cout << rg_to_idx.size() << " reading groups exist\n";
-}
-
-int get_rgIdx(map<string, int> & rg_to_idx, seqan::BamAlignmentRecord & record) {
-  seqan::BamTagsDict tags(record.tags);
-  unsigned idx_rg1;  // idx in bam file
-  assert (findTagKey(idx_rg1, tags, "RG"));
-  string rg_name = seqan::toCString(getTagValue(tags, idx_rg1));
-  int idx_rg2 = 0; // idx in my file 
-  map <string, int>::iterator rgi = rg_to_idx.find(rg_name);
-  if (rgi != rg_to_idx.end()) idx_rg2 = rgi->second;
-  return idx_rg2;
-}
 
 I_READ classify_read(seqan::BamAlignmentRecord &record, int insertBegin, int insertEnd) {
   if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) 
@@ -492,14 +330,14 @@ void alu_aluPart_reads(string chrn, vector< pair<int, int> > & insert_pos, map<s
   seqan::BamAlignmentRecord record;
   string read_status;
   for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
-    int region_begin = (*pi).first - ALU_FLANK;
-    int region_end = (*pi).second + ALU_FLANK;	
+    int region_begin = (*pi).first - ALU_INSERT_FLANK;
+    int region_end = (*pi).second + ALU_INSERT_FLANK;	
     if (! bam_fh->jump_to_region(chrn, region_begin, region_end)) 
       continue;    
     while ( true ) {
       read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
       if (read_status == "stop" ) break;
-      if (read_status == "skip") continue;
+      if (read_status == "skip" or !QC_insert_read(record)) continue;
       string pairChrn;
       if ( (bam_fh->get_chrn)(record.rNextId, pairChrn) == false) continue;	    
       I_READ iread = classify_read(record, (*pi).first, (*pi).second);
@@ -530,35 +368,108 @@ void alu_aluPart_reads(string chrn, vector< pair<int, int> > & insert_pos, map<s
   }
 }
 
+void write_cnt0(string chrn, list <RecordInfo *> & records, map <seqan::CharString, qNameInfo > & qName_info,map <int, int> & insertBegin_consLen, int alu_ins_len_fixed, ofstream &fout, int num_informative_read) {
+  bool use_fixed_consLen = insertBegin_consLen.empty() ? true : false;
+  int alu_ins_len;
+  records.sort( RecordInfo::sort_insertPos );      
+  list <RecordInfo *>::iterator ri;  
+  int midCnt, clipCnt, unknowCnt;
+  int insertBegin = 0, insertEnd;
+  stringstream ss;
+  for (list <RecordInfo *>::iterator ri = records.begin(); ri != records.end(); ri++) {
+    if ( (*ri)->insertBegin != insertBegin ) {
+      if (insertBegin != 0) 
+	fout << chrn << " " << (*ri)->insertBegin << " " << (*ri)->insertEnd << " " << alu_ins_len 
+	     << " " << midCnt << " " << clipCnt << " " << unknowCnt << " " << ss.str() << endl;
+      insertBegin = (*ri)->insertBegin;
+      alu_ins_len = use_fixed_consLen ? alu_ins_len_fixed : insertBegin_consLen[insertBegin];
+      insertEnd = (*ri)->insertEnd;
+      midCnt = 0, clipCnt = 0, unknowCnt = 0;
+      ss.clear(); ss.str("");
+    }
+    writeReads_type(*ri, alu_ins_len, qName_info, midCnt, clipCnt, unknowCnt, ss);  
+    //writeReads_insertLen(*ri, alu_ins_len, qName_info, midCnt, clipCnt, unknowCnt, ss);  
+  }
+  fout << chrn << " " << insertBegin << " " << insertEnd << " -1 "
+       << midCnt << " " << clipCnt << " " << unknowCnt << ss.str() << endl;
+}
+
+bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg){
+  float *log10_gp = new float[3];
+  stringstream ss, ss_out;
+  string chrn, insertBegin, insertEnd;
+  int estiAluLen, midCnt, clipCnt, unknowCnt;
+  ss.clear(); ss.str(line); 
+  ss >> chrn >> insertBegin >> insertEnd >> estiAluLen >> midCnt >> clipCnt >> unknowCnt ;
+  float prob_ub = pow(10, -LOG10_RATIO_UB);
+  float prob_known = (midCnt+clipCnt)/(float)(midCnt + clipCnt + unknowCnt);
+  for (int i = 0; i < 3; i++) log10_gp[i] = 0;
+  if (prob_known) {
+    log10_gp[0] = clipCnt * log10 ( prob_known * prob_ub ) + midCnt * log10 ( prob_known * (1 - prob_ub) );
+    log10_gp[1] = (midCnt + clipCnt) * log10 (prob_known * 0.5) ; 
+    log10_gp[2] = midCnt * log10 ( prob_known * prob_ub ) + clipCnt * log10 ( prob_known * (1 - prob_ub) );
+  }
+  if (unknowCnt) { 
+    int insert_len, idx;
+    string token;
+    for (int i = 0; i < unknowCnt; i++) {
+      getline(ss, token, ':');
+      seqan::lexicalCast2(idx, token);
+      getline(ss, token, ' ');
+      seqan::lexicalCast2(insert_len, token);      
+      float p_y = pdf_rg[idx]->pdf_obs(insert_len);
+      float p_z = pdf_rg[idx]->pdf_obs(insert_len - estiAluLen);
+      //float freq0 = 0.67;  // high FP ratio      
+      float freq0 = ( midCnt + 1 )/(float)(midCnt + clipCnt + 2); // 1 and 2 are psudo count
+      log10_gp[0] += log10 (p_y * (1 - prob_known));
+      log10_gp[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z) * (1 - prob_known) ) ;
+      log10_gp[2] += log10 (p_z * (1 - prob_known));
+    }
+  }
+  bool use_this_line = false;
+  if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
+    ss_out << chrn << " " << insertBegin << " " << insertEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
+    float *gp = new float[3];
+    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+    ss_out << " " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2]; 
+    delete gp;    
+    output_line = ss_out.str();
+    use_this_line = true;
+  }
+  delete log10_gp;
+  return use_this_line;
+}
+
 int main( int argc, char* argv[] )
  {
-   if (argc < 2) exit(1);
-   string opt = argv[1];
-   string config_file = argv[2];
-
+   string config_file = argv[1];
+   string opt =  argv[2];
+   if (argc < 4) exit(1);
+   
    boost::timer clocki;    
    clocki.restart();
+
    ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
    map<int, string> ID_pn;
-   get_pn(cf_fh.get_cf_val("file_pn"), ID_pn);      
-
+   get_pn(cf_fh.get_conf("file_pn"), ID_pn);      
    vector<string> chrns;  
    for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
    chrns.push_back("chrX");
    chrns.push_back("chrY");  
+   string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
 
    if (opt == "write_tmp1") { 
      int idx_pn;
      seqan::lexicalCast2(idx_pn, argv[3]);
      string pn = ID_pn[idx_pn];      
-     string posfile_prefix = cf_fh.get_cf_val("file_clip_reads");
-     string posfile_suffix = cf_fh.get_cf_val("freq_min") + "_" + cf_fh.get_cf_val("freq_max");
+     string posfile_prefix = cf_fh.get_conf("file_clip_reads");
+     string posfile_suffix = cf_fh.get_conf("freq_min") + "_" + cf_fh.get_conf("freq_max");
 
-     string bam_input = cf_fh.get_cf_val("file_bam_prefix") + pn + ".bam";
+     string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
 
 #ifdef DEBUG_MODE   
      cerr << "!!!! DEBUG_MODE, using test bam input and chr1 \n";
-     bam_input = cf_fh.get_cf_val("file_test_bam_prefix") + pn + ".bam";
+     bam_input = cf_fh.get_conf("file_test_bam_prefix") + pn + ".bam";
 #endif
      string bai_input = bam_input + ".bai";  
      BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, bai_input); 
@@ -571,16 +482,16 @@ int main( int argc, char* argv[] )
  #endif       
 
      // reading groups 
-     string file_rg = cf_fh.get_cf_val("file_dist_prefix") + "RG." + pn;
+     string file_rg = get_name_rg(file_dist_prefix, pn);
      map<string, int> rg_to_idx;
      parse_reading_group( file_rg, rg_to_idx );
-     AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_cf_val("file_alu_cons"), cf_fh.get_cf_val("type_alu_cons"));
-     string file_fa = cf_fh.get_cf_val("file_fa_prefix");         
-     string fout_path0 = cf_fh.get_cf_val("file_ins_del0");
+     AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"), cf_fh.get_conf("type_alu_cons"));
+     string file_fa = cf_fh.get_conf("file_fa_prefix");         
+     string fout_path0 = cf_fh.get_conf("file_ins_del0");
      check_folder_exists( fout_path0);
 
      ofstream fout1 ( (fout_path0 + pn + ".tmp1").c_str());     
-     fout1 << "chr aluBegin aluEnd mean_coverage midCnt clipCnt unknowCnt unknowStr\n";    
+     fout1 << "chr insertBegin insertEnd estimatedAluLen midCnt clipCnt unknowCnt unknowStr\n";    
      for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
        string posfile = posfile_prefix + *ci + "_" + posfile_suffix;
        vector< pair<int, int> > insert_pos;
@@ -602,9 +513,28 @@ int main( int argc, char* argv[] )
      fout1.close();
      delete bam_fh;    
      delete alucons_fh;
+
    } else if (opt == "write_tmp2") { 
-     
-     cout << " opt = write_tmp2 to be implemented\n";
+     int idx_pn = seqan::lexicalCast <int> (argv[3]);
+     string pn = ID_pn[idx_pn];      
+     map <int, EmpiricalPdf *> pdf_rg;
+     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5                                   
+     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
+     string fout_path0 = cf_fh.get_conf("file_ins_del0");
+     string fn_tmp1 = fout_path0 + pn + ".tmp1";
+     string fn_tmp2 = fout_path0 + pn + ".tmp2";
+
+     ofstream fout(fn_tmp2.c_str());
+     fout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";
+     string line, output_line;
+     ifstream fin(fn_tmp1.c_str());
+     assert(fin);
+     getline(fin, line); // read header                                                               
+     while (getline(fin, line))
+       if (parseline_del_tmp1(line, output_line, pdf_rg))
+	 fout << output_line << endl;
+     fin.close();
+     fout.close();
      
    } else if ( opt == "debug") {
      string ref_fa = "CAGCACTTTGGGAGGCCGAGGCGGGCAGATCACGAGGTCAGGAGATCGAGACCATCCTGGCTAATACGGTGAAACCCCGTCTCTACTAAAAATACAAAAA";
@@ -613,12 +543,12 @@ int main( int argc, char* argv[] )
      int idx_pn;
      seqan::lexicalCast2(idx_pn, argv[3]);
      string pn = ID_pn[idx_pn];      
-     string posfile_prefix = cf_fh.get_cf_val("file_clip_reads");
-     string posfile_suffix = cf_fh.get_cf_val("freq_min") + "_" + cf_fh.get_cf_val("freq_max");
+     string posfile_prefix = cf_fh.get_conf("file_clip_reads");
+     string posfile_suffix = cf_fh.get_conf("freq_min") + "_" + cf_fh.get_conf("freq_max");
 
-     string bam_input = cf_fh.get_cf_val("file_bam_prefix") + pn + ".bam";
+     string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
      string bai_input = bam_input + ".bai";  
-     string bam_output = cf_fh.get_cf_val("file_test_bam_prefix") + pn + ".bam";
+     string bam_output = cf_fh.get_conf("file_test_bam_prefix") + pn + ".bam";
      BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, bai_input, bam_output); 
      
      vector< pair<int, int> > insert_pos;
@@ -633,8 +563,8 @@ int main( int argc, char* argv[] )
        string posfile = posfile_prefix + *ci + "_" + posfile_suffix + ".testbam";
        read_first2col(posfile, insert_pos);
        for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
-	 int region_begin = (*pi).first - ALU_FLANK;
-	 int region_end = (*pi).second + ALU_FLANK;	
+	 int region_begin = (*pi).first - ALU_INSERT_FLANK;
+	 int region_end = (*pi).second + ALU_INSERT_FLANK;	
 	 if (! bam_fh->jump_to_region(*ci, region_begin, region_end)) 
 	   continue;
 	 int ni = 0;

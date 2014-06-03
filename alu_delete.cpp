@@ -7,8 +7,6 @@
 #include <boost/timer.hpp>
 
 inline string get_name_tmp(string path, string fn, string suffix){ return path + fn + suffix;}
-inline string get_name_rg(string prefix, string pn){ return prefix + "RG." + pn;}
-inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_param){ return prefix + pn + ".count." + rg + "." + pdf_param; }
 
 void count_reads(map <seqan::CharString, T_READ> &special_read, map < T_READ, int > &readCnt) {
   readCnt.clear();
@@ -31,7 +29,7 @@ int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <st
     int align_len = getAlignmentLengthInRef(record);    
     bool read_is_left = left_read(record);
     if ( (!read_is_left) and special_read.find(record.qName) != special_read.end() ) continue;    	
-    rt_val = classify_read( record, align_len, chrn, aluBegin, aluEnd, fasta_fh, read_is_left);
+    rt_val = classify_read( record, align_len, aluBegin, aluEnd, fasta_fh, read_is_left);
     if ( rt_val != useless_read)  
       special_read[record.qName] = rt_val;
     if ( rt_val == unknow_read ) { // (unknow = jump across alu region)
@@ -88,23 +86,22 @@ int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, str
   return 0;
 }
 
-bool genoProb_per_line(string &line, string & output_line, map <int, EmpiricalPdf *> & empiricalpdf_rg, float *log10_pl, float *gp) {
+bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg){
+  float *log10_gp = new float[3];
   stringstream ss, ss_out;
-  string phred_str_l, phred_str_m,chrn, meanCov;
+  string chrn, meanCov;
   int aluBegin, aluEnd, midCnt, clipCnt, unknowCnt;
   ss.clear(); ss.str(line); 
   ss >> chrn >> aluBegin >> aluEnd >> meanCov >> midCnt >> clipCnt >> unknowCnt ;
-  // based on special reads
   float prob_ub = pow(10, -LOG10_RATIO_UB);
   float prob_known = (midCnt+clipCnt)/(float)(midCnt + clipCnt + unknowCnt);
 
-  for (int i = 0; i < 3; i++) log10_pl[i] = 0;
+  for (int i = 0; i < 3; i++) log10_gp[i] = 0;
   if (prob_known) {
-    log10_pl[0] = clipCnt * log10 ( prob_known * prob_ub ) + midCnt * log10 ( prob_known * (1 - prob_ub) );
-    log10_pl[1] = (midCnt + clipCnt) * log10 (prob_known * 0.5) ; 
-    log10_pl[2] = midCnt * log10 ( prob_known * prob_ub ) + clipCnt * log10 ( prob_known * (1 - prob_ub) );
+    log10_gp[0] = clipCnt * log10 ( prob_known * prob_ub ) + midCnt * log10 ( prob_known * (1 - prob_ub) );
+    log10_gp[1] = (midCnt + clipCnt) * log10 (prob_known * 0.5) ; 
+    log10_gp[2] = midCnt * log10 ( prob_known * prob_ub ) + clipCnt * log10 ( prob_known * (1 - prob_ub) );
   }
-
   if (unknowCnt) { 
     int insert_len, idx;
     string token;
@@ -113,27 +110,30 @@ bool genoProb_per_line(string &line, string & output_line, map <int, EmpiricalPd
       seqan::lexicalCast2(idx, token);
       getline(ss, token, ' ');
       seqan::lexicalCast2(insert_len, token);      
-      float p_y = empiricalpdf_rg[idx]->pdf_obs(insert_len);
-      float p_z = empiricalpdf_rg[idx]->pdf_obs(insert_len - aluEnd + aluBegin);
+      float p_y = pdf_rg[idx]->pdf_obs(insert_len);
+      float p_z = pdf_rg[idx]->pdf_obs(insert_len - aluEnd + aluBegin);
       //float freq0 = 0.67;  // high FP ratio      
       float freq0 = ( midCnt + 1 )/(float)(midCnt + clipCnt + 2); // 1 and 2 are psudo count
-      log10_pl[0] += log10 (p_y * (1 - prob_known));
-      log10_pl[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z) * (1 - prob_known) ) ;
-      log10_pl[2] += log10 (p_z * (1 - prob_known));
-      // cout << "debug## " << empiricalpdf_rg[idx]->pdf_obs(400) << " " << empiricalpdf_rg[idx]->pdf_obs(500) << endl;
+      log10_gp[0] += log10 (p_y * (1 - prob_known));
+      log10_gp[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z) * (1 - prob_known) ) ;
+      log10_gp[2] += log10 (p_z * (1 - prob_known));
     }
   }
-  if ( p00_is_dominant(log10_pl, - LOG10_GENO_PROB) )
-    return false;
-    //cout << "debug2## " << aluBegin << " " << log10_pl[0] << " " << log10_pl[1] << " " << log10_pl[2] << " " << endl;          
-  ss_out << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
-  log10P_to_P(log10_pl, gp, LOG10_GENO_PROB);
-  genoProb_print(gp, ss_out, 6);
-  output_line = ss_out.str();
-  return true;
+  bool use_this_line = false;
+  if ( !p00_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
+    ss_out << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
+    float *gp = new float[3];
+    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+    ss_out << " " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2]; 
+    delete gp;    
+    output_line = ss_out.str();
+    use_this_line = true;
+  }
+  delete log10_gp;
+  return use_this_line;
 }
 
-void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & empiricalpdf_rg){
+void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg){
   // clip_read: evidence for deletion, mid_read: evidence for insertion
   ofstream fout(fn_tmp2.c_str());
   fout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";  
@@ -141,17 +141,13 @@ void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *
   ifstream fin(fn_tmp1.c_str());
   assert(fin);
   getline(fin, line); // read header
-  float *log10_pl = new float[3];
-  float *gp = new float[3];
   while (getline(fin, line))
-    if (genoProb_per_line(line, output_line, empiricalpdf_rg, log10_pl, gp)) 
+    if (parseline_del_tmp1(line, output_line, pdf_rg))
       fout << output_line << endl;
   fin.close();
   fout.close();
-  delete log10_pl;
-  delete gp;
 }
- 
+
 void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
   stringstream ss;
   string line, chrn, tmpfield;
@@ -340,9 +336,9 @@ void remove_highCov_region(string f_input, string f_output, int offset, map <str
 
 int main( int argc, char* argv[] )
 {
+  string config_file = argv[1];
+  string opt = argv[2];
   if (argc < 3) exit(1);
-  string opt = argv[1];
-  string config_file = argv[2];
 
   boost::timer clocki;    
   clocki.restart();  
@@ -356,8 +352,8 @@ int main( int argc, char* argv[] )
   string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
 
   if ( opt == "write_tmp1" ) { 
-    int idx_pn;
-    seqan::lexicalCast2(idx_pn, argv[3]);
+    int idx_pn = seqan::lexicalCast<int> (argv[3]);
+    assert(argc != 4);
     string pn = ID_pn[idx_pn];
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
 
@@ -366,16 +362,13 @@ int main( int argc, char* argv[] )
     map<string, int> rg_to_idx;
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
     
-    unsigned coverage_max;
-    seqan::lexicalCast2(coverage_max, cf_fh.get_conf("coverage_max"));
+    unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
     string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";  
     string file_alupos_prefix = cf_fh.get_conf("file_alupos_prefix"); 
     string fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
     string fn_log1 = get_name_tmp(path0, pn, ".log1");
-    int minLen_alu_del; // 200
-    seqan::lexicalCast2(minLen_alu_del, (cf_fh.get_conf("minLen_alu_del")));
-
+    int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
     delete_search(minLen_alu_del, bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
     string path_move = path0 + "log1s/";
     check_folder_exists(path_move);
@@ -385,23 +378,18 @@ int main( int argc, char* argv[] )
     system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
 
   } else if ( opt == "write_tmp2" ) {
-    int idx_pn;
-    seqan::lexicalCast2(idx_pn, argv[3]);
+    int idx_pn = seqan::lexicalCast<int> (argv[3]);
+    assert(argc != 4);
     string pn = ID_pn[idx_pn];
     string path0 = cf_fh.get_conf("file_alu_delete0");    
     string fn_tmp1 = get_name_tmp(path0 + "tmp1s/", pn, ".tmp1");
     string fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
-    map <int, EmpiricalPdf *> empiricalpdf_rg;    
+    map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-    ifstream fin( get_name_rg(file_dist_prefix, pn).c_str());
-    int idx = 0; 
-    string rg;
-    while (fin >> rg) 
-      empiricalpdf_rg[idx++] = new EmpiricalPdf( get_name_rg_pdf(file_dist_prefix, pn, rg, pdf_param));
-    fin.close();
-    calculate_genoProb(fn_tmp1, fn_tmp2, empiricalpdf_rg); 
-    for (map <int, EmpiricalPdf *>::iterator ri = empiricalpdf_rg.begin(); ri != empiricalpdf_rg.end(); ri++) 
-      delete ri->second;
+    read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
+    calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg); 
+    EmpiricalPdf::delete_map(pdf_rg);
+
     string path_move = path0 + "tmp2s/";
     check_folder_exists(path_move);
     system(("mv " + path0 + pn + ".tmp2 " + path_move).c_str());
@@ -432,44 +420,50 @@ int main( int argc, char* argv[] )
     remove_highCov_region(fn_vcf+".tmp", fn_vcf, -1, chrn_aluBegin);
 
   } else if (opt == "debug") { // debugging and manually check some regions 
-    string pn, chrn, bam_input, bai_input, fa_input;   
-    /// check pdf 
-    float *log10_pl = new float[3];
-    float *gp = new float[3];
-    /*
-    log10_pm[0] = -4.168 + 4;
-    log10_pm[1] = -0.60814 + 4;
-    log10_pm[2] = -23.9364 + 4;
-    log10P_to_P(log10_pm, gp, LOG10_GENO_PROB);
-    genoProb_print(gp, cout, 6);
-    cout << endl;    
-    */
-    pn = "AAWBFCO";
-    map <int, EmpiricalPdf *> empiricalpdf_rg;    
-    string rg;
-    int idx = 0;
-    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-    ifstream fin( get_name_rg(file_dist_prefix, pn).c_str());
-    while (fin >> rg) 
-      empiricalpdf_rg[idx++] = new EmpiricalPdf( get_name_rg_pdf(file_dist_prefix, pn, rg, pdf_param));
-    fin.close();
-    string line, output_line;
+    string pn = ID_pn[0];
 
+    /* print header info
+    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
+    seqan::BamStream bamIO(bam_input.c_str());
+    for (unsigned i = 0; i < length(bamIO.header.records); ++i) {
+      cout << i << " " << bamIO.header.records[i].tags[0].i1 
+	   << " " << bamIO.header.records[i].tags[0].i2 
+	   << " " << bamIO.header.records[i].tags[1].i1 
+	   << " " << bamIO.header.records[i].tags[1].i2 << endl;
+    }
+    */
+
+    float *log10_gp = new float[3];
+    float *gp = new float[3];
+    float offset = 0.4;
+    log10_gp[0] = -4.168 + offset;
+    log10_gp[1] = -0.60814 + offset;
+    log10_gp[2] = -23.9364 + offset;
+    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);
+    cout << "test1 done " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2]; 
+     
+    string line, output_line;
+    map <int, EmpiricalPdf *> pdf_rg;    
+    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
+    
+    cout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";
+    read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     line = "chr1 1455790 1456098 6 2 1 0";
-    cout << genoProb_per_line(line, output_line, empiricalpdf_rg, log10_pl, gp) << endl; 
+    parseline_del_tmp1(line, output_line, pdf_rg);
     cout << output_line << endl;
     line = "chr1 1455790 1456098 6 2 0 2 0:733 1:748";
-    genoProb_per_line(line, output_line, empiricalpdf_rg, log10_pl, gp);
+    parseline_del_tmp1(line, output_line, pdf_rg);
     cout << output_line << endl;
     line = "chr1 1455790 1456098 6 9 1 2 0:733 1:748";
-    genoProb_per_line(line, output_line, empiricalpdf_rg, log10_pl, gp);
+    parseline_del_tmp1(line, output_line, pdf_rg);
     cout << output_line << endl;
-
-    delete log10_pl;
+    cout << "test2 done\n";
+    delete log10_gp;
     delete gp;
     // genotype call /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/jon_chr0/pn1.check
+  } else {
+    cout << "unknown options !\n";
   }
-
   
   cout << "time used " << clocki.elapsed() << endl;
   return 0;  

@@ -1,13 +1,5 @@
 #include "delete_utils.h"
 
-string phred_scaled(float p0, float p1, float p2) {
-  float pmax = max(p0, max(p1, p2));
-  string s0 =  ( p0 == pmax ) ?  "0" : phred_log(p0/pmax);
-  string s1 =  ( p1 == pmax ) ?  "0" : phred_log(p1/pmax);
-  string s2 =  ( p2 == pmax ) ?  "0" : phred_log(p2/pmax);
-  return s0  + "," + s1 + "," + s2; 
-}
-
 bool get_align_pos(int aluBegin, int aluEnd, int beginPos, int endPos, int &ref_a, int &ref_b, int &read_a, int &read_b, seqan::BamAlignmentRecord &record){
   unsigned nl = length(record.cigar) - 1; // ignore complicated alignment between S and M
   int len_read = length(record.seq);
@@ -59,7 +51,7 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
   return ( align_len >= min_align_len and score >= min_align_score(align_len) );
 }
 
-T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, string chrn, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool read_is_left){
+T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool read_is_left){
 
   ////return unknow_read;  // just try it for fun! not serious 
   int beginPos = record.beginPos;
@@ -78,7 +70,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, string c
     int ref_a, ref_b, read_a, read_b;
     if ( get_align_pos(aluBegin, aluEnd, beginPos, endPos, ref_a, ref_b, read_a, read_b, record)) {
       seqan::CharString fa_seq;
-      fasta_fh->fetch_fasta_upper(chrn, ref_a - BOUNDARY_OFFSET, ref_b + BOUNDARY_OFFSET, fa_seq);          if (split_global_align(fa_seq, record, read_a, read_b)) return clip_read;
+      fasta_fh->fetch_fasta_upper(ref_a - BOUNDARY_OFFSET, ref_b + BOUNDARY_OFFSET, fa_seq);          if (split_global_align(fa_seq, record, read_a, read_b)) return clip_read;
     }
     if (read_is_left) return useless_read; 
   }
@@ -93,85 +85,4 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, string c
   */  
   return useless_read;  // alu_flank is too large, we have a lot reads not useful 
 }
-
-void get_min_value(map <int, float> & m, float & min_val, int & min_key) {
-  map <int, float>::iterator mi = m.begin();
-  min_val = mi->second;
-  min_key = mi->first ;
-  mi++;
-  while ( mi != m.end() ) {
-    if ( min_val > mi->second) {
-      min_val = mi->second;
-      min_key = mi->first;
-    }
-    mi++;
-  }
-}
-
-void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){  
-  assert( max_logp_dif > 0);
-  map <int, float> idx_logp;
-  int i, min_idx;
-  for ( i = 0; i < 3; i++) {
-    idx_logp[i] = log_gp[i];
-    assert (log_gp[i] <= 0);
-  }
-  float min_logp;
-  get_min_value(idx_logp, min_logp, min_idx);
-  for ( i = 0; i < 3; i++) {
-    if ( idx_logp[i] - min_logp > max_logp_dif ) {
-      idx_logp[min_idx] = 1;   // set p[i] = 0 afterwards
-      min_logp = 1; 
-      break;
-    }
-  }  
-  if (min_logp > 0) { // check the two elements left
-    get_min_value(idx_logp, min_logp, min_idx);
-    for ( i = 0; i < 3; i++) { 
-      if ( idx_logp[i] < 1 and idx_logp[i] - min_logp > max_logp_dif ) {
-	idx_logp[min_idx] = 1;
-	break;
-      }
-    }
-  }
-  get_min_value(idx_logp, min_logp, min_idx);
-  //cout << "log " << min_logp << " " << max_logp_dif << " " << endl;
-  
-  float ratio_sum = 0;
-  for ( i = 0; i < 3; i++) 
-    if (idx_logp[i] < 1) ratio_sum += pow(10, (idx_logp[i] - min_logp));
-
-  for ( i = 0; i < 3; i++) {
-    if (idx_logp[i] > 0) gp[i] = 0;
-    else gp[i] = pow(10, (idx_logp[i] - min_logp)) / ratio_sum;}    
-}
-
-EmpiricalPdf::EmpiricalPdf(string pdf_file){ 
-  int pos;
-  float posp;
-  bin_width = 0;
-  ifstream fin( pdf_file.c_str());
-  assert (fin);
-  fin >> pos >> posp;
-  prob_vec[pos] = posp;
-  min_len = pos;
-  min_prob = posp;
-  while (fin >> pos >> posp) {
-    prob_vec[pos] = posp;
-    min_prob = min_prob > posp ? posp : min_prob;      
-    if (!bin_width) bin_width = pos - min_len;
-  }
-  max_len = pos;
-  fin.close();
-  cerr << "read pdf dist " << pdf_file << endl;
-  cerr << min_len << " " << max_len << " " << bin_width << " " << min_prob << endl;
-}
-
-float EmpiricalPdf::pdf_obs(int insertlen) {
-  if (insertlen >= max_len || insertlen <= min_len) return min_prob;
-  int nearby_pos = min_len + (insertlen-min_len)/bin_width*bin_width;
-  map<int, float >::iterator it = prob_vec.find(nearby_pos);
-  if ( it != prob_vec.end())  return it->second;
-  return min_prob;
-}   
 

@@ -4,9 +4,6 @@
 #include <sys/time.h>
 #include <boost/timer.hpp>
 
-#define MAJOR_SPLIT_POS_FREQ 0.6
-#define FLANK_REGION_LEN 80
-
 inline string get_name_pos1(string prefix, string chrn){ return prefix + chrn + ".highCov"; }
 
 bool coverage_idx_pass(string line, int &refBegin, int &refEnd, int idx_pn_this, float freq_min, float freq_max, int pn_cnt, bool & maf_pass, stringstream & ss_highCov){
@@ -30,63 +27,38 @@ bool coverage_idx_pass(string line, int &refBegin, int &refEnd, int idx_pn_this,
 }
 
 // write all reads that is useful for split mapping or inferring insert sequence !
-bool readbam_loci(string chrn, seqan::Stream<seqan::Bgzf> &inStream, seqan::BamIndex<seqan::Bai> &baiIndex, TBamIOContext &context, int rID, size_t region_begin, int region_end, ofstream &frecord) {
-  
-  int refBegin, refEnd; // range for broken reads
-  refPos_by_region(region_begin, region_end, refBegin, refEnd);  
-  bool hasAlignments = false;  
-  if (!jumpToRegion(inStream, hasAlignments, context, rID, refBegin, refEnd, baiIndex)) return false;
-  if (!hasAlignments) return false;
-  seqan::BamAlignmentRecord record;
-  while (!atEnd(inStream)) {
-    assert (!readRecord(record, context, inStream, seqan::Bam())); 
-    if ( record.rID != rID || record.beginPos >= refEnd) break;
-    int read_end = record.beginPos + getAlignmentLengthInRef(record);
-    if ( read_end <= refBegin) continue; 
-    if ( ! QC_insert_read(record) ) continue;
-    if ( has_soft_last(record, CLIP_BP) or has_soft_first(record, CLIP_BP) ) 
-      frecord << chrn << " " << region_begin << " " << region_end << " " << record.beginPos << " " << read_end 
-	      << " " << get_cigar(record) << " " << hasFlagRC(record) << " " << record.seq << endl;
-  } 
-  return true;
-}
-
 void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, string bai_input, string fin_pos, string fout_reads_fa, float freq_min, float freq_max, ofstream &fout_pos, int pn_cnt){
-
-  seqan::BamIndex<seqan::Bai> baiIndex;
-  assert (!read(baiIndex, bai_input.c_str()));
-  TNameStore      nameStore;
-  TNameStoreCache nameStoreCache(nameStore);
-  TBamIOContext   context(nameStore, nameStoreCache);
-  seqan::BamHeader header;
-  seqan::BamAlignmentRecord record;
-  seqan::Stream<seqan::Bgzf> inStream;
-  assert(open(inStream, bam_input.c_str(), "r"));
-  assert(!readRecord(header, context, inStream, seqan::Bam()));    
-  map<int, seqan::CharString> rID_chrn;
-
-  get_rID_chrn(bam_input, chrns, rID_chrn);    
+  BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, bai_input); 
   ofstream frecord(fout_reads_fa.c_str());
   frecord << "chrn region_begin region_end beginPos endPos cigar hasFlagRC seq\n" ;
   int region_begin, region_end;
   string line;
-  for (map<int, seqan::CharString>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) {
-    string chrn = toCString(rc->second); 
+  for (map<int, string>::iterator rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+    string chrn = rc->second; 
     ifstream fin( (fin_pos + chrn).c_str());
     stringstream ss_highCov;
     if (!fin) continue;  // ignore random chr
-    int cnt = 0;
     bool maf_pass;
     bool loci_pass;
     while (getline(fin, line)) {
       loci_pass = coverage_idx_pass(line, region_begin, region_end, idx_pn, freq_min, freq_max, pn_cnt, maf_pass, ss_highCov);
       if ( maf_pass and !idx_pn) fout_pos << line << endl;
-      if ( loci_pass) readbam_loci(chrn, inStream, baiIndex, context, rc->first, region_begin, region_end, frecord);
-      cnt++;	  
+      if ( !loci_pass) continue;
+      int refBegin, refEnd;
+      refPos_by_region(region_begin, region_end, refBegin, refEnd);  
+      if (! bam_fh->jump_to_region(chrn, refBegin, refEnd) ) continue;
+      seqan::BamAlignmentRecord record;
+      while ( true ) {
+	string read_status = bam_fh->fetch_a_read(chrn, refBegin, refEnd, record);
+	if (read_status == "stop" ) break;
+	if (read_status == "skip" or !QC_insert_read(record)) continue;
+	if ( has_soft_last(record, CLIP_BP) or has_soft_first(record, CLIP_BP) ) 
+	  frecord << chrn << " " << region_begin << " " << region_end << " " << record.beginPos << " " 
+		  << record.beginPos + getAlignmentLengthInRef(record) << " " 
+		  << get_cigar(record) << " " << hasFlagRC(record) << " " << record.seq << endl;	    
+      }
     }
     fin.close();
-    cout << cnt << " loci at " << chrn << " are read for " << idx_pn << endl;
-
     if (!idx_pn) {
       ofstream fPos;
       fPos.open( get_name_pos1(fin_pos, chrn).c_str());
@@ -95,7 +67,7 @@ void reads_insert_loci(int idx_pn, vector<string> & chrns, string bam_input, str
       ss_highCov.clear();
     }
   }
-  seqan::close(inStream);     
+  delete bam_fh;
 }
 
 void read_file_pn_used(string fn, set<string> & pns_used) {
@@ -216,7 +188,7 @@ bool clipLeft_move_right(string & read_seq, seqan::CharString & ref_fa, list <in
   return true;  
 }
 
-bool insert_pos_exists(seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_clip, int region_begin, int region_end, int flanking_len, float major_freq, int & clipLeft, int & clipRight) {
+bool insert_pos_exists(FastaFileHandler *fasta_fh, string file_clip, int region_begin, int region_end, int flanking_len, float major_freq, int & clipLeft, int & clipRight) {
   stringstream ss;
   string line, pn, cigar, seq, read_seq;
   int beginPos, endPos, hasRCFlag, _clipRight, _clipLeft;
@@ -233,7 +205,8 @@ bool insert_pos_exists(seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_c
     /** one read can have strange cigar (eg S35M22S63), due to error. */    
     int refBegin = region_begin - 200;
     int refEnd = region_end + 200;
-    seqan::CharString ref_fa = fasta_seq(faiIndex, fa_idx, refBegin, refEnd, true);
+    seqan::CharString ref_fa;
+    fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
     // splitEnd, S*M*
     if ( *cigar_opts.begin() == 'S' and *cigar_cnts.begin() >= CLIP_BP and
 	 beginPos >= region_begin - flanking_len and beginPos < region_end + flanking_len) {      
@@ -253,7 +226,8 @@ bool insert_pos_exists(seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_c
     parse_cigar(cigar, cigar_opts, cigar_cnts);
     int refBegin = region_begin - 200;
     int refEnd = region_end + 200;
-    seqan::CharString ref_fa = fasta_seq(faiIndex, fa_idx, refBegin, refEnd, true);
+    seqan::CharString ref_fa;
+    fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
     // splitBegin, M*S*
     if ( cigar_opts.back() == 'S' and cigar_cnts.back() >= CLIP_BP and
 	 endPos >= region_begin - flanking_len and endPos < region_end + flanking_len) {
@@ -342,7 +316,7 @@ bool global_align(int hasRCFlag, seqan::CharString seq_read, seqan::CharString s
   return score >= round(0.7 * (align_len - cutEnd)) ;
 }
 
-void pn_with_insertion(map <string, int> & pn_splitCnt, seqan::FaiIndex &faiIndex, unsigned fa_idx, string file_clip, int clipLeft, int clipRight) {
+void pn_with_insertion(map <string, int> & pn_splitCnt, FastaFileHandler *fasta_fh, string file_clip, int clipLeft, int clipRight) {
   stringstream ss;
   string line, pn, cigar, seq, read_seq;
   int beginPos, endPos, hasRCFlag;
@@ -352,17 +326,15 @@ void pn_with_insertion(map <string, int> & pn_splitCnt, seqan::FaiIndex &faiInde
   while ( getline(fin, line)) {
     ss.clear(); ss.str(line); 
     ss >> pn >> beginPos >> endPos >> cigar >> hasRCFlag >> read_seq;
-    
-    //if ( pn != "AAHDTOH") continue;
-
     list <char> cigar_opts;
     list <int> cigar_cnts;
     parse_cigar(cigar, cigar_opts, cigar_cnts);
     int read_seq_size = read_seq.size();
     int refFlank = read_seq_size + 10;
-    seqan::CharString ref_fa = fasta_seq(faiIndex, fa_idx, clipLeft - refFlank, clipRight + refFlank, true);
+    seqan::CharString ref_fa; 
+    fasta_fh->fetch_fasta_upper(clipLeft - refFlank, clipRight + refFlank, ref_fa);
     int adj_bp, align_len, score;
-
+    
     // cigar string is not perfect 
     if ( *cigar_opts.begin() == 'S' and abs(adj_bp = beginPos - clipRight) < 30 ) {
       int read_begin = *cigar_cnts.begin() - adj_bp;
@@ -395,25 +367,22 @@ void pn_with_insertion(map <string, int> & pn_splitCnt, seqan::FaiIndex &faiInde
 
 int main( int argc, char* argv[] )
 {
-  if (argc < 2) exit(1);
+  string config_file = argv[1];
+  string opt = argv[2];
+  if (argc < 4) exit(1);
 
   boost::timer clocki;    
   clocki.restart();  
 
-  int opt;
-  seqan::lexicalCast2(opt, argv[1]);
-  string config_file = argv[2];
-
-  string path1 = read_config(config_file, "file_alu_insert1") ;    
-  string fout_path = read_config(config_file, "file_clip_reads");
+  ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
+  string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
+  string fout_path = cf_fh.get_conf( "file_clip_reads");
   check_folder_exists(fout_path);
   vector<string> chrns;
-
-  for (int i = 1; i < 23; i++) 
-    chrns.push_back("chr" + int_to_string(i));
+  for (int i = 1; i < 23; i++) chrns.push_back("chr" + int_to_string(i));
   chrns.push_back("chrX");
   chrns.push_back("chrY");
-
+  
   string tmp_path;
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci ++) {
     string chrn = *ci;
@@ -429,22 +398,21 @@ int main( int argc, char* argv[] )
 #endif       
 
   map<int, string> ID_pn;
-  get_pn(read_config(config_file, "file_pn"), ID_pn);      
+  get_pn(cf_fh.get_conf( "file_pn"), ID_pn);      
   string file_pn_used = path1 + "pn.insert_pos";
   string fin_pos = path1 + "insert_pos.";
-  float freq_min = 0.02, freq_max = 1;  // small groups 
+  float freq_min = seqan::lexicalCast<float> (cf_fh.get_conf("freq_min"));
+  float freq_max = seqan::lexicalCast<float> (cf_fh.get_conf("freq_max"));
   stringstream ss;
   ss << "_" << setprecision(3) << freq_min << "_" << setprecision(3) << freq_max;
   string fout_suffix = ss.str();
   ss.clear();
   
-  if (opt == 1) { // less than 2 to 60 mins for each pn.
-    int idx_pn;
-    seqan::lexicalCast2(idx_pn, argv[3]);
-    assert (argc == 4);
+  if (opt == "1") { // less than 2 to 60 mins for each pn.
+    int idx_pn = seqan::lexicalCast<int> (argv[3]);
     string pn = ID_pn[idx_pn];    
-    cout << "reading " << pn << endl;
-    string bam_input = read_config(config_file, "file_bam_prefix") + pn + ".bam";
+    cerr << "reading " << pn << endl;
+    string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";      
     ofstream fout_pos;
     set<string> pns_used;
@@ -456,9 +424,7 @@ int main( int argc, char* argv[] )
       reads_insert_loci(idx_pn, chrns, bam_input, bai_input, fin_pos, fout_reads_fa, freq_min, freq_max, fout_pos, ID_pn.size() );
       if (!idx_pn) fout_pos.close();
     }
-    ////writeRecord(fout, record.qName, record.seq, record.qual, seqan::Fastq());
-    ////writeRecord(fout, record.qName, record.seq, seqan::Fasta());
-  } else if ( opt == 2 ) { // for each insertion loci, combine reads from different pns 
+  } else if ( opt == "2" ) { // for each insertion loci, combine reads from different pns 
     fstream fout;
     set<string> pns_used;
     read_file_pn_used(file_pn_used, pns_used);
@@ -495,25 +461,16 @@ int main( int argc, char* argv[] )
 	fin.close();
       }
     }    
-  } else if ( opt == 3 ) {  // find exact split position
-    seqan::FaiIndex faiIndex;
-    unsigned fa_idx = 0;    
-    string file_fa_prefix = read_config(config_file, "file_fa_prefix");    
+  } else if ( opt == "3" ) {  // find exact split position
+    string file_fa_prefix = cf_fh.get_conf( "file_fa_prefix");    
     string cnt, line;
     stringstream ss;
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      string file_fa = file_fa_prefix + *ci + ".fa";
-      string file_fai = file_fa_prefix + *ci + ".fa.fai";
-      if ( read(faiIndex, file_fa.c_str()) ) {
-	build(faiIndex, file_fa.c_str() ); 
-	write(faiIndex, file_fai.c_str() ); 
-      }      
-      assert (getIdByName(faiIndex, *ci, fa_idx));
+      FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + *ci + ".fa", *ci);
       ofstream fout;
       ifstream fin( (fin_pos + *ci + fout_suffix).c_str());
       assert (fin);
       string file_insert_pos = path1 + "clip/" + *ci + fout_suffix;
-
       fout.open ( (file_insert_pos + ".tmp").c_str() ); 
       fout << "region_begin region_end clipLeft clipRight\n";
       int region_begin, region_end;
@@ -523,7 +480,7 @@ int main( int argc, char* argv[] )
 	string file_clip = fout_path + *ci + "_pos/" + int_to_string(region_begin) + "_" + int_to_string(region_end);
 	int clipLeft, clipRight;
 	if ( is_nonempty_file(file_clip) <= 0) continue;		
-	if ( insert_pos_exists(faiIndex, fa_idx, file_clip, region_begin, region_end, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight) )
+	if ( insert_pos_exists(fasta_fh, file_clip, region_begin, region_end, FLANK_REGION_LEN, MAJOR_SPLIT_POS_FREQ, clipLeft, clipRight) )
 	  fout << region_begin << " " << region_end << " " << clipLeft << " " << clipRight << endl;
       }
       fout.close();
@@ -540,7 +497,7 @@ int main( int argc, char* argv[] )
 	map <string, int> pn_splitCnt;      	
 	for (vector<string>::iterator fi = ii->second.begin(); fi != ii->second.end(); fi++) {
 	  string file_clip = fout_path + *ci + "_pos/" + *fi;
-	  pn_with_insertion(pn_splitCnt, faiIndex, fa_idx, file_clip, (ii->first).first, (ii->first).second);
+	  pn_with_insertion(pn_splitCnt, fasta_fh, file_clip, (ii->first).first, (ii->first).second);
 	}
 	if (pn_splitCnt.size() <= 1) continue;
 	fout << (ii->first).first << " " << (ii->first).second;
@@ -549,24 +506,24 @@ int main( int argc, char* argv[] )
 	fout << endl;
       }
       fout.close();
+      delete fasta_fh;
     }
-  } else if ( opt == 0 ) {  // find exact split position
+  } else if ( opt == "debug" ) {  
     string file_clip;
     seqan::FaiIndex faiIndex;
     unsigned fa_idx = 0;    
-    string file_fa_prefix = read_config(config_file, "file_fa_prefix");    
+    string file_fa_prefix = cf_fh.get_conf( "file_fa_prefix");    
     assert (!read(faiIndex, (file_fa_prefix + "chr1.fa").c_str()) );
     assert (getIdByName(faiIndex, "chr1", fa_idx));
     file_clip = fout_path + "chr1_pos/7000778_7000978";
     //int clipLeft = 7000791;
     //int clipRight = 7000791;
 
-    int clipLeft = 7000703;
-    int clipRight = 7000703;
-
-    map <string, int> pn_splitCnt;      	
-    pn_with_insertion(pn_splitCnt, faiIndex, fa_idx, file_clip, clipLeft, clipRight);
-    cout << pn_splitCnt.size() << endl;
+    // int clipLeft = 7000703;
+    // int clipRight = 7000703;
+    // map <string, int> pn_splitCnt;      	
+    // pn_with_insertion(pn_splitCnt, faiIndex, fa_idx, file_clip, clipLeft, clipRight);
+    // cout << pn_splitCnt.size() << endl;
 //    for (map<string, int>::iterator pni = pn_splitCnt.begin(); pni != pn_splitCnt.end(); pni++)
 //      fout << " " << pni->first << "," << pni->second;
 //    fout << endl;

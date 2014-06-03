@@ -35,19 +35,15 @@ void multi_align( map<int, seqan::CharString> &fa_seqs, size_t nseq, ofstream &f
 
 int main( int argc, char* argv[] )
 {
-  int opt;
-  seqan::lexicalCast2(opt, argv[1]);
-  string align_alu_type = argv[2]; // AluY, AluSx, AluJo, AluJb
-  
+  string config_file = argv[1];
+  string opt = argv[2];
+  string align_alu_type = argv[3]; // AluY, AluSx, AluJo, AluJb
   string chrn = "chr1";
-  string config_file = "/nfs_mount/bioinfo/users/yuq/work/Alu/inputs/config.properties";
 
-  string file_alupos_prefix = read_config(config_file, "file_alupos_prefix"); 
-  string file_fa_prefix = read_config(config_file, "file_fa_prefix");
-  seqan::FaiIndex faiIndex;
-  unsigned fa_idx;
-  assert ( !read(faiIndex, (file_fa_prefix + chrn + ".fa").c_str()) );      
-  assert ( getIdByName(faiIndex, chrn, fa_idx) );
+  ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
+
+  string file_alupos_prefix = cf_fh.get_conf("file_alupos_prefix"); 
+  string file_fa = cf_fh.get_conf("file_fa_prefix") + chrn + ".fa";
   
   AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos_prefix + chrn, 200);    
   map<int, seqan::CharString> fa_seqs; 
@@ -56,13 +52,13 @@ int main( int argc, char* argv[] )
   string alu_type;
 
   
-  if (opt == 1) {
+  if (opt == "1") {
 	  string file_alu = "/nfs_mount/bioinfo/users/yuq/work/Alu/outputs/grocery/alu.seq."+align_alu_type;  
 	  ofstream fout(file_alu.c_str());
 	  for (int i=0; i < N_ALU; ) {
 	    alurefpos->updatePos(aluBegin, aluEnd, chain, alu_type);
 	    if (alu_type != align_alu_type ) continue;
-	    seqan::CharString fa = fasta_seq(faiIndex, fa_idx, aluBegin, aluEnd, true); 
+	    seqan::CharString fa = FastaFileHandler::fasta_seq(file_fa, chrn, aluBegin, aluEnd);
 	    if ( chain=='-' )  seqan::reverseComplement(fa);
 	    fa_seqs[i] = fa;
 	    fout << chrn << " " << aluBegin << " " << aluEnd << " " << fa << endl;
@@ -75,7 +71,7 @@ int main( int argc, char* argv[] )
 	//  print_align(fa_seqs, 1, 2);
 	  fout.close();
  	  cerr << "write into " << file_alu << endl;
-  } else if ( opt == 2 ) {
+  } else if ( opt == "2" ) {
     string file_alu = "/nfs_mount/bioinfo/users/yuq/work/Alu/outputs/grocery/alu.seq." + align_alu_type + ".fa";  
     ofstream fout(file_alu.c_str());
     int i = 0, skip_first_n = 50;
@@ -84,7 +80,7 @@ int main( int argc, char* argv[] )
       if (alu_type != align_alu_type ) continue;
       i++;
       if (i < skip_first_n) continue;
-      seqan::CharString fa = fasta_seq(faiIndex, fa_idx, aluBegin, aluEnd, true); 
+      seqan::CharString fa = FastaFileHandler::fasta_seq(file_fa, chrn, aluBegin, aluEnd);
       if ( chain=='-' )  seqan::reverseComplement(fa);
       string fa_name = chrn + "_" + int_to_string(aluBegin) + "_" + int_to_string(aluEnd);
       writeRecord(fout, fa_name.c_str(), fa, seqan::Fasta());      
