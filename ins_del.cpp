@@ -129,7 +129,7 @@ void filter_alu_read(list <RecordInfo *> & records, AluconsHandler *alucons_fh, 
     if ( (*ri)->pairChrn != chrn ) {
       if ( chrn != "") delete fasta_fh;
       chrn = (*ri)->pairChrn;
-      fasta_fh = new FastaFileHandler(file_fa + chrn + ".fa");      
+      fasta_fh = new FastaFileHandler(file_fa + chrn + ".fa", chrn);      
     }
     fasta_fh -> fetch_fasta_upper((*ri)->pairBegin, (*ri)->pairEnd, ref_fa);
     float sim_rate;    

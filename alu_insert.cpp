@@ -1,7 +1,5 @@
 #define SEQAN_HAS_ZLIB 1
 #include "insert_utils.h"
-#include <sys/time.h>
-#include <boost/timer.hpp>
 
 inline string get_name(string path, string fn, string suffix){ return path + fn + suffix;}
 
@@ -390,11 +388,31 @@ bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string output_pre
   return true;
 }
 
+void filter_pos_freq(string fn_input, string fn_output, float freq_min, float freq_max, int pn_cnt) {
+  ifstream fin(fn_input.c_str());
+  assert(fin);
+  ofstream fout(fn_output.c_str());
+  fout << "sum_LR_alumate regionBegin regionEnd pns\n";
+  stringstream ss;
+  string line, n_reads, refBegin, refEnd, pn;
+  while (getline(fin, line)) {
+    int n_pn = 0;
+    ss.clear(); ss.str( line );
+    ss >> n_reads >> refBegin >> refEnd;
+    while ( ss >> pn) n_pn ++ ;
+    float n_freq = (float)n_pn / pn_cnt; 
+    if ( n_freq <= freq_max and n_freq >= freq_min) 
+      fout << line << endl;
+  }
+  fin.close();
+  fout.close();
+}
+
 int main( int argc, char* argv[] )
 {
   string config_file = argv[1];
   string opt =  argv[2];
-
+  if (argc < 3) exit(1);
   boost::timer clocki;    
   clocki.restart();
   ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
@@ -504,7 +522,7 @@ int main( int argc, char* argv[] )
     }  else if (opt == "combine_pn_pos") { // combine positions from multiple individuals
     // eg. debug/alu_insert 3 config.dk\n";
     float percentage_pn_used = seqan::lexicalCast<float> (cf_fh.get_conf("percentage_pn_used"));
-    string file_pn_used = path1 + "pn.insert_pos";
+    string file_pn_used = cf_fh.get_conf( "file_pn_used");
     filter_outlier_pn(path0, ID_pn, "chr1", file_pn_used, percentage_pn_used);
     cerr << (int)(100 * percentage_pn_used) << "% pn are used, written in " << file_pn_used << endl;
     cerr << (int)(100 * (1 - percentage_pn_used)) << "% pn with too many alu mate are ignored\n";
@@ -514,17 +532,23 @@ int main( int argc, char* argv[] )
     chrns.push_back("chr1");
 #endif               
     string output_prefix = path1 + "insert_pos.";
-    map<int, string> id_pn_map;
+    map<int, string> id_pn_map;   
+    float freq_min = seqan::lexicalCast<float> (cf_fh.get_conf("freq_min"));
+    float freq_max = seqan::lexicalCast<float> (cf_fh.get_conf("freq_max"));
+    string fn_suffix = get_name_suffix(freq_min, freq_max);
+    
     ifstream fin(file_pn_used.c_str());
     int i = 0;
     string pn;
     while (fin >> pn) id_pn_map[i++] = pn;
     fin.close();      
-
+    
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      combine_pn_pos(*ci, id_pn_map, output_prefix, 10, path0);  // takes about 12 mins to run !   
-      system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
-    }    
+      //combine_pn_pos(*ci, id_pn_map, output_prefix, 10, path0);  // takes about 12 mins to run !   
+      //system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
+      string fn_input = path1 + "insert_pos."+ *ci;
+      filter_pos_freq( fn_input, fn_input + fn_suffix, freq_min, freq_max, id_pn_map.size() );
+    }        
   }
   cerr << "time used " << clocki.elapsed() << endl;
   return 0;  

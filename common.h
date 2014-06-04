@@ -41,6 +41,7 @@ using namespace std;
 // macros for insert_pos
 #define MAJOR_SPLIT_POS_FREQ 0.6
 #define FLANK_REGION_LEN 80
+#define ALIGN_END_CUT 10 // cut the last 10 bp while realign to reference
 // macros for ins_del
 #define REF_EXT_LEN 150 // extend exact insert pos to both sides. This data, max read len = 135
 #define ALU_INSERT_FLANK 400  // 600 (alu_delete.cpp) - 200 (min alu length)

@@ -17,10 +17,11 @@ pdf_param 100_1000_5
 file_repeatMask /home/qianyuxx/faststorage/AluDK/inputs/raw_data/rmsk.hg19
 file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/	
 file_alu_insert1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/
+percentage_pn_used 1.
+file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used 
 file_clip_reads /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/clip/
 file_ins_del0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/delete0/
 file_ins_del1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/delete1/
-percentage_pn_used 1.
 file_alu_cons /home/qianyuxx/faststorage/AluDK/inputs/alu_cons.fa	
 type_alu_cons AluY
 freq_min 0.02

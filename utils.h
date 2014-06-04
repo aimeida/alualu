@@ -32,12 +32,16 @@ inline void check_folder_exists(string & path) {
 
 inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);};
 
+inline bool QC_read( seqan::BamAlignmentRecord &record){  
+  return (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and (!hasFlagSecondary(record));
+}
+
 inline bool QC_delete_read( seqan::BamAlignmentRecord &record){  
-  return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and hasFlagAllProper(record) and abs(record.tLen) <= 2000) and (!hasFlagSecondary(record));
+  return QC_read(record) and hasFlagAllProper(record) and (abs(record.tLen) <= DISCORDANT_LEN) and (hasFlagRC(record) != hasFlagNextRC(record));
 };
 
 inline bool QC_insert_read( seqan::BamAlignmentRecord &record){  
-  return ( (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and (!hasFlagUnmapped(record)) and (!hasFlagNextUnmapped(record)) and (!hasFlagSecondary(record)));
+  return QC_read(record) and (!hasFlagUnmapped(record)) and (!hasFlagNextUnmapped(record));
 };
 
 inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
@@ -56,9 +60,7 @@ inline bool not_all_match(seqan::BamAlignmentRecord &record, int max_err_bp = 5)
 };
 
 inline bool p00_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[2] - log10_p[0], log10_p[1] - log10_p[0]) <= min_log10p; }
-
 inline bool p11_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[0] - log10_p[2], log10_p[1] - log10_p[2]) <= min_log10p; }
-
 inline string phred_log (float p) { return p ? (int_to_string (-(int)(log10 (p) * 10)) ) : "255"; }
 
 class EmpiricalPdf

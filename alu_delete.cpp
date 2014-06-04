@@ -54,8 +54,8 @@ int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, str
     string chrn = *ci;
     string file_alupos = file_alupos_prefix + chrn;
     AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, minLen_alu_del); // default 200
-    FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa");
-
+    FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);
+    
     int aluBegin, aluEnd;
     for (int count_loci = 0; ; count_loci++) {
       float coverage_mean = 0;

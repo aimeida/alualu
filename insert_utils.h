@@ -31,8 +31,16 @@ inline void refPos_by_region(int region_begin, int region_end, int & ref_begin, 
   ref_end = region_end + 2 * DEFAULT_READ_LEN;
 }
 
-bool alu_mate_flag( BamFileHandler * bam_fh, MapFO &fileMap); 
+inline string get_name_suffix(float freq_min, float freq_max) {
+  stringstream ss;
+  ss << "_" << setprecision(3) << freq_min << "_" << setprecision(3) << freq_max;
+  return ss.str();   // eg:  _0.02_1
+}
 
+bool alu_mate_flag( BamFileHandler * bam_fh, MapFO &fileMap); 
 string parse_alu_type(string alu_name);
+bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
+bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
+bool global_align_insert(int hasRCFlag, seqan::CharString seq_read, seqan::CharString seq_ref, int &score, int cutEnd, float th_score, bool verbose = false);
 
 #endif /*INSERT_UTILS_H*/

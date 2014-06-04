@@ -37,20 +37,24 @@ string int_to_string(int i) {
 string get_pn(string pn_file, int idx_pn){
   ifstream fin( pn_file.c_str());
   string pn;
+  bool pn_exist = false;
   int i = 0;
   while (fin >> pn) {
     if (i == idx_pn ) {
       fin.close();  
-      return pn;
+      pn_exist = true;
+      break;
     }
     i++;
   }
-  return "na";
+  assert(pn_exist);
+  return pn;
 }
 
 void get_pn(string pn_file, map<int, string> &ID_pn){
   ID_pn.clear();
   ifstream fin( pn_file.c_str());
+  assert(fin);
   string pn;
   int i = 0;
   while (fin >> pn)  ID_pn[i++] = pn;

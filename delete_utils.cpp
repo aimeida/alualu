@@ -64,13 +64,14 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluB
   if ( read_is_left and endPos < aluBegin - BOUNDARY_OFFSET and  
        (!has_soft_last(record, CLIP_BP)) and record.pNext >=  aluEnd + ALU_FLANK )
     return unknow_read;
-    
+  
   if ( (has_soft_first(record, CLIP_BP) and abs(beginPos - aluEnd) <= BOUNDARY_OFFSET ) or 
        ( has_soft_last(record, CLIP_BP) and abs(endPos - aluBegin) <= BOUNDARY_OFFSET ) ) {    
     int ref_a, ref_b, read_a, read_b;
     if ( get_align_pos(aluBegin, aluEnd, beginPos, endPos, ref_a, ref_b, read_a, read_b, record)) {
       seqan::CharString fa_seq;
-      fasta_fh->fetch_fasta_upper(ref_a - BOUNDARY_OFFSET, ref_b + BOUNDARY_OFFSET, fa_seq);          if (split_global_align(fa_seq, record, read_a, read_b)) return clip_read;
+      fasta_fh->fetch_fasta_upper(ref_a - BOUNDARY_OFFSET, ref_b + BOUNDARY_OFFSET, fa_seq);          
+      if (split_global_align(fa_seq, record, read_a, read_b)) return clip_read;
     }
     if (read_is_left) return useless_read; 
   }
