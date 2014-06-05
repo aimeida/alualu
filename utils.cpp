@@ -201,8 +201,8 @@ string get_cigar(seqan::BamAlignmentRecord &record) {
 }
 
 void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os) {
-  os << record.qName << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record)  << " " ;
-  os << get_cigar(record) << " " << record.pNext << " " << record.beginPos + record.tLen << endl;
+  os << record.qName << " " << record.rID << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record)  << " " ;
+  os << get_cigar(record) << " " << record.rNextId << " " << record.pNext << " " << record.beginPos + record.tLen << endl;
 }
 
 int numOfBestHits(seqan::BamAlignmentRecord &record){

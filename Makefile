@@ -17,6 +17,9 @@ ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
 ALU_INSERT_FILES_CPP = alu_insert.cpp common.cpp utils.cpp insert_utils.cpp
 ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 
+ADDRC_TMP3_FILES_CPP = addRC_tmp3.cpp common.cpp utils.cpp 
+ADDRC_TMP3_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ADDRC_TMP3_FILES_CPP))
+
 INSERT_POS_FILES_CPP = insert_pos.cpp common.cpp utils.cpp insert_utils.cpp
 INSERT_POS_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INSERT_POS_FILES_CPP))
 
@@ -60,6 +63,9 @@ $(OD)/alu_delete: $(OD) $(ALU_DELETE_FILES_O)
 
 $(OD)/alu_insert: $(OD) $(ALU_INSERT_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSERT_FILES_O)
+
+$(OD)/addRC_tmp3: $(OD) $(ADDRC_TMP3_FILES_O) 
+	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ADDRC_TMP3_FILES_O)
 
 $(OD)/insert_pos: $(OD) $(INSERT_POS_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(INSERT_POS_FILES_O)
