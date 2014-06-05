@@ -2,13 +2,14 @@
 #define SEQAN_HAS_ZLIB 1
 #include "utils.h"
 
-bool find_RC_info(BamFileHandler *bam_fh, int rid, int pos, const string & qname, bool & isRC, bool find_by_pair) {
+bool find_RC_info(BamFileHandler *bam_fh, int rid, int pos, const string & qname, bool & isRC, bool & bad_isRC, bool find_by_pair) {
   seqan::BamAlignmentRecord record;
   if ( !bam_fh->jump_to_region( bam_fh->rID_chrn[rid], pos - 20, pos + 20) )
     return false;
   while (bam_fh->fetch_a_read(record) and record.beginPos <= pos + 3) {
     if (record.qName == qname) {
       isRC = find_by_pair ? hasFlagNextRC(record) : hasFlagRC(record);
+      bad_isRC = find_by_pair ? hasFlagRC(record) : hasFlagNextRC(record);
       // debug_print_read(record, cout);
       return true;
     }
@@ -44,17 +45,17 @@ int main( int argc, char* argv[] )
   int this_chr, this_pos, bad_chr, bad_pos;
   stringstream ss;
   getline(fin, line);
-  bool isRC;
-  fout << line << " this_is_RC\n";
+  bool isRC, bad_isRC;
+  fout << line << " this_isRC bad_isRC\n";
   while ( getline(fin, line) ) {
     ss.clear(); ss.str( line );
     ss >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos;
     bool read_found = false;
-    if ( find_RC_info(bam_fh, this_chr, this_pos, qname, isRC, false) ) {
-      fout << line << " " << isRC << endl;
+    if ( find_RC_info(bam_fh, this_chr, this_pos, qname, isRC, bad_isRC, false) ) {
+      fout << line << " " << isRC << " " << bad_isRC << endl;
       read_found = 1;
-    } else if ( find_RC_info(bam_fh, bad_chr, bad_pos, qname, isRC, true) ) {
-      fout << line << " " << isRC << endl;
+    } else if ( find_RC_info(bam_fh, bad_chr, bad_pos, qname, isRC, bad_isRC, true) ) {
+      fout << line << " " << isRC << " " << bad_isRC << endl;
       read_found = 1;
     }
     if (!read_found) 
