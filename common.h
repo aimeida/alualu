@@ -37,11 +37,13 @@ using namespace std;
 #define LEFT_PLUS_RIGHT 4  // minimum sum of left and right reads
 #define MAX_LEN_REGION 100 // max length of insert region
 #define MAX_POS_DIF 50  // combine scanned insertion loci 
-#define NUM_PN_JOIN 10  // max number of pns to sort and join
+#define NUM_PN_JOIN 10  // max number of pns to sort and join, only matters how fast it runs
 // macros for insert_pos
-#define MAJOR_SPLIT_POS_FREQ 0.6
 #define FLANK_REGION_LEN 80
 #define ALIGN_END_CUT 10 // cut the last 10 bp while realign to reference
+#define CLIP_BP_LEFT 5
+#define CLIP_BP_RIGHT 35
+#define MIN_VOTE_FREQ 0.4
 // macros for ins_del
 #define REF_EXT_LEN 150 // extend exact insert pos to both sides. This data, max read len = 135
 #define ALU_INSERT_FLANK 400  // 600 (alu_delete.cpp) - 200 (min alu length)
@@ -49,17 +51,20 @@ using namespace std;
 #define MIN_READS_CNT 3 // min interesting reads, in order to consider this pos
 #define MIN_MATCH_LEN 60 // in order to use this read
 
-string int_to_string(int i);
-string get_pn(string pn_file, int idx_pn);
-void get_pn(string pn_file, map<int, string> &ID_pn);
-int is_nonempty_file(string fn);
+template<typename A, typename B>
+  std::pair<B,A> flip_pair(const std::pair<A,B> &p)
+{
+  return std::pair<B,A>(p.second, p.first);
+}
 
-class ConfigFileHandler{
- public:
-  map <string, string> configs;
-  ConfigFileHandler(string config_file);
-  string get_conf(string key);
-};
+template<typename A, typename B>
+  std::multimap<B,A> flip_map(const std::map<A,B> &src)
+{
+  std::multimap<B,A> dst;
+  std::transform(src.begin(), src.end(), std::inserter(dst, dst.begin()), 
+		 flip_pair<A,B>);
+  return dst;
+}
 
 template <class K, class V> 
 void addKey(map <K,V> &m, K key, int cnt=1)
@@ -71,7 +76,7 @@ void addKey(map <K,V> &m, K key, int cnt=1)
 };
 
 template <class K, class V>
-void print_map(map <K,V> &m, size_t n_max = 0) {
+void debugprint_map(map <K,V> &m, size_t n_max = 0) {
   cout << "size of map " << m.size() << endl;
   typename map <K,V>::iterator it;
   if (n_max == 0) n_max = m.size();
@@ -81,11 +86,23 @@ void print_map(map <K,V> &m, size_t n_max = 0) {
 };
 
 template <class K>
-void print_vec(vector <K> &m) {
+void debugprint_vec(vector <K> &m) {
   typename vector <K>::iterator it;
   for (it = m.begin(); it != m.end(); it++) cerr << *it << " ";
   cerr << endl;
 };
+
+class ConfigFileHandler{
+ public:
+  map <string, string> configs;
+  ConfigFileHandler(string config_file);
+  string get_conf(string key);
+};
+
+string int_to_string(int i);
+string get_pn(string pn_file, int idx_pn);
+void get_pn(string pn_file, map<int, string> &ID_pn);
+int is_nonempty_file(string fn);
 
 
 #endif /*COMMON_H*/

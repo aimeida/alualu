@@ -57,7 +57,9 @@ config.decode: used by Yu in Iceland, where the old files sitting
        
    opt = "combine_pn_pos" :
         write results: (@C)file_alu_insert1
-        find common insertion positions of multiple individuals
+        find common insertion positions of multiple individuals, also filter out insertions outside pre_defined freq range.
+        eg:  only insertions with freq in [minfreq, maxfreq] are considered, I use [0.02, 1] as in config.dk file
+
         Note: some PNs with extreme large amount of reads (that might be alu mate). (almost 10 times of other PNs)
               eg: MXQBTEO, HYKJEJS, EIVHBDQ, KSRDJGR
               EITHER:  > 4G memory to fun; OR: ignore them
@@ -65,17 +67,17 @@ config.decode: used by Yu in Iceland, where the old files sitting
               (search 0.85 in alu_insert.cpp in order to modify this number)
 	
 2. insert_pos.cpp
-   this file find the exact insertion positions (insertBegin, insertEnd) ==> needs improvement
+   this file find the exact insertion positions (insertBegin, insertEnd) 
 
-   opt = "1":
-     only insertions with freq in [minfreq, maxfreq] are considered, eg [0.02, 1]
+   opt = "clipreads_by_pn":
      for each pn, write the broken reads at these insertion positions to files at (@C)file_clip_reads/chr1/pn_minfreq_maxfreq.
-     This information will be used to infer exact insertion positions later. 
+     a read is considered as broken reads only if cigar string shows soft clip, AND the score after realignment is high.
 
-   opt = "2":
+   opt = "clipreads_by_pos":
      write files at  (@C)file_clip_reads/chr1_pos/regionBegin_regionEnd
      all broken reads with insertion between regionBegin and regionEnd are written into corresponding files. 
-   opt = "3":
+
+   opt = "  ":
      exact position is written at (@C)file_alu_insert1/chr1_0.02_1.tmp
      exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
              

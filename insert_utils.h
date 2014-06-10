@@ -26,11 +26,6 @@ inline bool compare_list(const RowInfo& a, const RowInfo& b) {
   return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
 }
 
-inline void refPos_by_region(int region_begin, int region_end, int & ref_begin, int & ref_end){
-  ref_begin = region_begin - 2 *  DEFAULT_READ_LEN;
-  ref_end = region_end + 2 * DEFAULT_READ_LEN;
-}
-
 inline string get_name_suffix(float freq_min, float freq_max) {
   stringstream ss;
   ss << "_" << setprecision(3) << freq_min << "_" << setprecision(3) << freq_max;
@@ -41,6 +36,6 @@ bool alu_mate_flag( BamFileHandler * bam_fh, MapFO &fileMap);
 string parse_alu_type(string alu_name);
 bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
-bool global_align_insert(int hasRCFlag, seqan::CharString seq_read, seqan::CharString seq_ref, int &score, int cutEnd, float th_score, bool verbose = false);
+bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose = false);
 
 #endif /*INSERT_UTILS_H*/

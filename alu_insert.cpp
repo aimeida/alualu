@@ -541,11 +541,10 @@ int main( int argc, char* argv[] )
     int i = 0;
     string pn;
     while (fin >> pn) id_pn_map[i++] = pn;
-    fin.close();      
-    
+    fin.close();          
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      //combine_pn_pos(*ci, id_pn_map, output_prefix, 10, path0);  // takes about 12 mins to run !   
-      //system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
+      combine_pn_pos(*ci, id_pn_map, output_prefix, 10, path0);  // takes about 12 mins to run !   
+      system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
       string fn_input = path1 + "insert_pos."+ *ci;
       filter_pos_freq( fn_input, fn_input + fn_suffix, freq_min, freq_max, id_pn_map.size() );
     }        

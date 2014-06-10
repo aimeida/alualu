@@ -59,7 +59,6 @@ bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_f
     return false;
   clipPos -= (i-1);  
   align_len = length(read_seq) - *cigar_cnts.begin() + (i-1);
-  //if (movePos) cout << "move "  << movePos << endl;
   return true;  
 }
 
@@ -75,30 +74,27 @@ bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_f
   return true;
 }
 
-bool global_align_insert(int hasRCFlag, seqan::CharString seq_read, seqan::CharString seq_ref, int &score, int cutEnd, float th_score, bool verbose){
+bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose){
   score = 0;
   if (verbose) {
-    cout << "#1 " << seq_read << endl;
-    cout << "#2 " << seq_ref << endl;
+    cout << "verbose #1 " << seq_read << endl;
+    cout << "verbose #2 " << seq_ref << endl;
   }
 
   size_t align_len = length(seq_read);
-  assert ( align_len == length(seq_ref) );
+
   if ( align_len < CLIP_BP) return false;
   seqan::Score<int> scoringScheme(1, -2, -2, -2); // match, mismatch, gap extend, gap open
   TAlign align;
   resize(rows(align), 2);
   assignSource(row(align,0), seq_read); // 2,3, true means free gap
   assignSource(row(align,1), seq_ref);   // 1,4
-  if (!hasRCFlag)
-    score = globalAlignment(align, scoringScheme, seqan::AlignConfig<false, false, true, true>()); 
-  else
-    score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, false, false>());   
+  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>()); 
   if (score >= round(th_score * align_len)  )
     return true;
-  
-  if (verbose)  cout << align << endl;
-  
+
+  // otherwise cut the end and realign
+  if (verbose)  cout << align << endl;  
   if ( (int)align_len <= CLIP_BP + cutEnd) return false;
   if (!hasRCFlag){
     assignSource(row(align,0), infix(seq_read, 0, align_len - cutEnd )); 
@@ -107,7 +103,7 @@ bool global_align_insert(int hasRCFlag, seqan::CharString seq_read, seqan::CharS
     assignSource(row(align,0), infix(seq_read, cutEnd, align_len)); 
     assignSource(row(align,1), infix(seq_ref, cutEnd, align_len));      
   }
-  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<false, false, false, false>()); 
+  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>()); 
   
   if (verbose)  cout << align << endl;
 

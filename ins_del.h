@@ -1,7 +1,11 @@
 //#define DEBUG_MODE  // test only chr1 for now
 #include "utils.h"
 
-enum I_READ {alu_read, aluPart_read, aluSkip_read, unknow_read, useless_read}; // used for insertions
+// aluRead: completely mapped to alu (maybe another chr in the genome)
+// aluClipRead: clip read, partly mapped to ref
+// aluskipRead: align perfectly through alu insert positions (called mid read in alu_delete)
+// unknowRead: might be aluskip_read or aluClip_read, use insert length info
+enum I_READ {aluRead, aluClipRead, aluSkipRead, unknowRead, uselessRead}; // used for insertions
 
 class RecordInfo {
  public:
@@ -21,9 +25,9 @@ class RecordInfo {
 class qNameInfo {
  public:
   I_READ itype;
-  int insertAluOri;
+  int insertAluOri;  // take value [1,2,3,4]
   seqan::CharString seq; 
- qNameInfo(I_READ t, int ori, seqan::CharString & sq) : itype(t), insertAluOri(ori), seq(sq) {}    
+ qNameInfo(I_READ t, seqan::CharString & sq) : itype(t), seq(sq), insertAluOri(0) {}    
 };
 
 class AluconsHandler : public FastaFileHandler {

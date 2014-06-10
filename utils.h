@@ -59,6 +59,13 @@ inline bool not_all_match(seqan::BamAlignmentRecord &record, int max_err_bp = 5)
   return non_match_len > max_err_bp;  // if <= 5bp, consider as full match
 };
 
+inline int count_non_match(seqan::BamAlignmentRecord &record){ 
+  int non_match_len = 0;
+  for (size_t i = 0; i < length(record.cigar); i++) 
+    if (record.cigar[i].operation != 'M') non_match_len += record.cigar[i].count; 
+  return non_match_len;
+}
+
 inline bool p00_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[2] - log10_p[0], log10_p[1] - log10_p[0]) <= min_log10p; }
 inline bool p11_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[0] - log10_p[2], log10_p[1] - log10_p[2]) <= min_log10p; }
 inline string phred_log (float p) { return p ? (int_to_string (-(int)(log10 (p) * 10)) ) : "255"; }
