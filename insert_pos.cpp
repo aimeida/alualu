@@ -1,8 +1,16 @@
 #define SEQAN_HAS_ZLIB 1
 #include "insert_utils.h"
-#include <dirent.h>
+#include "consensus.h"
 
-void read_file_pn_used(string fn, set <string> & pns_used) {
+class ALUREAD_INFO {
+public:
+  seqan::CharString qName;
+  int clipLeft, pos;
+  bool needRC;
+  ALUREAD_INFO(seqan::CharString & qn, int cl, int p, bool t) : qName(qn), clipLeft(cl), pos(p), needRC(t) {}
+};
+
+void read_file_pn_used(string fn, std::set <string> & pns_used) {
   ifstream fin(fn.c_str()) ;
   assert(fin);
   string pn;
@@ -105,9 +113,9 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
 }
 
 // for each insertion region, combine reads from different pns 
-void combine_clipreads_by_pos(set<string> &pns_used, ConfigFileHandler & cf_fh, string fn_suffix, string chrn) {
+void combine_clipreads_by_pos(std::set<string> &pns_used, ConfigFileHandler & cf_fh, string fn_suffix, string chrn) {
   map< pair<string, string>, vector<string> > regionPos_lines;
-  for (set<string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
+  for (std::set<string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
     string file_input_clip = cf_fh.get_conf( "file_clip_reads") + chrn + "/" + *pi + fn_suffix;
     ifstream fin(file_input_clip.c_str());
     if (!fin) {
@@ -294,7 +302,7 @@ void exactpos_pns(string fn_input, string path1, string fn_output){
   fout << "clipLeft clipRight pn(count)\n";
   for (map< int, vector<string> >::iterator pi = clipLeft_fn.begin(); pi != clipLeft_fn.end(); pi++ ) {
     int clipLeft = pi->first;
-    map <string, set<string> > pn_qName;
+    map <string, std::set<string> > pn_qName;
     for ( vector<string>::iterator fi = (pi->second).begin(); fi != (pi->second).end(); fi++ ) {
       fin.open( (path1 + *fi).c_str());
       assert(fin);
@@ -312,9 +320,64 @@ void exactpos_pns(string fn_input, string path1, string fn_output){
     }
     if (pn_qName.size() <= 1) continue;
     fout << clipLeft << " -1" ;  // clipRight unknown for now
-    for (map <string, set<string> >::iterator pi = pn_qName.begin(); pi != pn_qName.end(); pi++) 
+    for (map <string, std::set<string> >::iterator pi = pn_qName.begin(); pi != pn_qName.end(); pi++) 
       fout << " " << pi->first << "," << (pi->second).size() ;
     fout << endl;
+  }
+  fout.close();
+}
+
+void write_clipreads_fa(string chrn, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_cons,  map < int, vector<ALUREAD_INFO> > & rid_alureads) {
+  ofstream fout(file_cons.c_str());    
+  seqan::BamAlignmentRecord record;
+  string read_status;
+  for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
+    int region_begin = (*pi).first - ALU_INSERT_FLANK; // no need for larger flank region, if i only want to build consensus
+    int region_end = (*pi).second + ALU_INSERT_FLANK;	
+    if (! bam_fh->jump_to_region(chrn, region_begin, region_end)) 
+      continue;    
+    while ( true ) {
+      read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
+      if (read_status == "stop" ) break;
+      if (read_status == "skip" or !QC_insert_read(record)) continue;
+      if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) {
+	ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, (*pi).first, record.pNext, hasFlagRC(record)==hasFlagNextRC(record) );
+	rid_alureads[record.rNextId].push_back(one_aluRead);
+	//rid_alureads.insert( pair <int, ALUREAD_INFO> (record.rNextId, one_aluRead)  );
+	continue;
+      }
+      int thisEnd = record.beginPos + (int)getAlignmentLengthInRef(record);   
+      if ( ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - (*pi).second) < 30 ) or  	    
+	   ( has_soft_last(record, CLIP_BP) and abs( thisEnd - (*pi).first) < 30 ) )
+	fout << (*pi).first  <<  " clipRead " << record.seq << endl;
+    }
+  }
+  fout.close();
+}
+
+void add_alureads_fa(BamFileHandler *bam_fh, string file_cons,  map < int, vector<ALUREAD_INFO> > & rid_alureads) {
+  fstream fout;
+  fout.open(file_cons.c_str(), fstream::app|fstream::out);
+  seqan::BamAlignmentRecord record;
+  for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
+    cout <<  "start " << (ri->second).size() << endl;
+    for ( vector<ALUREAD_INFO>::iterator ai = (ri->second).begin(); ai != (ri->second).end(); ai++ ) {
+      if ( !bam_fh->jump_to_region( ri->first, (*ai).pos - 20, (*ai).pos + 20) ) continue;
+      while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
+	if (record.qName == (*ai).qName) {
+	  fout << (*ai).clipLeft << " aluRead";
+	  if ( (*ai).needRC ) {
+	    fout << "r";
+	    reverseComplement(record.seq);  // reverse ? or RC ?
+	  }
+	  fout << " " << record.seq << endl;
+	  break;
+	}
+      }
+      cout << "reads done " << (*ai).qName << " " << (*ai).pos << endl;
+    }  
+    cout << ri->first << " " << (ri->second).size() << endl;
+    (ri->second).clear();
   }
   fout.close();
 }
@@ -331,7 +394,6 @@ int main( int argc, char* argv[] )
   for (int i = 1; i < 23; i++) chrns.push_back("chr" + int_to_string(i));
   chrns.push_back("chrX");
   chrns.push_back("chrY");
-
   ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
   string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
   string fout_path = cf_fh.get_conf( "file_clip_reads");
@@ -342,9 +404,8 @@ int main( int argc, char* argv[] )
     check_folder_exists( tmp_path);
     tmp_path = fout_path + *ci + "/";
     check_folder_exists( tmp_path );      
-  }
-  
-  set <string> pns_used;
+  }  
+  std::set <string> pns_used;
   read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns_used); // some pn is ignored, due to too many reads
   string fn_suffix = get_name_suffix(seqan::lexicalCast<float> (cf_fh.get_conf("freq_min")), seqan::lexicalCast<float> (cf_fh.get_conf("freq_max")));
 
@@ -372,23 +433,87 @@ int main( int argc, char* argv[] )
     delete bam_fh;
     cout << "output to " << cf_fh.get_conf( "file_clip_reads") << "chr*/" << pn << fn_suffix << endl;
     
+
   } else if ( opt == "clipReads_by_pos" ) { 
+#ifdef DEBUG_MODE   // only look at chr1 for now 
+    chrns.clear();
+    chrns.push_back("chr1");
+#endif
+    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
+      combine_clipreads_by_pos(pns_used, cf_fh, fn_suffix, *ci);
+      string path_clip_pos = cf_fh.get_conf( "file_clip_reads") + *ci + "_pos/";
+      string file_insert_pos = path1 + "clip/" + *ci + fn_suffix;
+      regions_pos_vote(path_clip_pos, file_insert_pos + ".tmp");
+      exactpos_pns(file_insert_pos + ".tmp", path_clip_pos, file_insert_pos);
+    }
+
+    
+  } else if ( opt == "cons_reads_pn" ) {   // write fasta reads for consensus, use clip reads first 
+    string pn = get_pn(cf_fh.get_conf( "file_pn"), seqan::lexicalCast<int> (argv[3]));
+    assert (argc == 4);
 
 #ifdef DEBUG_MODE   // only look at chr1 for now 
     chrns.clear();
     chrns.push_back("chr1");
 #endif
 
-    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      //combine_clipreads_by_pos(pns_used, cf_fh, fn_suffix, *ci);
-      string path_clip_pos = cf_fh.get_conf( "file_clip_reads") + *ci + "_pos/";
-      string file_insert_pos = path1 + "clip/" + *ci + fn_suffix;
-      //regions_pos_vote(path_clip_pos, file_insert_pos + ".tmp");
-      exactpos_pns(file_insert_pos + ".tmp", path_clip_pos, file_insert_pos);
+    if ( pns_used.find(pn) == pns_used.end() ){
+      cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
+      return 0;
+    }
+    string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
+    BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, bam_input+".bai"); 
+    string path_cons = cf_fh.get_conf("file_ins_cons");  // for consensus sequence
+    check_folder_exists( path_cons);
+
+    for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
+       vector< pair<int, int> > insert_pos;
+       read_first2col( path1 + "clip/" + *ci + fn_suffix, insert_pos );
+       string file_cons = path_cons + *ci + "_" + pn;
+       map < int, vector<ALUREAD_INFO>  > rid_alureads;
+       write_clipreads_fa(*ci, insert_pos, bam_fh, file_cons, rid_alureads);         
+       add_alureads_fa(bam_fh, file_cons, rid_alureads);
+       //sort_file_by_col(file_cons, 1, false);
+       cout << "output to " << file_cons << endl;
+    }   
+
+ 
+  }  else if ( opt == "cons_reads_build" ) { 
+    for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
+      string file_cons = cf_fh.get_conf("file_ins_cons") + *ci + '_';
+      map <int, seqan::StringSet <TSeq> > pos_seqs;
+      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
+	//cout << file_cons + *pi  << endl;
+	ifstream fin( (file_cons + *pi).c_str() );
+	string line; 
+	int pos;
+	string seq;
+	stringstream ss;
+	if (!fin) continue;
+	while ( getline(fin, line) ) {
+	  ss.clear(); ss.str( line );
+	  ss >> pos >> seq ;
+	  appendValue(pos_seqs[pos], (TSeq)seq);
+	}
+	fin.close();
+      } 
+      if (pos_seqs.empty()) continue;
+      //cout << *ci << " " <<  pos_seqs.size() << endl;
+      for (map <int, seqan::StringSet <TSeq> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
+	for ( size_t i = 0; i < length(pi->second); i++)
+	  cout << pi->first << " " << (pi->second)[i] << endl;
+	seqan::StringSet<TSeq> consensus;
+	compute_consensus(consensus, pi->second);
+	cout << length(pi->second) << " "  << length(consensus) << endl;
+	for ( size_t i = 0; i < length(consensus); ++i) 
+	  cout << ">contig_" << i << "\n"<< consensus[i] << "\n";  // ok, i might want to debug, why so many contigs ?
+	cout << endl;
+	
+      }
     }
     
-  } else if ( opt == "debug" ) {  
-    
   }
+  
   return 0;
 }
+  

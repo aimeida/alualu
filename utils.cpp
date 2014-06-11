@@ -77,6 +77,14 @@ BamFileHandler::~BamFileHandler(void){
     seqan::close(outStream); 
 }
 
+bool BamFileHandler::jump_to_region(int rid, int region_begin, int region_end) {
+  assert ( !fn_bai.empty()); // need bai file if want to jump 
+  bool hasAlignments = false;	
+  if (!jumpToRegion(inStream, hasAlignments, context, rid, region_begin, region_end, baiIndex))
+    return false;
+  return hasAlignments;
+}
+
 bool BamFileHandler::jump_to_region(string chrn, int region_begin, int region_end) {
   assert ( !fn_bai.empty()); // need bai file if want to jump 
   bool hasAlignments = false;	
@@ -424,4 +432,21 @@ void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){
   }    
 }
 
-
+void read_first2col(string fn, vector < pair<int, int> > & insert_pos) {
+  insert_pos.clear();
+  ifstream fin(fn.c_str());
+  assert(fin);
+  stringstream ss;
+  string line;
+  getline(fin, line); // skip header!
+  int beginPos, endPos;
+  while (getline(fin, line)) {
+    ss.clear(); ss.str( line );  
+    ss >> beginPos >> endPos;
+    if ( endPos < 0 )
+      insert_pos.push_back( make_pair(beginPos, beginPos) );
+    else
+      insert_pos.push_back( make_pair(beginPos, endPos) );
+  }
+  fin.close();
+}

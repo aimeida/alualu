@@ -19,7 +19,8 @@ def print1(pn_all, fn_path, path1, bin_path):
             #print >>fout, '%(bin_path)salu_insert config.dk alu_mate_flag %(pi)d'%locals()
             #print >>fout, '%(bin_path)salu_insert config.dk combine_pn_pos %(pi)d'%locals()
             
-            print >>fout, '%(bin_path)sinsert_pos config.dk clipReads_by_pn %(pi)d'%locals()
+            #print >>fout, '%(bin_path)sinsert_pos config.dk clipReads_by_pn %(pi)d'%locals()
+            print >>fout, '%(bin_path)sinsert_pos config.dk cons_reads_pn %(pi)d'%locals()
             #print >>fout, '%(bin_path)sins_del config.dk write_tmp1 %(pi)d'%locals() 
         pi += 1
 

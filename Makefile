@@ -17,7 +17,7 @@ ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
 ALU_INSERT_FILES_CPP = alu_insert.cpp common.cpp utils.cpp insert_utils.cpp
 ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 
-INSERT_POS_FILES_CPP = insert_pos.cpp common.cpp utils.cpp insert_utils.cpp
+INSERT_POS_FILES_CPP = insert_pos.cpp common.cpp utils.cpp insert_utils.cpp 
 INSERT_POS_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INSERT_POS_FILES_CPP))
 
 INS_DEL_FILES_CPP = ins_del.cpp common.cpp utils.cpp 

@@ -52,29 +52,6 @@ seqan::CharString AluconsHandler::fetch_alucons(int key) {
   return seqs[key];
 } 
 
-void read_first2col(string fn, vector < pair<int, int> > & insert_pos) {
-  insert_pos.clear();
-  ifstream fin(fn.c_str());
-  assert(fin);
-  stringstream ss;
-  string line;
-  getline(fin, line); // skip header!
-  int beginPos, endPos;
-  while (getline(fin, line)) {
-    ss.clear(); ss.str( line );  
-    ss >> beginPos >> endPos;
-    if ( endPos < 0 )
-      insert_pos.push_back( make_pair(beginPos, beginPos) );
-    else
-      insert_pos.push_back( make_pair(beginPos, endPos) );
-
-#ifdef DEBUG_MODE
-    if (insert_pos.size() > 10) break;
-#endif
-  }
-  fin.close();
-}
-
 bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString & alucons, float & sim_rate,
 		    int & align_consBegin, int & align_len, float sim_th){
   TAlign align;

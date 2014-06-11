@@ -4,6 +4,7 @@
 
 #include <map>
 #include <set>
+#include <list>
 #include <queue>
 #include <vector>
 #include <cstdlib>
@@ -13,6 +14,7 @@
 #include <iostream>
 #include <algorithm>
 #include <math.h> 
+#include <dirent.h>
 #include <stdio.h>
 #include <assert.h>
 #include <sys/time.h>
@@ -50,6 +52,11 @@ using namespace std;
 #define ALUCONS_SIMILARITY 0.8
 #define MIN_READS_CNT 3 // min interesting reads, in order to consider this pos
 #define MIN_MATCH_LEN 60 // in order to use this read
+
+template < typename K >
+bool compare_first(const K & a, const K & b) {
+  return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
+}
 
 template<typename A, typename B>
   std::pair<B,A> flip_pair(const std::pair<A,B> &p)
@@ -103,6 +110,6 @@ string int_to_string(int i);
 string get_pn(string pn_file, int idx_pn);
 void get_pn(string pn_file, map<int, string> &ID_pn);
 int is_nonempty_file(string fn);
-
+void sort_file_by_col(string fn, int coln, bool has_header);
 
 #endif /*COMMON_H*/

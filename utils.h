@@ -88,6 +88,7 @@ class BamFileHandler{
   map<int, string> rID_chrn ;
   BamFileHandler(vector<string> &chrns, string bam_input, string bai_input, string bam_output="");
   ~BamFileHandler(void);
+  bool jump_to_region(int rid, int region_begin, int region_end);
   bool jump_to_region(string chrn, int region_begin, int region_end);
   bool fetch_a_read(seqan::BamAlignmentRecord & record);
   string fetch_a_read(string chrn, int region_begin, int region_end, seqan::BamAlignmentRecord & record);
@@ -158,6 +159,7 @@ string get_cigar(seqan::BamAlignmentRecord &record);
 void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os = cout);
 bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region);
 int numOfBestHits(seqan::BamAlignmentRecord &record);
+void read_first2col(string fn, vector < pair<int, int> > & insert_pos);
 
 
 #endif /*UTILS_H*/
