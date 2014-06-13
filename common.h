@@ -99,6 +99,36 @@ void debugprint_vec(vector <K> &m) {
   cerr << endl;
 };
 
+template <typename VT>
+void sort_file_by_col(string fn, int coln, bool has_header){
+  assert( coln > 0 );
+  ifstream fin( fn.c_str());
+  assert(fin);
+  string line, tmpv, header;
+  stringstream ss;
+  VT valn;
+//  typedef std::list< pair<VT, std::string> > LT;
+  std::list< pair<VT, std::string> > rows;
+  if (has_header) getline(fin, header);
+  while (getline(fin, line)) {
+    ss.clear(); ss.str( line );
+    if (coln == 1) ss >> valn;
+    else {
+      for (int i = 0; i < coln-1; i++) ss >> tmpv;
+      ss >> valn;
+    }
+    rows.push_back( make_pair(valn, line) );
+  }
+  fin.close();
+  rows.sort(compare_first < pair<VT, string> >);
+  ofstream fout( fn.c_str());
+  if (has_header) fout << header << endl;  
+  // tell it it's typename !!!!
+  for (typename std::list< pair<VT, std::string> >::iterator ri = rows.begin(); ri != rows.end(); ri++)
+    fout << (*ri).second << endl;
+  fout.close();
+};
+
 class ConfigFileHandler{
  public:
   map <string, string> configs;
@@ -110,6 +140,8 @@ string int_to_string(int i);
 string get_pn(string pn_file, int idx_pn);
 void get_pn(string pn_file, map<int, string> &ID_pn);
 int is_nonempty_file(string fn);
-void sort_file_by_col(string fn, int coln, bool has_header);
+void nonempty_files_ls(string path1, vector <string> fns);
+
+
 
 #endif /*COMMON_H*/

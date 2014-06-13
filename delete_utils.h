@@ -16,7 +16,7 @@ inline int min_align_score(int align_len) { return round(0.75 * align_len - 2);}
 
 bool get_align_pos(int aluBegin, int aluEnd, int beginPos, int endPos, int &ref_a, int &ref_b, int &read_a, int &read_b, seqan::BamAlignmentRecord &record);
 bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &record, int read_a, int read_b, int &score, int &align_len);
-T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool read_is_left);
+T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh);
 
 
 #endif 

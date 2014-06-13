@@ -12,7 +12,7 @@ def print1(pn_all, fn_path, path1, bin_path):
             print >>fout, "#PBS -l walltime=0:59:0"
             print >>fout, "#PBS -N %s" % pn
             print >>fout, "cd %s" % path1
-            #print >>fout, '%(bin_path)sbuild_dist config.dk %(pi)d'%locals() 
+            #print >>fout, '%(bin_path)sbuild_dist config.dk build_dist %(pi)d'%locals() 
             #print >>fout, '%(bin_path)salu_delete config.dk write_tmp1 %(pi)d'%locals() 
             #print >>fout, '%(bin_path)salu_delete config.dk write_tmp2 %(pi)d'%locals() 
             

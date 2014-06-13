@@ -73,8 +73,23 @@ int is_nonempty_file(string fn){
   }
 }
 
-// use template to generalize 
-void sort_file_by_col_int(string fn, int coln, bool has_header){
+
+void nonempty_files_ls(string path1, vector <string> fns){
+  DIR *d;
+  struct dirent *dir;
+  d = opendir(path1.c_str());
+  fns.clear();
+  if (d) {
+    while ( (dir = readdir(d))!=NULL )  {
+      string fn = dir->d_name;
+      if (is_nonempty_file(fn)) fns.push_back(fn);
+    }
+    closedir(d);
+  }
+}
+
+/*
+void sort_file_by_col(string fn, int coln, bool has_header){
   ifstream fin( fn.c_str());
   assert(fin);
   string line, tmpv, header;
@@ -99,3 +114,4 @@ void sort_file_by_col_int(string fn, int coln, bool has_header){
     fout << (*ri).second << endl;
   fout.close();
 }
+*/

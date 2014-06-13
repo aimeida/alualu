@@ -20,6 +20,9 @@ ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 INSERT_POS_FILES_CPP = insert_pos.cpp common.cpp utils.cpp insert_utils.cpp 
 INSERT_POS_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INSERT_POS_FILES_CPP))
 
+ALU_INSDEL_FILES_CPP = alu_insdel.cpp common.cpp utils.cpp 
+ALU_INSDEL_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSDEL_FILES_CPP))
+
 INS_DEL_FILES_CPP = ins_del.cpp common.cpp utils.cpp 
 INS_DEL_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(INS_DEL_FILES_CPP))
 
@@ -63,6 +66,9 @@ $(OD)/alu_insert: $(OD) $(ALU_INSERT_FILES_O)
 
 $(OD)/insert_pos: $(OD) $(INSERT_POS_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(INSERT_POS_FILES_O)
+
+$(OD)/alu_insdel: $(OD) $(ALU_INSDEL_FILES_O) 
+	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSDEL_FILES_O)
 
 $(OD)/ins_del: $(OD) $(INS_DEL_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(INS_DEL_FILES_O)

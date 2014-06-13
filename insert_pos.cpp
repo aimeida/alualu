@@ -1,13 +1,13 @@
 #define SEQAN_HAS_ZLIB 1
 #include "insert_utils.h"
-#include "consensus.h"
 
 class ALUREAD_INFO {
 public:
   seqan::CharString qName;
   int clipLeft, pos;
-  bool needRC;
-  ALUREAD_INFO(seqan::CharString & qn, int cl, int p, bool t) : qName(qn), clipLeft(cl), pos(p), needRC(t) {}
+  string pn;
+  bool sameRC;
+  ALUREAD_INFO(seqan::CharString & qn, int cl, int p, string pn, bool t) : qName(qn), clipLeft(cl), pos(p), pn(pn), sameRC(t) {}
 };
 
 void read_file_pn_used(string fn, std::set <string> & pns_used) {
@@ -327,29 +327,31 @@ void exactpos_pns(string fn_input, string path1, string fn_output){
   fout.close();
 }
 
-void write_clipreads_fa(string chrn, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_cons,  map < int, vector<ALUREAD_INFO> > & rid_alureads) {
+void write_clipreads_fa(string pn, string chrn, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_cons,  map < int, vector<ALUREAD_INFO> > & rid_alureads) {
   ofstream fout(file_cons.c_str());    
   seqan::BamAlignmentRecord record;
   string read_status;
   for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
-    int region_begin = (*pi).first - ALU_INSERT_FLANK; // no need for larger flank region, if i only want to build consensus
-    int region_end = (*pi).second + ALU_INSERT_FLANK;	
+    int region_begin = (*pi).first - ALU_FLANK; // no need for larger flank region, if i only want to build consensus
+    int region_end = (*pi).second + ALU_FLANK;	
     if (! bam_fh->jump_to_region(chrn, region_begin, region_end)) 
       continue;    
     while ( true ) {
       read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
       if (read_status == "stop" ) break;
       if (read_status == "skip" or !QC_insert_read(record)) continue;
-      if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) {
-	ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, (*pi).first, record.pNext, hasFlagRC(record)==hasFlagNextRC(record) );
-	rid_alureads[record.rNextId].push_back(one_aluRead);
-	//rid_alureads.insert( pair <int, ALUREAD_INFO> (record.rNextId, one_aluRead)  );
-	continue;
-      }
       int thisEnd = record.beginPos + (int)getAlignmentLengthInRef(record);   
-      if ( ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - (*pi).second) < 30 ) or  	    
+      if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) {
+	if ( ( thisEnd < (*pi).first and !hasFlagRC(record) ) or 
+	     ( record.beginPos > (*pi).second and hasFlagRC(record) ) ) {
+	  ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, (*pi).first, record.pNext, pn, hasFlagRC(record)==hasFlagNextRC(record) );
+	  rid_alureads[record.rNextId].push_back(one_aluRead);
+	}
+      }
+      /// NB: one read can be both clipRead and alu mate 
+      if ( ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - (*pi).second) < 30 ) or    	    
 	   ( has_soft_last(record, CLIP_BP) and abs( thisEnd - (*pi).first) < 30 ) )
-	fout << (*pi).first  <<  " clipRead " << record.seq << endl;
+	fout << (*pi).first << " " << record.seq  <<  " clipRead " << pn << endl;
     }
   }
   fout.close();
@@ -360,27 +362,37 @@ void add_alureads_fa(BamFileHandler *bam_fh, string file_cons,  map < int, vecto
   fout.open(file_cons.c_str(), fstream::app|fstream::out);
   seqan::BamAlignmentRecord record;
   for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
-    cout <<  "start " << (ri->second).size() << endl;
     for ( vector<ALUREAD_INFO>::iterator ai = (ri->second).begin(); ai != (ri->second).end(); ai++ ) {
       if ( !bam_fh->jump_to_region( ri->first, (*ai).pos - 20, (*ai).pos + 20) ) continue;
       while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
 	if (record.qName == (*ai).qName) {
-	  fout << (*ai).clipLeft << " aluRead";
-	  if ( (*ai).needRC ) {
-	    fout << "r";
-	    reverseComplement(record.seq);  // reverse ? or RC ?
-	  }
-	  fout << " " << record.seq << endl;
+	  fout << (*ai).clipLeft << " " << record.seq << " aluRead " << (*ai).pn << " " << (*ai).sameRC <<  endl;
 	  break;
 	}
       }
-      cout << "reads done " << (*ai).qName << " " << (*ai).pos << endl;
+      //cout << "reads done " << (*ai).qName << " " << (*ai).pos << endl;
     }  
     cout << ri->first << " " << (ri->second).size() << endl;
     (ri->second).clear();
   }
   fout.close();
 }
+
+bool read_Tseq(string fn, map <int, vector <string> > & pos_seqs) {
+  ifstream fin( fn.c_str() );
+  string line, seq, readtype; 
+  int pos;
+  stringstream ss;
+  if (!fin) return false;
+  while ( getline(fin, line) ) {
+    ss.clear(); ss.str( line );
+    ss >> pos;
+    pos_seqs[pos].push_back(line);
+  }
+  fin.close();
+  return true;
+}
+
 
 int main( int argc, char* argv[] )
 {
@@ -465,55 +477,48 @@ int main( int argc, char* argv[] )
     BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, bam_input+".bai"); 
     string path_cons = cf_fh.get_conf("file_ins_cons");  // for consensus sequence
     check_folder_exists( path_cons);
-
     for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
-       vector< pair<int, int> > insert_pos;
-       read_first2col( path1 + "clip/" + *ci + fn_suffix, insert_pos );
-       string file_cons = path_cons + *ci + "_" + pn;
-       map < int, vector<ALUREAD_INFO>  > rid_alureads;
-       write_clipreads_fa(*ci, insert_pos, bam_fh, file_cons, rid_alureads);         
-       add_alureads_fa(bam_fh, file_cons, rid_alureads);
-       //sort_file_by_col(file_cons, 1, false);
-       cout << "output to " << file_cons << endl;
+      check_folder_exists( path_cons + *ci);
+      string file_cons = path_cons + *ci + "/" + pn;
+      vector< pair<int, int> > insert_pos;
+      read_first2col( path1 + "clip/" + *ci + fn_suffix, insert_pos );      
+      map < int, vector<ALUREAD_INFO>  > rid_alureads;
+      write_clipreads_fa(pn, *ci, insert_pos, bam_fh, file_cons, rid_alureads);         
+      add_alureads_fa(bam_fh, file_cons, rid_alureads); // get seq from bam file instead of genome.fa
+      sort_file_by_col<int> (file_cons, 1, false);
     }   
 
- 
-  }  else if ( opt == "cons_reads_build" ) { 
-    for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
-      string file_cons = cf_fh.get_conf("file_ins_cons") + *ci + '_';
-      map <int, seqan::StringSet <TSeq> > pos_seqs;
-      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
-	//cout << file_cons + *pi  << endl;
-	ifstream fin( (file_cons + *pi).c_str() );
-	string line; 
-	int pos;
-	string seq;
-	stringstream ss;
-	if (!fin) continue;
-	while ( getline(fin, line) ) {
-	  ss.clear(); ss.str( line );
-	  ss >> pos >> seq ;
-	  appendValue(pos_seqs[pos], (TSeq)seq);
-	}
-	fin.close();
-      } 
-      if (pos_seqs.empty()) continue;
-      //cout << *ci << " " <<  pos_seqs.size() << endl;
-      for (map <int, seqan::StringSet <TSeq> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-	for ( size_t i = 0; i < length(pi->second); i++)
-	  cout << pi->first << " " << (pi->second)[i] << endl;
-	seqan::StringSet<TSeq> consensus;
-	compute_consensus(consensus, pi->second);
-	cout << length(pi->second) << " "  << length(consensus) << endl;
-	for ( size_t i = 0; i < length(consensus); ++i) 
-	  cout << ">contig_" << i << "\n"<< consensus[i] << "\n";  // ok, i might want to debug, why so many contigs ?
-	cout << endl;
-	
-      }
-    }
+  }  else if ( opt == "cons_reads_pos" ) { 
     
-  }
-  
+    string path_cons = cf_fh.get_conf("file_ins_cons");  
+    string bin_path = cf_fh.get_conf("bin_path");   
+    for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
+      string path2 = path_cons + *ci + "_pos/";
+      check_folder_exists( path2 );
+      map <int, vector<string> > pos_seqs;
+      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
+	read_Tseq(path_cons + *ci + "/" + *pi, pos_seqs);
+      if (pos_seqs.empty()) continue;      
+
+      string file_pos =  path_cons + *ci + ".pos";
+      ofstream fout2(file_pos.c_str());
+      cout << "cmds to run, written to " << file_pos << endl;
+      for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
+	string file_cons1 = path2 + int_to_string( pi->first);
+	ofstream fout1(file_cons1.c_str());
+	for (  vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
+	  fout1 << *si << endl;
+	sort_file_by_col<string> (file_cons1, 4, false); // sort by pn
+	fout1.close();		
+	fout2 << pi->first << endl;
+	/////fout2 << bin_path << "debug/alu_insdel "<< bin_path << "config.dk cons_reads_build " << file_cons1 << endl; 	
+      }
+      fout2.close();
+    }
+
+  } 
+
+  cout << "done time spent " << clocki.elapsed()<< endl;
   return 0;
 }
   

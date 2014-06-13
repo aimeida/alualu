@@ -51,8 +51,8 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
   return ( align_len >= min_align_len and score >= min_align_score(align_len) );
 }
 
-T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool read_is_left){
-
+T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh){
+  bool read_is_left = left_read(record);
   ////return unknow_read;  // just try it for fun! not serious 
   int beginPos = record.beginPos;
   int endPos = record.beginPos + align_len;  

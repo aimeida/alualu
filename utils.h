@@ -26,7 +26,7 @@ struct MyUpper : public unary_function<char,char> {
 inline string get_name_rg(string prefix, string pn){ return prefix + "RG." + pn;}
 inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_param){ return prefix + pn + ".count." + rg + "." + pdf_param; }
 
-inline void check_folder_exists(string & path) {
+inline void check_folder_exists(string path) {
   if ( access( path.c_str(), 0 ) != 0 ) system( ("mkdir " + path).c_str() );    
 };
 
@@ -37,7 +37,7 @@ inline bool QC_read( seqan::BamAlignmentRecord &record){
 }
 
 inline bool QC_delete_read( seqan::BamAlignmentRecord &record){  
-  return QC_read(record) and hasFlagAllProper(record) and (abs(record.tLen) <= DISCORDANT_LEN) and (hasFlagRC(record) != hasFlagNextRC(record));
+  return QC_read(record) and (record.rID == record.rNextId) and hasFlagAllProper(record) and (abs(record.tLen) <= DISCORDANT_LEN) and (hasFlagRC(record) != hasFlagNextRC(record));
 };
 
 inline bool QC_insert_read( seqan::BamAlignmentRecord &record){  

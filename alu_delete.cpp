@@ -1,24 +1,18 @@
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/vcf_io.h>
-#include "common.h"
 #include "delete_utils.h"
-#include "utils.h"
-#include <sys/time.h>
-#include <boost/timer.hpp>
 
 inline string get_name_tmp(string path, string fn, string suffix){ return path + fn + suffix;}
 
-void count_reads(map <seqan::CharString, T_READ> &special_read, map < T_READ, int > &readCnt) {
+void count_reads(map <seqan::CharString, T_READ> &qName_info, map < T_READ, int > &readCnt) {
   readCnt.clear();
-  for (map <seqan::CharString, T_READ>::iterator rt = special_read.begin(); rt != special_read.end(); rt++) 
+  for (map <seqan::CharString, T_READ>::iterator rt = qName_info.begin(); rt != qName_info.end(); rt++) 
     addKey(readCnt, rt->second); 
 }
  
-int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <string, int> &rg_to_idx, string chrn, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &special_read,  string &rg_str){  
-  special_read.clear();
-  stringstream rg_ss;
+int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <string, int> &rg_to_idx, string chrn, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &qName_info,  map<seqan::CharString, string> & rg_str){  
+  qName_info.clear();
   int reads_cnt = 0;
-  T_READ rt_val;
   seqan::BamAlignmentRecord record;
   
   while ( true ) {
@@ -27,24 +21,25 @@ int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <st
     if (read_status == "skip" or !QC_delete_read(record)) continue;
     reads_cnt ++;  
     int align_len = getAlignmentLengthInRef(record);    
-    bool read_is_left = left_read(record);
-    if ( (!read_is_left) and special_read.find(record.qName) != special_read.end() ) continue;    	
-    rt_val = classify_read( record, align_len, aluBegin, aluEnd, fasta_fh, read_is_left);
-    if ( rt_val != useless_read)  
-      special_read[record.qName] = rt_val;
-    if ( rt_val == unknow_read ) { // (unknow = jump across alu region)
+    map <seqan::CharString, T_READ >::iterator qItr = qName_info.find(record.qName);
+    if ( qItr != qName_info.end() and qItr->second != unknow_read) continue;
+    T_READ iread = classify_read( record, align_len, aluBegin, aluEnd, fasta_fh);
+    if ( iread == useless_read) continue;
+    qName_info[record.qName] = iread;
+    if ( qItr == qName_info.end() and iread == unknow_read) {
       int rgIdx = get_rgIdx(rg_to_idx, record);
-      rg_ss << rgIdx << ":" << abs(record.tLen) << " ";
-    }	    
+      stringstream rg_ss;
+      rg_ss << rgIdx << ":" << abs(record.tLen);
+      rg_str[record.qName] = rg_ss.str();
+    }    
   }
   coverage_mean = length(record.seq) * (float) reads_cnt / (aluEnd - aluBegin + 2 * ALU_FLANK) ;
   if ( coverage_mean > coverage_max) return COVERAGE_HIGH;
-  rg_str = rg_ss.str();
   return 1;
 }
 
 int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_prefix, int coverage_max, map<string, int> &rg_to_idx) {    
-  map < seqan::CharString, T_READ> special_read;  
+  map < seqan::CharString, T_READ> qName_info;  
   ofstream f_tmp1( f_out.c_str()); 
   f_tmp1 << "chr aluBegin aluEnd mean_coverage midCnt clipCnt unknowCnt unknowStr\n";
   ofstream f_log1( f_log.c_str());  // print out info for clip reads 
@@ -63,18 +58,23 @@ int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, str
 	break;      
       if (aluBegin <= ALU_FLANK or !bam_fh->jump_to_region(chrn, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK))
 	continue;
-      string rg_str;
-      int check_alu = check_chr_alupos(bam_fh, fasta_fh, rg_to_idx, chrn, aluBegin, aluEnd, coverage_max, coverage_mean, special_read, rg_str);
+      map<seqan::CharString, string> rg_str;
+      int check_alu = check_chr_alupos(bam_fh, fasta_fh, rg_to_idx, chrn, aluBegin, aluEnd, coverage_max, coverage_mean, qName_info, rg_str);
       if ( check_alu == 0 ) continue;
       if ( check_alu == COVERAGE_HIGH) {
 	f_log1 << "COVERAGE_HIGH " << chrn << " " << aluBegin << " " << aluEnd << " " << setprecision(2) << coverage_mean << endl;
 	continue;
       }
       map < T_READ, int > readCnt;
-      count_reads(special_read, readCnt); 
-      if ( readCnt[clip_read] or readCnt[unknow_read] ) // not interesting if all are mid_reads
+      count_reads(qName_info, readCnt); 
+      if ( readCnt[clip_read] or readCnt[unknow_read] ) {// not interesting if all are mid_reads
 	f_tmp1 << chrn << " " << aluBegin << " " << aluEnd << " " << setprecision(2) << coverage_mean << " " <<  readCnt[mid_read]
-	       << " " << readCnt[clip_read] << " " << readCnt[unknow_read] << " " << rg_str << endl;      
+	       << " " << readCnt[clip_read] << " " << readCnt[unknow_read];
+	for (map<seqan::CharString, string>::iterator ri = rg_str.begin(); ri != rg_str.end(); ri++) 
+	  if (qName_info[ri->first] == unknow_read)
+	    f_tmp1 << " " << ri->second ;
+	f_tmp1 << endl;
+      }
     }
     delete alurefpos;
     delete fasta_fh;
@@ -353,7 +353,7 @@ int main( int argc, char* argv[] )
 
   if ( opt == "write_tmp1" ) { 
     int idx_pn = seqan::lexicalCast<int> (argv[3]);
-    assert(argc != 4);
+    assert(argc == 4);
     string pn = ID_pn[idx_pn];
     cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
 
