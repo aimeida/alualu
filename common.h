@@ -44,7 +44,7 @@ using namespace std;
 #define FLANK_REGION_LEN 80
 #define ALIGN_END_CUT 10 // cut the last 10 bp while realign to reference
 #define CLIP_BP_LEFT 5
-#define CLIP_BP_RIGHT 35
+#define CLIP_BP_RIGHT 30
 #define MIN_VOTE_FREQ 0.4
 // macros for ins_del
 #define REF_EXT_LEN 150 // extend exact insert pos to both sides. This data, max read len = 135
@@ -81,6 +81,17 @@ void addKey(map <K,V> &m, K key, int cnt=1)
     m[key] = cnt;
   } else (it->second) += cnt;
 };
+
+
+template <class K, class V> 
+void get_mapVal(map <K,V> &m, K key, V & default_val)
+{
+  typename map <K,V>::iterator it;
+  if ((it=m.find(key)) != m.end()) 
+    default_val = it->second;
+};
+
+
 
 template <class K, class V>
 void debugprint_map(map <K,V> &m, size_t n_max = 0) {

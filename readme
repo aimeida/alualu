@@ -76,24 +76,16 @@ config.decode: used by Yu in Iceland, where the old files sitting
    opt = "clipreads_by_pos":
      write files at  (@C)file_clip_reads/chr1_pos/regionBegin_regionEnd
      all broken reads with insertion between regionBegin and regionEnd are written into corresponding files. 
-
-   opt = "  ":
      exact position is written at (@C)file_alu_insert1/chr1_0.02_1.tmp
      exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
-             
-   opt = "debug":
-     for debugging       
 
-3. ins_del.cpp
+   opt = "fixed_delete0":
+     write *tmp1 and *tmp2 files for alu_deletion methods, with a fixed alu consensus sequence, instead of inferred length
+             
+3. ins_del.cpp ( depreciated !)
    
    opt = "write_tmp1":
        write *tmp1 files, which are similar to *tmp1 files at 
-
-   opt = "write_tmp2":
-       to be implemented (small modification based on alu_delete)
-
-   opt = "debug":
-       for some debugging 
 
    opt = "write_testbam":
        write small test bam files 

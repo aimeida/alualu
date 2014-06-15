@@ -80,9 +80,7 @@ bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqa
     cout << "verbose #1 " << seq_read << endl;
     cout << "verbose #2 " << seq_ref << endl;
   }
-
   size_t align_len = length(seq_read);
-
   if ( align_len < CLIP_BP) return false;
   seqan::Score<int> scoringScheme(1, -2, -2, -2); // match, mismatch, gap extend, gap open
   TAlign align;
@@ -92,7 +90,6 @@ bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqa
   score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>()); 
   if (score >= round(th_score * align_len)  )
     return true;
-
   // otherwise cut the end and realign
   if (verbose)  cout << align << endl;  
   if ( (int)align_len <= CLIP_BP + cutEnd) return false;
@@ -103,9 +100,43 @@ bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqa
     assignSource(row(align,0), infix(seq_read, cutEnd, align_len)); 
     assignSource(row(align,1), infix(seq_ref, cutEnd, align_len));      
   }
-  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>()); 
-  
+  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>());   
   if (verbose)  cout << align << endl;
-
   return score >= round(th_score * (align_len - cutEnd)) ;
 }
+
+bool align_alu_cons(string &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th){
+  TAlign align;
+  seqan::Score<int> scoringScheme(0, -1, -1, -2); 
+  resize(rows(align), 2);
+  assignSource(row(align,0), ref_fa);  // 2,3
+  assignSource(row(align,1), alucons);   // 1,4, free gap at end
+  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
+  int align_start = max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
+  int align_end = min(toViewPosition(row(align, 0), ref_fa.size()), toViewPosition(row(align, 1), length(alucons)));
+  sim_rate = 0;
+  int align_len = align_end - align_start;
+  if ( align_len <= CLIP_BP or align_len <= sim_th * ref_fa.size() )
+    return false;
+  TRow &row0 = row(align,0);
+  TRowIterator it0 = begin(row0);
+  TRow &row1 = row(align,1);
+  TRowIterator it1 = begin(row1);
+  int i = 0, dif = 0;
+  while ( i++ < align_start ) {  it0++; it1++; }
+  while ( i++ <= align_end) {
+    if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
+    it0++; it1++;
+  }
+  sim_rate = 1 - dif / (float) align_len;
+  return  sim_rate >= sim_th;
+}
+
+int align_alu_cons_call(string & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th){
+  for (int k = 1; k <= 4; k++) {
+    if (align_alu_cons(ref_fa, alucons_fh->fetch_alucons(k), sim_rate, sim_th))
+      return k;
+  }
+  return 0;
+}
+

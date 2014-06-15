@@ -30,13 +30,3 @@ class qNameInfo {
  qNameInfo(I_READ t, seqan::CharString & sq) : itype(t), seq(sq), insertAluOri(0) {}    
 };
 
-class AluconsHandler : public FastaFileHandler {
- public:
-  string seq_name;
-  int seq_len;
-  AluconsHandler(string fn_fa, string sn);
-  void update_seq_name(string sn);
-  seqan::CharString fetch_alucons(int key);
- private:
-  map <int, seqan::CharString> seqs;
-};

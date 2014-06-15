@@ -23,34 +23,6 @@ void RecordInfo::debugprint_thisBegin(list <RecordInfo *> & records, ostream & o
   os << endl;
 }
 
-AluconsHandler::AluconsHandler(string fn_fa, string sn):
-  FastaFileHandler(fn_fa) {
-  update_seq_name(sn);
-}
-
-void AluconsHandler::update_seq_name(string sn) {
-  seq_name = sn;
-  seqs.clear();  
-  unsigned idx = 0;
-  seqan::CharString seq;
-  assert (getIdByName(faiIndex, seq_name, idx));
-  readSequence(seq, faiIndex, idx);
-  seqan::toUpper(seq);    
-  seq_len = length(seq);
-  seqs[1] = seq;
-  seqan::ModifiedString <seqan::CharString, seqan::ModReverse > myRev(seq);
-  seqan::CharString rev_seq = myRev;
-  seqs[4] = rev_seq;  // 1,4 are reversed
-  reverseComplement(seq);
-  seqs[2] = seq;
-  rev_seq = myRev;
-  seqs[3] = rev_seq; // 2,3 are reversed
-}
-
-seqan::CharString AluconsHandler::fetch_alucons(int key) {
-  assert ( key >=1 and key <= 4) ;
-  return seqs[key];
-} 
 
 bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString & alucons, float & sim_rate,
 		    int & align_consBegin, int & align_len, float sim_th){

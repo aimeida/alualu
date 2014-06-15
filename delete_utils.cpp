@@ -62,7 +62,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluB
     return unknow_read;
   // left read, the pair cross alu, no need to check its right pair afterwards
   if ( read_is_left and endPos < aluBegin - BOUNDARY_OFFSET and  
-       (!has_soft_last(record, CLIP_BP)) and record.pNext >=  aluEnd + ALU_FLANK )
+       (!has_soft_last(record, CLIP_BP)) and record.pNext >=  aluEnd + BOUNDARY_OFFSET )
     return unknow_read;
   
   if ( (has_soft_first(record, CLIP_BP) and abs(beginPos - aluEnd) <= BOUNDARY_OFFSET ) or 

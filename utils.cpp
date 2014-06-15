@@ -159,6 +159,37 @@ seqan::CharString FastaFileHandler::fasta_seq(string fa_input, string seq_name,i
   return fa_seq;
 }
 
+
+AluconsHandler::AluconsHandler(string fn_fa, string sn):
+  FastaFileHandler(fn_fa) {
+  update_seq_name(sn);
+}
+
+void AluconsHandler::update_seq_name(string sn) {
+  seq_name = sn;
+  seqs.clear();  
+  unsigned idx = 0;
+  seqan::CharString seq;
+  assert (getIdByName(faiIndex, seq_name, idx));
+  readSequence(seq, faiIndex, idx);
+  seqan::toUpper(seq);    
+  seq_len = length(seq);
+  seqs[1] = seq;
+  seqan::ModifiedString <seqan::CharString, seqan::ModReverse > myRev(seq);
+  seqan::CharString rev_seq = myRev;
+  seqs[4] = rev_seq;  // 1,4 are reversed
+  reverseComplement(seq);
+  seqs[2] = seq;
+  rev_seq = myRev;
+  seqs[3] = rev_seq; // 2,3 are reversed
+}
+
+seqan::CharString AluconsHandler::fetch_alucons(int key) {
+  assert ( key >=1 and key <= 4) ;
+  return seqs[key];
+} 
+
+
 void parse_reading_group(string file_rg, map<string, int> & rg_to_idx){
   ifstream fin (file_rg.c_str() );
   int idx = 0;
@@ -210,7 +241,7 @@ string get_cigar(seqan::BamAlignmentRecord &record) {
 
 void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os) {
   os << record.qName << " " << record.beginPos << " " << record.beginPos + getAlignmentLengthInRef(record)  << " " ;
-  os << get_cigar(record) << " " << record.pNext << " " << record.beginPos + record.tLen << endl;
+  os << get_cigar(record) << " " << record.pNext << " " << record.tLen << endl;
 }
 
 int numOfBestHits(seqan::BamAlignmentRecord &record){
@@ -432,21 +463,22 @@ void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){
   }    
 }
 
-void read_first2col(string fn, vector < pair<int, int> > & insert_pos) {
+void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int maxi ) {
   insert_pos.clear();
   ifstream fin(fn.c_str());
   assert(fin);
   stringstream ss;
   string line;
-  getline(fin, line); // skip header!
+  if (has_header)  getline(fin, line); 
   int beginPos, endPos;
+  int ni = 0;
   while (getline(fin, line)) {
     ss.clear(); ss.str( line );  
     ss >> beginPos >> endPos;
-    if ( endPos < 0 )
-      insert_pos.push_back( make_pair(beginPos, beginPos) );
-    else
-      insert_pos.push_back( make_pair(beginPos, endPos) );
+    ni ++ ;
+    if ( maxi > 0 and ni == maxi)
+      break;
+    insert_pos.push_back( make_pair(beginPos, endPos) );
   }
   fin.close();
 }

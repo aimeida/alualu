@@ -132,9 +132,9 @@ int main( int argc, char* argv[] )
     while (i < 4000) {
       bam_fh->fetch_a_read(record);
       if (!QC_delete_read(record)) continue;
-      if ( left_read(record)) 
-	cout << hasFlagRC(record) << endl;
-      //cout  << i << " " << (hasFlagRC(record) != left_read(record)) << endl;
+      ////cout  << i << " " << (hasFlagRC(record) != left_read(record)) << endl;
+      if ( !left_read(record) )
+	cout << record.beginPos - record.pNext + getAlignmentLengthInRef(record) << "  " << - record.tLen << endl; // ALWAYS equal 
       i++;
     }
 

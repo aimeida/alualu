@@ -52,19 +52,16 @@ inline bool has_soft_first(seqan::BamAlignmentRecord &record, unsigned min_bp){
   return (record.cigar[0].operation == 'S') and (record.cigar[0].count >= min_bp); 
 };
 
-inline bool not_all_match(seqan::BamAlignmentRecord &record, int max_err_bp = 5){ 
-  int non_match_len = 0;
-  for (size_t i = 0; i < length(record.cigar); i++) 
-    if (record.cigar[i].operation != 'M') non_match_len += record.cigar[i].count; 
-  return non_match_len > max_err_bp;  // if <= 5bp, consider as full match
-};
-
 inline int count_non_match(seqan::BamAlignmentRecord &record){ 
   int non_match_len = 0;
   for (size_t i = 0; i < length(record.cigar); i++) 
     if (record.cigar[i].operation != 'M') non_match_len += record.cigar[i].count; 
   return non_match_len;
 }
+
+inline bool not_all_match(seqan::BamAlignmentRecord &record, int max_err_bp = 5){ 
+  return count_non_match(record) > max_err_bp;
+};
 
 inline bool p00_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[2] - log10_p[0], log10_p[1] - log10_p[0]) <= min_log10p; }
 inline bool p11_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[0] - log10_p[2], log10_p[1] - log10_p[2]) <= min_log10p; }
@@ -116,6 +113,18 @@ class FastaFileHandler {
   static seqan::CharString fasta_seq(string fa_input, string seq_name,int beginPos, int endPos);
 };
 
+
+class AluconsHandler : public FastaFileHandler {
+ public:
+  string seq_name;
+  int seq_len;
+  AluconsHandler(string fn_fa, string sn);
+  void update_seq_name(string sn);
+  seqan::CharString fetch_alucons(int key);
+ private:
+  map <int, seqan::CharString> seqs;
+};
+
 class AluRefPosRead
 {
   queue<int> beginP, endP;
@@ -159,7 +168,7 @@ string get_cigar(seqan::BamAlignmentRecord &record);
 void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os = cout);
 bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region);
 int numOfBestHits(seqan::BamAlignmentRecord &record);
-void read_first2col(string fn, vector < pair<int, int> > & insert_pos);
+void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int maxi = 0);
 
 
 #endif /*UTILS_H*/
