@@ -22,12 +22,10 @@ config.decode: used by Yu in Iceland, where the old files sitting
    /** reads are classified as mid reads (cross alu region, indication of no deletion), clip reads (clip mapped at alu boundary, indication of 
        deletion) and unknown reads (can't know for sure if it is mid or clip read, use insert length instead) .   
        */
-   opt = write_tmp1: 
+   opt = write_tmp2: 
        write temporary results: (@C)file_alu_delete0
        generate *log1: high coverage region
        generate *tmp1: counts of 3 types of read, and insert length for unknow reads. 
-
-   opt = write_tmp2: 
        generate *tmp2: calculte genotype prob based on *tmp1 files. 
                        header l0, l1, l2: genotype prob based on mid/clip reads
                        header m0, m1, m2: genotype prob based on mid/clip/unknow reads
@@ -44,7 +42,7 @@ config.decode: used by Yu in Iceland, where the old files sitting
 ##################################
 #### alu insertion (3 steps: alu_insert.cpp, insert_pos.cpp, ins_del.cpp)
 1. alu_insert.cpp 
-   opt = "alu_mate_flag": 
+   opt = "write_tmps": 
        write results: (@C)file_alu_insert0
        for each pn, scan the genome and find potention loci for alu insertion, this generate a lot of temporary files. 
        *tmp1, *tmp2 and *tmp3 files can be ignored after this step
@@ -55,7 +53,7 @@ config.decode: used by Yu in Iceland, where the old files sitting
        *tmp4, subset of *tmp3, where only left_alu_cnt + right_alu_cnt >= 4 is considered. 
        *tmp4st, subset of *tmp4, with pos in repetitive regions are excluded 
        
-   opt = "combine_pn_pos" :
+   opt = "combine_pos" :
         write results: (@C)file_alu_insert1
         find common insertion positions of multiple individuals, also filter out insertions outside pre_defined freq range.
         eg:  only insertions with freq in [minfreq, maxfreq] are considered, I use [0.02, 1] as in config.dk file

@@ -6,25 +6,31 @@
 
 typedef map<int, ofstream* > MapFO;
 typedef map<string, ofstream* > MapSFO;
-typedef pair<int, string > RowInfo;
 typedef seqan::Dna5String TSeq;
 
+inline void close_fhs(MapFO & fileMap, map<int, string> & rID_chrn) {
+  for (map<int, string>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++)   
+    delete fileMap[rc->first];
+}
+
+class AlumateINFO {
+ public:
+  string qname;
+  int len_read, rid1, rid2, pos1, pos2, rgIdx;
+  bool RC1, RC2;
+ AlumateINFO( string & qn, int lr, int id1, int id2, int p1, int p2, int rgIdx, bool r1, bool r2) 
+   : qname(qn), len_read(lr), rid1(id1), rid2(id2), pos1(p1), pos2(p2), rgIdx(rgIdx), RC1(r1), RC2(r2) {}
+  static bool sort_pos2(const AlumateINFO* a, const AlumateINFO* b);
+  static void delete_list(list <AlumateINFO *> & alumate_list);
+};
+
 class READ_INFO {
-public:
+ public:
   int beginPos, endPos;
   string alu_type;
-  READ_INFO(int p, int lr, string alu_type) : beginPos(p), endPos(p+lr-2), alu_type(alu_type) {}
+ READ_INFO(int p, int lr, string alu_type) : beginPos(p), endPos(p+lr-2), alu_type(alu_type) {}
 };
 
-struct compare_row {
-  bool operator()(const RowInfo& a, const RowInfo& b) const {
-    return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
-  }
-};
-
-inline bool compare_list(const RowInfo& a, const RowInfo& b) {
-  return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
-}
 
 inline string get_name_suffix(float freq_min, float freq_max) {
   stringstream ss;
@@ -32,7 +38,6 @@ inline string get_name_suffix(float freq_min, float freq_max) {
   return ss.str();   // eg:  _0.02_1
 }
 
-bool alu_mate_flag( BamFileHandler * bam_fh, MapFO &fileMap); 
 string parse_alu_type(string alu_name);
 bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);

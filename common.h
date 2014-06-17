@@ -34,9 +34,10 @@ using namespace std;
 #define ALU_MIN_LEN 50  // min overlap in alu region
 #define INSERT_POS_GAP 40  // (seq, ref/alu_insertion, seq), max length of ref ( replaced by alu_insert)
 #define DISCORDANT_LEN 2000 
+#define REP_MASK_JOIN 200 
 #define INS_COVERAGE_MAX 6 // a random number, remove some high coverage regions 
 #define SCAN_WIN_LEN 400   // 0.99 quantile. 450 for 0.999 quantile. only approximate,different reading group differs
-#define LEFT_PLUS_RIGHT 4  // minimum sum of left and right reads
+#define LEFT_PLUS_RIGHT 3  // minimum sum of left and right reads
 #define MAX_LEN_REGION 100 // max length of insert region
 #define MAX_POS_DIF 50  // combine scanned insertion loci 
 #define NUM_PN_JOIN 10  // max number of pns to sort and join, only matters how fast it runs
@@ -52,6 +53,12 @@ using namespace std;
 #define ALUCONS_SIMILARITY 0.8
 #define MIN_READS_CNT 3 // min interesting reads, in order to consider this pos
 #define MIN_MATCH_LEN 60 // in order to use this read
+
+typedef pair<int, string > IntString;
+inline bool compare_IntString(const IntString & a, const IntString & b) {
+  return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
+}
+
 
 template < typename K >
 bool compare_first(const K & a, const K & b) {
@@ -82,6 +89,13 @@ void addKey(map <K,V> &m, K key, int cnt=1)
   } else (it->second) += cnt;
 };
 
+template <class K, class V> 
+bool key_exists(map <K,V> &m, K key)
+{
+  typename map <K,V>::iterator it;
+  if ((it=m.find(key)) != m.end()) return true;
+  return false;
+};
 
 template <class K, class V> 
 void get_mapVal(map <K,V> &m, K key, V & default_val)

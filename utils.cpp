@@ -115,6 +115,12 @@ bool BamFileHandler::get_chrn(int query_rid, string & pairChrn) {
   return true;
 }
 
+void BamFileHandler::print_mapping_rID2chrn(){
+  cout << "mapping from rID to chrn \n";
+  for (map<int, string>::iterator rc = rID_chrn.begin(); rc != rID_chrn.end(); rc++) 
+    cout << rc->first << " " << rc->second << endl;
+}
+
 bool BamFileHandler::write_a_read(seqan::BamAlignmentRecord & record) {
   if (fn_bam_out.empty())  return false;
   return write2(outStream, record, context, seqan::Bam()) == 0;
@@ -283,40 +289,57 @@ bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_
   return false;
 }
 
-RepMaskPos::RepMaskPos(string file_rmsk, int join_len){
-  vector<string>::iterator ci;
-  vector<int>::iterator pi;
-  for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-  chrns.push_back("chrX");
-  chrns.push_back("chrY");
-
-  string line, chrn, chrn_pre="chr0";
-  stringstream ss;
-  int beginPos, endPos, beginPos_pre, endPos_pre;
+RepMaskPos::RepMaskPos(string file_rmsk, vector<string> &chrns, int join_len){
   ifstream fin(file_rmsk.c_str());
   assert(fin);
+  string line, chrn;
+  int beginPos, endPos, beginPos_pre, endPos_pre;
+  stringstream ss;  
+  map<string, std::set <RepDB1> > rep_db;
   while (getline(fin, line)) {
     ss.clear(); ss.str( line );
     ss >> chrn >> beginPos >> endPos;
     if ( find(chrns.begin(), chrns.end(), chrn) == chrns.end() ) continue;
-    if (chrn != chrn_pre) {
-      chrn_pre = chrn;
-      beginPos_pre = beginPos;
-      endPos_pre = endPos;      
-    } else {
+    RepDB1 one_rep = RepDB1(beginPos, endPos, "");
+    rep_db[chrn].insert(one_rep);  // sorted
+  }
+  fin.close();    
+  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
+    chrn = *ci;
+    std::set <RepDB1> ::iterator pi = rep_db[chrn].begin();
+    beginPos_pre = (*pi).begin_pos;
+    endPos_pre = (*pi).end_pos;
+    pi ++;
+    for ( ; pi != rep_db[chrn].end(); pi++) {
+      beginPos = (*pi).begin_pos;
+      endPos = (*pi).end_pos;
       if (beginPos - endPos_pre > join_len) {  // close this block, create new
 	beginP[chrn].push_back(beginPos_pre);
 	endP[chrn].push_back(endPos_pre);	
 	beginPos_pre = beginPos;
       }
-      endPos_pre = endPos;      
+      endPos_pre = endPos;
     }
-  }
-  fin.close();    
-//  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
-//    assert(beginP[*ci].size() == endP[*ci].size() );
-//    cerr << *ci << " " <<  beginP[*ci].size() << endl;
-//  }
+    beginP[chrn].push_back(beginPos_pre);
+    endP[chrn].push_back(endPos_pre);	
+    assert(beginP[chrn].size() == endP[chrn].size() );
+  }   
+  /* debug print
+     for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
+     vector<int>::iterator bi, ei;
+     for ( bi=beginP[chrn].begin(), ei = endP[chrn].begin(); bi !=  beginP[chrn].end(); bi++, ei++)
+     cout << *bi << " " << *ei << endl;
+     }
+  */
+}
+
+RepMaskPos::~RepMaskPos(void){
+  for ( map<string, vector<int> >::iterator pi = beginP.begin(); pi != beginP.end(); pi++ ) 
+    (pi->second).clear();
+  beginP.clear();
+  for ( map<string, vector<int> >::iterator pi = endP.begin(); pi != endP.end(); pi++ ) 
+    (pi->second).clear();
+  endP.clear();
 }
 
 AluRefPosRead::AluRefPosRead(string file_alupos, int minLen) {
@@ -365,35 +388,39 @@ int AluRefPosRead::updatePos(int &beginPos, int &endPos, char &chain, string & a
   return 1;
 }  
 
-AluRefPos::AluRefPos(string file_alupos) {
-  ifstream fin( file_alupos.c_str());
+AluRefPos::AluRefPos(string fn) {
+  ifstream fin( fn.c_str());
   assert(fin);
-  string _tmp1, _tmp2, alu_type, _tmp3;
+  string chrn, at, line;
   int bp, ep;
-  while (fin >> _tmp1 >> bp >> ep >> alu_type >> _tmp2 >> _tmp3){
-    beginV.push_back(bp);
-    endV.push_back(ep);
-    typeV.push_back(alu_type);
+  stringstream ss;
+  while ( getline(fin, line)) {
+    ss.clear(); ss.str(line);
+    ss >> chrn >> bp >> ep >> at;
+    RepDB1 one_alu = RepDB1(bp, ep, at);
+    alu_db.insert( one_alu );
   }
   fin.close();  
+  adi = alu_db.begin(); // initialize pointer
+  db_size = alu_db.size();
 }
 
-
-
-bool AluRefPos::insideAlu(int beginPos, int endPos, int alu_min_overlap, int &len_overlap){
-  vector<int>::iterator bi, ei;
-  for (bi = beginV.begin(), ei = endV.begin(); bi != beginV.end(); bi++, ei++){
-    if ( *bi > endPos ) return false;
-    if ( (len_overlap = min(*ei,endPos)-max(*bi, beginPos)) >= alu_min_overlap ) return true;
+bool AluRefPos::within_alu( int pos) {
+  for (std::set <RepDB1>::iterator di = alu_db.begin(); di != alu_db.end(); di++ )  {
+    if ( pos >= (*di).begin_pos and pos <= (*di).end_pos )
+      return true;
+    if ( pos > (*di).end_pos )
+      break;
   }
   return false;
 }
 
-AluRefPos::~AluRefPos(void){
-  beginV.clear();
-  endV.clear();
-  typeV.clear();
+void AluRefPos::debug_print() {
+  cout << "DB size " << db_size << endl;
+  for (std::set <RepDB1>::iterator di = alu_db.begin(); di != alu_db.end(); di++ ) 
+    cout << (*di).begin_pos << " " << (*di).end_pos << endl;
 }
+
 
 string phred_scaled(float p0, float p1, float p2) {
   float pmax = max(p0, max(p1, p2));

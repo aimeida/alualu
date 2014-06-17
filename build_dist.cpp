@@ -125,6 +125,9 @@ int main( int argc, char* argv[] )
     vector<string> chrns;
     chrns.push_back(chrn);
     BamFileHandler *bam_fh = new BamFileHandler(chrns, bamInput_file, bamInput_file + ".bai");
+    bam_fh->print_mapping_rID2chrn();
+    return 0;
+    
     bam_fh->jump_to_region(chrn,  59768068, 59768098);
     seqan::BamAlignmentRecord record;
     int i = 0;

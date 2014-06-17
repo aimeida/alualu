@@ -28,16 +28,21 @@ inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_pa
 
 inline void check_folder_exists(string path) {
   if ( access( path.c_str(), 0 ) != 0 ) system( ("mkdir " + path).c_str() );    
-};
+}
 
-inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);};
+inline void move_files(string path_move, string fns) {
+  check_folder_exists(path_move);
+  system(("mv " + fns + " " + path_move).c_str());    
+}
+
+inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);}
 
 inline bool QC_read( seqan::BamAlignmentRecord &record){  
   return (!hasFlagQCNoPass(record)) and (!hasFlagDuplicate(record)) and hasFlagMultiple(record) and (!hasFlagSecondary(record));
 }
 
 inline bool QC_delete_read( seqan::BamAlignmentRecord &record){  
-  return QC_read(record) and (record.rID == record.rNextId) and hasFlagAllProper(record) and (abs(record.tLen) <= DISCORDANT_LEN) and (hasFlagRC(record) != hasFlagNextRC(record));
+  return QC_read(record) and (record.rID == record.rNextId) and hasFlagAllProper(record) and (abs(record.tLen) <= DISCORDANT_LEN) and (hasFlagRC(record) != hasFlagNextRC(record)) and ( left_read(record) != hasFlagRC(record)); 
 };
 
 inline bool QC_insert_read( seqan::BamAlignmentRecord &record){  
@@ -58,10 +63,6 @@ inline int count_non_match(seqan::BamAlignmentRecord &record){
     if (record.cigar[i].operation != 'M') non_match_len += record.cigar[i].count; 
   return non_match_len;
 }
-
-inline bool not_all_match(seqan::BamAlignmentRecord &record, int max_err_bp = 5){ 
-  return count_non_match(record) > max_err_bp;
-};
 
 inline bool p00_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[2] - log10_p[0], log10_p[1] - log10_p[0]) <= min_log10p; }
 inline bool p11_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[0] - log10_p[2], log10_p[1] - log10_p[2]) <= min_log10p; }
@@ -90,6 +91,7 @@ class BamFileHandler{
   bool fetch_a_read(seqan::BamAlignmentRecord & record);
   string fetch_a_read(string chrn, int region_begin, int region_end, seqan::BamAlignmentRecord & record);
   bool get_chrn(int query_rid, string & pairChrn);
+  void print_mapping_rID2chrn();
   bool write_a_read(seqan::BamAlignmentRecord & record);  
  private:
   TNameStore  nameStore;
@@ -125,7 +127,7 @@ class AluconsHandler : public FastaFileHandler {
   map <int, seqan::CharString> seqs;
 };
 
-class AluRefPosRead
+class AluRefPosRead // used by alu_del and alu_hg18
 {
   queue<int> beginP, endP;
   queue<char> strandP;
@@ -137,23 +139,38 @@ class AluRefPosRead
   int updatePos(int &beginPos, int &endPos, char & chain, string & alu_type);
 };
 
-class AluRefPos   // used by alu_insert, read alu in different way, update more efficient 
+class RepDB1 {
+ public:
+  int begin_pos, end_pos;
+  string alu_type;
+ RepDB1(int bp, int ep, string at):begin_pos(bp), end_pos(ep), alu_type(at) {}
+  bool operator<(const RepDB1 & other)const { return begin_pos < other.begin_pos; } 
+};
+
+class AluRefPos   // used by alu_insert
 {
-public:
-  vector<int> beginV, endV;
-  vector<string> typeV;
-  AluRefPos(string file_alupos);   
-  bool insideAlu(int beginPos, int endPos, int alu_min_overlap, int &len_overlap); 
-  ~AluRefPos(void);
+public: 
+  int db_size;
+  AluRefPos(string fn);   
+  void nextdb(){ adi++;}
+  int get_beginP() const { assert(adi != alu_db.end()); return (*adi).begin_pos; }
+  int get_endP() const { assert(adi != alu_db.end()); return (*adi).end_pos; }
+  string get_type() const { assert(adi != alu_db.end()); return (*adi).alu_type; }
+  bool within_alu(int pos);
+  void debug_print();
+  ~AluRefPos(void) { alu_db.clear();}
+ private:
+  std::set <RepDB1> alu_db;
+  std::set <RepDB1>::iterator adi;  
 };
 
 
 class RepMaskPos
 {
  public:
-  vector<string> chrns;
   map<string, vector<int> > beginP, endP;
-  RepMaskPos(string file_rmsk, int join_len = 20);
+  RepMaskPos(string file_rmsk, vector<string> &chrns, int join_len = 20);
+  ~RepMaskPos(void);
 };
 
 void read_pdf_pn( string prefix, string pn, string pdf_param,  map <int, EmpiricalPdf *> & pdf_rg);

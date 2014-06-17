@@ -22,9 +22,10 @@ int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <st
     reads_cnt ++;  
     int align_len = getAlignmentLengthInRef(record);    
     map <seqan::CharString, T_READ >::iterator qItr = qName_info.find(record.qName);
-    if ( qItr != qName_info.end() and qItr->second != unknow_read) continue;
-    T_READ iread = classify_read( record, align_len, aluBegin, aluEnd, fasta_fh);
-    if ( iread == useless_read) continue;
+    if ( qItr != qName_info.end() and qItr->second != unknow_read) 
+      continue;
+    T_READ iread = classify_read( record, align_len, aluBegin, aluEnd, fasta_fh);    
+    if ( iread == useless_read) continue;    
     qName_info[record.qName] = iread;
     if ( qItr == qName_info.end() and iread == unknow_read) {
       int rgIdx = get_rgIdx(rg_to_idx, record);
@@ -78,7 +79,7 @@ int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, str
     }
     delete alurefpos;
     delete fasta_fh;
-    cerr << "file_alupos:done  " << file_alupos << endl;  
+    cout << "file_alupos:done  " << file_alupos << endl;  
   }
   f_tmp1.close();
   f_log1.close();
@@ -351,11 +352,11 @@ int main( int argc, char* argv[] )
   string file_fa_prefix = cf_fh.get_conf("file_fa_prefix");
   string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
 
-  if ( opt == "write_tmp1" ) { 
+  if ( opt == "write_tmps" ) { 
     int idx_pn = seqan::lexicalCast<int> (argv[3]);
     assert(argc == 4);
     string pn = ID_pn[idx_pn];
-    cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
+    cout << "reading pn: " << idx_pn << " " << pn << "..................\n";
 
     string path0 = cf_fh.get_conf("file_alu_delete0");
     check_folder_exists(path0);
@@ -373,16 +374,7 @@ int main( int argc, char* argv[] )
     string path_move = path0 + "log1s/";
     check_folder_exists(path_move);
     system(("mv " + path0 + pn + ".log1 " + path_move).c_str());
-    path_move = path0 + "tmp1s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
 
-  } else if ( opt == "write_tmp2" ) {
-    int idx_pn = seqan::lexicalCast<int> (argv[3]);
-    assert(argc != 4);
-    string pn = ID_pn[idx_pn];
-    string path0 = cf_fh.get_conf("file_alu_delete0");    
-    string fn_tmp1 = get_name_tmp(path0 + "tmp1s/", pn, ".tmp1");
     string fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
@@ -390,7 +382,10 @@ int main( int argc, char* argv[] )
     calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg); 
     EmpiricalPdf::delete_map(pdf_rg);
 
-    string path_move = path0 + "tmp2s/";
+    path_move = path0 + "tmp1s/";
+    check_folder_exists(path_move);
+    system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
+    path_move = path0 + "tmp2s/";
     check_folder_exists(path_move);
     system(("mv " + path0 + pn + ".tmp2 " + path_move).c_str());
     

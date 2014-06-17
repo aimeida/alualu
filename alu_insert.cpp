@@ -1,7 +1,23 @@
 #define SEQAN_HAS_ZLIB 1
 #include "insert_utils.h"
 
-inline string get_name(string path, string fn, string suffix){ return path + fn + suffix;}
+void alu_mate_flag( BamFileHandler * bam_fh, string fn_output, string &header, map <string, int> & rg_to_idx){
+  ofstream fout (fn_output.c_str() );  
+  fout << header ;
+  seqan::BamAlignmentRecord record;
+  while ( bam_fh -> fetch_a_read(record) ) { 
+    if ( ! QC_insert_read(record) ) continue;
+    if ( ! key_exists(bam_fh->rID_chrn, record.rID) ) continue;
+    int len_seq = length(record.seq);
+    if ( count_non_match(record) >= CLIP_BP )  continue; // want very good quality reads 
+    if ( (record.rID < record.rNextId and bam_fh->rID_chrn.find(record.rNextId) != bam_fh->rID_chrn.end() ) or 
+	 (record.rID == record.rNextId and record.beginPos < record.pNext and abs(record.tLen) > DISCORDANT_LEN) ) {
+      fout << record.qName << " " << record.rID << " " << record.rNextId <<  " " << record.beginPos << " " << record.pNext
+	   << " " << hasFlagRC(record) << " " << hasFlagNextRC(record) << " " << len_seq << " " << get_rgIdx(rg_to_idx, record) << endl;      
+    }
+  }
+  fout.close();
+}
 
 bool parse_line2(string &line, int &this_pos, int &len_read, string &alu_type) {
   string type_flag, qname;
@@ -127,7 +143,7 @@ void alumate_counts_filter(string fn_input, string fn_output, vector<string>  &c
     fin.close();
     fout.close();
     join_location(f_output, f_output, MAX_POS_DIF, MAX_LEN_REGION);    		       
-    cerr << "done " << f_output << endl;
+    cout << "done " << f_output << endl;
   }
 }
 
@@ -157,29 +173,41 @@ void filter_location_rep(string file1, string file2, vector<string> &chrns, RepM
   }
 }
 
-int read_sort_by_col(string fn, int coln, bool has_header, set< RowInfo, compare_row > &rows) {
-  string line, tmpv;
-  int pos;
-  stringstream ss;
+void sort_file_by_col(string fn, string col_name) {
   ifstream fin( fn.c_str());
   assert(fin); 
-  rows.clear();
-  if (has_header) getline(fin, line);
-  size_t rown = 0;
+  string header, line, tmp1;
+  int colv, coln = 0;
+  bool col_name_exist = false;
+  getline(fin, header);
+  stringstream ss;
+  ss.clear(); ss.str( header );
+  while ( ss >> tmp1) { 
+    coln++;
+    if (tmp1 == col_name) {
+      col_name_exist = true;
+      break;
+    }
+  }
+  assert (col_name_exist);
+  //cout << "readline col " << coln << endl;
+  list< IntString> rows_list;  
   while (getline(fin, line)) {
-    rown++;
     ss.clear(); ss.str( line );
-    for (int i = 0; i < coln-1; i++) ss >> tmpv;
-    ss >> pos;
-    rows.insert( make_pair(pos, line) );
+    for (int i = 0; i < coln-1; i++) ss >> tmp1;
+    ss >> colv;
+    rows_list.push_back( make_pair(colv, line) );
   }
   fin.close();
-  if (rows.size() != rown ) cerr << "##### ERROR #### " << fn << endl;
-  return rows.size();
+  rows_list.sort(compare_IntString);
+  ofstream fout( fn.c_str() );
+  fout << header << endl;
+  for (list< IntString>::iterator ri = rows_list.begin(); ri != rows_list.end(); ri++) 
+    fout << ri->second << endl;
+  fout.close();
 }
 
-
-int read_sort_by_col(string fn, int coln, bool has_header, list< RowInfo> &rows_list) {
+int read_sort_by_col(string fn, int coln, bool has_header, list< IntString> &rows_list) {
   string line, tmpv;
   int pos;
   stringstream ss;
@@ -196,46 +224,51 @@ int read_sort_by_col(string fn, int coln, bool has_header, list< RowInfo> &rows_
     rows_list.push_back( make_pair(pos, line) );
   }
   fin.close();
-  rows_list.sort(compare_list);
+  rows_list.sort(compare_IntString);
   if (rows_list.size() != rown ) cerr << "##### ERROR #### " << fn << endl;
   return rows_list.size();
 }
 
-void keep_alu_mate(string file1, string file2, AluRefPos * alurefpos, string &header){
-  set< RowInfo, compare_row > rows;
-  read_sort_by_col(file1, 4, !header.empty(), rows);      
-  // filter reads and keep only alu_mate
-  ofstream fout(file2.c_str());
-  if (!header.empty()) fout << header << " alu_type " <<  endl;
-  vector<int>::iterator bi = alurefpos->beginV.begin();
-  vector<int>::iterator ei = alurefpos->endV.begin();
-  vector<string>::iterator ti = alurefpos->typeV.begin();
-  int bei = 0;
-  int be_size = alurefpos->beginV.size() - 1; // -1 ! otherwise seg fault
-  int left_pos, len_overlap;
-  int ni = 0;
-  for (set< RowInfo, compare_row >::iterator ri = rows.begin(); ri!=rows.end(); ri++, ni++) {
-    left_pos = (*ri).first;   
-    while ( ( left_pos >= (*ei)) and bei < be_size) { bi++; ei++; ti++; bei++; }
-    //cout << ni << " " << rows.size() << " " << (*ri).second << " " << *bi << " " << *ei << " " << *ti << " " <<  bei << " " << be_size <<  endl;
-    if ( (len_overlap = min(*ei, left_pos + DEFAULT_READ_LEN) - max(*bi, left_pos)) > ALU_MIN_LEN ) 
-      fout << (*ri).second << " " << *ti << endl;    
+// qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read
+void read_match_rid(string fn, int col_val, list< AlumateINFO *> & alumate_list){
+  string line, qname;
+  int rid1, rid2, pos1, pos2, len_read, rgIdx;
+  bool rc1, rc2;
+  stringstream ss;
+  ifstream fin( fn.c_str());
+  assert(fin); 
+  getline(fin, line); 
+  while (getline(fin, line)) {
+    ss.clear(); ss.str( line );
+    ss >> qname >> rid1 >> rid2 >> pos1 >> pos2 >> rc1 >> rc2 >> len_read >> rgIdx; 
+    if (rid1 == col_val)
+      alumate_list.push_back(new AlumateINFO(qname, len_read, rid2, rid1, pos2, pos1, rgIdx, rc2, rc1));
+    if (rid2 == col_val) 
+      alumate_list.push_back(new AlumateINFO(qname, len_read, rid1, rid2, pos1, pos2, rgIdx, rc1, rc2));
   }
-  fout.close();
 }
 
-void reorder_column(string fn, MapFO &fileMap, bool has_header){
-  string line, type_flag, qname, alu_type;
-  int this_chr, this_pos, bad_chr, bad_pos, len_read;  
-  stringstream ss;  
-  ifstream fin( fn.c_str() );
-  if (has_header) getline(fin, line);
-  while ( getline(fin, line) ) {
-    ss.clear(); ss.str( line );
-    ss >> type_flag >> qname >> bad_chr >> bad_pos >> this_chr >> this_pos >> len_read >> alu_type;      
-    *(fileMap[this_chr]) << type_flag << " " << qname <<" " << this_chr <<" " << this_pos <<" " << bad_chr <<" " << bad_pos << " " << len_read << " " << alu_type << endl;
+void keep_alu_mate(int alu_rid, string file1, MapFO & fileMap, string file_alu){
+  list< AlumateINFO *> alumate_list;
+  read_match_rid(file1, alu_rid, alumate_list);  
+  alumate_list.sort(AlumateINFO::sort_pos2);  
+  AluRefPos *alurefpos = new AluRefPos(file_alu);                
+  //////alurefpos->debug_print();
+  int bei = 0, n_alu = 0;
+  int be_size = alurefpos->db_size - 1; // -1 ! otherwise seg fault
+  int left_pos;
+  for (list< AlumateINFO *>::iterator ri = alumate_list.begin(); ri != alumate_list.end();  ri++) {
+    assert ( (*ri)->rid2 == alu_rid );
+    left_pos = (*ri)->pos2;   
+    while ( ( left_pos >= alurefpos->get_endP() ) and bei < be_size) { alurefpos->nextdb(); bei++; }
+    if (  min(  alurefpos->get_endP(), left_pos + (*ri)->len_read ) - max( alurefpos->get_beginP(), left_pos) > ALU_MIN_LEN and n_alu++)  
+      *(fileMap[(*ri)->rid1]) << (*ri)->qname << " " << (*ri)->rid1 << " " << (*ri)->pos1 << " " << (*ri)->RC1 << " " << (*ri)->len_read 
+			      << " " << (*ri)->rid2 << " "  << left_pos << " " << (*ri)->RC2 << " " << (*ri)->rgIdx << " " << alurefpos->get_type() << endl ;          
   }
-  fin.close();
+  ////// about 18% err counts are mapped to Alu region
+  ////cout << file1 << " err counts: " << alumate_list.size() << ", alu mate: " << n_alu << endl; 
+  AlumateINFO::delete_list(alumate_list);
+  delete alurefpos;      
 }
 
 bool write_tmpFile_all_loci( vector<string> &fn_inputs, vector <string> & fn_idx, string fn_output) {
@@ -258,10 +291,10 @@ bool write_tmpFile_all_loci( vector<string> &fn_inputs, vector <string> & fn_idx
   }
   fout.close();
   // sorting 
-  list< RowInfo> rows_list;
+  list< IntString> rows_list;
   read_sort_by_col(fn_output, 2, false, rows_list);      
   fout.open(fn_output.c_str());
-  for (list< RowInfo>::iterator ri = rows_list.begin(); ri!=rows_list.end(); ri++) 
+  for (list< IntString>::iterator ri = rows_list.begin(); ri!=rows_list.end(); ri++) 
     fout << (*ri).second << endl;
   fout.close();
   rows_list.clear();
@@ -274,7 +307,7 @@ void filter_outlier_pn(string path_input, map<int, string> &ID_pn, string chrn, 
   map < string, int > pn_lineCnt;
   set <int> lineCnt;  
   for (map<int, string>::iterator pi = ID_pn.begin(); pi != ID_pn.end(); pi++) {
-    string file4st = get_name(path_input, pi->second, ".tmp4st") + "." + chrn;
+    string file4st = path_input + pi->second + ".tmp4st" + "." + chrn;
     ifstream fin(file4st.c_str());
     ni = 0;
     while (fin >> line) ni++;
@@ -431,101 +464,65 @@ int main( int argc, char* argv[] )
   map<int, string> ID_pn;
   get_pn(cf_fh.get_conf( "file_pn"), ID_pn);
   
-  if (opt == "alu_mate_flag") {     // for each pn, takes about 2.5 hrs 
+  if (opt == "write_tmps") {     
+    // write pn.tmp1.
     int idx_pn = seqan::lexicalCast<int> (argv[3]);
     string pn = ID_pn[idx_pn];
-    cerr << "reading pn: " << idx_pn << " " << pn << "..................\n";
-    string file1_prefix = get_name(path0, pn, ".tmp1");
-    string file2_prefix = get_name(path0, pn, ".tmp2");
-    string file3_prefix = get_name(path0, pn, ".tmp3");    
-
+    cout << "reading pn: " << idx_pn << " " << pn << "..................\n";
+    string file1_prefix = path0 + pn + ".tmp1";
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, "");
-    MapFO fileMap;
+    map <string, int> rg_to_idx;
+    
+    parse_reading_group( get_name_rg(cf_fh.get_conf("file_dist_prefix"), pn), rg_to_idx );
+    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
+    alu_mate_flag(bam_fh, file1_prefix, header1, rg_to_idx);
+    cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
+    //// write pn.tmp1.chr*.  use database to filter alu mate
+    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
+    MapFO fileMap;    
     map<int, string>::iterator rc ;
-    // step 1, about 2h
-    string header = "flag qname bad_chr bad_pos this_chr this_pos len_read"; // bad_*: potential, need check
     for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      fileMap[rc->first] = new ofstream( (file1_prefix + "." + rc->second).c_str() );
+      fileMap[rc->first] = new ofstream( (file1_prefix + "." + rc->second).c_str() );  // write down reads whose pair is mapped to Alu
       assert(fileMap[rc->first]);
-      *(fileMap[rc->first]) << header << endl;
-    }
-    alu_mate_flag(bam_fh, fileMap);
-    cerr << "read records, done, time used " << clocki.elapsed() << endl;
-    clocki.restart();
-
-    // step 2, if mate mapped to alu. 5 min. 
-    string file_alupos_prefix = cf_fh.get_conf( "file_alupos_prefix"); 
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      delete fileMap[rc->first];
-      string chrn = rc->second;
-      AluRefPos *alurefpos = new AluRefPos(file_alupos_prefix + chrn);          
-      keep_alu_mate(file1_prefix + "." + chrn, file2_prefix + "." + chrn, alurefpos, header);       
-      delete alurefpos;      
-      } 
-      
-    path_move = path0+"tmp1s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".tmp1.chr* " + path_move).c_str());
-    cerr << "filter alu mate, done\n";        
-
-    // write pn.tmp3.chr*, rewrite for counting, switch 2 column and sort by pos
-    header = "flag qname this_chr this_pos bad_chr bad_pos len_read alu_type";
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) { 
-      string file3 = file3_prefix + "." + rc->second;
-      fileMap[rc->first] = new ofstream( file3.c_str() );
-      assert(fileMap[rc->first]);
-      *(fileMap[rc->first]) << header << endl ;      
-    }    
+     *(fileMap[rc->first]) << header2 ;
+    }     
     for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-      reorder_column(file2_prefix + "." + rc->second, fileMap, true);
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++)
-      delete fileMap[rc->first];    
-
-    path_move = path0+"tmp2s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".tmp2.chr* " + path_move).c_str());    
-
-    /// sort  pn.tmp3.chrX
-    cerr << "sorting starts \n";
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) { 
-      string file3 = file3_prefix + "." + rc->second;
-      set< RowInfo, compare_row > rows;
-      read_sort_by_col(file3, 4, true, rows);      
-      ofstream fout(file3.c_str());
-      fout << header << endl ;      
-      for (set< RowInfo, compare_row >::iterator ri = rows.begin(); ri!=rows.end(); ri++) 
-	fout << (*ri).second << endl;
-      fout.close();
-    }    
-
+     keep_alu_mate(rc->first,  file1_prefix, fileMap, cf_fh.get_conf( "file_alupos_prefix") + rc->second);           
+    close_fhs(fileMap, bam_fh->rID_chrn);    
+    move_files(path0+"tmp1s/", file1_prefix);    
+    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
+      sort_file_by_col(file1_prefix + "." + rc->second, "this_pos");
+    
 #ifdef DEBUG_MODE   // only look at chr1 for now 
     cerr << "!!!! DEBUG_MODE: only chr1 tested\n ";
-    cerr << "!!!! please recompile if you want to run on all chromosomes\n";
     chrns.clear();
     chrns.push_back("chr1");
 #endif       
-    string file4_prefix = get_name(path0, pn, ".tmp4");    
-    alumate_counts_filter(file3_prefix, file4_prefix, chrns);  //  20 mins
-    path_move = path0+"tmp3s/";
-    check_folder_exists(path_move);
-    system(("mv "+ path0 + pn + ".tmp3.chr* " + path_move).c_str());        
-    
-    // filter out rep regions,  combine rep regions(dist < 100bp)
-    RepMaskPos *repmaskPos;
-    repmaskPos = new RepMaskPos(cf_fh.get_conf( "file_repeatMask"), 100); 
-    string file4st_prefix = get_name(path0, pn, ".tmp4st");  // subset of *tmp4
-    filter_location_rep(file4_prefix, file4st_prefix, chrns, repmaskPos);
+
+    //     string file4_prefix =  path0 + pn + ".tmp4";    
+    //     alumate_counts_filter(file3_prefix, file4_prefix, chrns);  //  20 mins
+    //     move_files(path0+"tmp3s/", path0 + pn + ".tmp3.chr*") ;
+    //     path_move = path0+"tmp3s/";
+    //     check_folder_exists(path_move);
+    //     system(("mv "+ path0 + pn + ".tmp3.chr* " + path_move).c_str());        
+
+    // filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
+//    RepMaskPos *repmaskPos;
+//    repmaskPos = new RepMaskPos(cf_fh.get_conf( "file_repeatMask"), chrns, REP_MASK_JOIN); 
+//    string file4st_prefix = path0 + pn + ".tmp4st";  // subset of *tmp4
+//    filter_location_rep(file4_prefix, file4st_prefix, chrns, repmaskPos);
     
     delete bam_fh;
+//    delete repmaskPos;
     
-    }  else if (opt == "combine_pn_pos") { // combine positions from multiple individuals
+    }  else if (opt == "combine_pos") { // combine positions from multiple individuals
     // eg. debug/alu_insert 3 config.dk\n";
     float percentage_pn_used = seqan::lexicalCast<float> (cf_fh.get_conf("percentage_pn_used"));
     string file_pn_used = cf_fh.get_conf( "file_pn_used");
     filter_outlier_pn(path0, ID_pn, "chr1", file_pn_used, percentage_pn_used);
-    cerr << (int)(100 * percentage_pn_used) << "% pn are used, written in " << file_pn_used << endl;
-    cerr << (int)(100 * (1 - percentage_pn_used)) << "% pn with too many alu mate are ignored\n";
+    cout << (int)(100 * percentage_pn_used) << "% pn are used, written in " << file_pn_used << endl;
+    cout << (int)(100 * (1 - percentage_pn_used)) << "% pn with too many alu mate are ignored\n";
     
 #ifdef DEBUG_MODE   // only look at chr1 for now 
     chrns.clear();
@@ -549,6 +546,6 @@ int main( int argc, char* argv[] )
       filter_pos_freq( fn_input, fn_input + fn_suffix, freq_min, freq_max, id_pn_map.size() );
     }        
   }
-  cerr << "time used " << clocki.elapsed() << endl;
+  cout << "time used " << clocki.elapsed() << endl;
   return 0;  
 }
