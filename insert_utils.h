@@ -27,8 +27,9 @@ class AlumateINFO {
 class READ_INFO {
  public:
   int beginPos, endPos;
+  bool should_be_left; // inferred from RC flag
   string alu_type;
- READ_INFO(int p, int lr, string alu_type) : beginPos(p), endPos(p+lr-2), alu_type(alu_type) {}
+ READ_INFO(int p, int lr, bool sbl, string alu_type) : beginPos(p), endPos(p+lr-2), should_be_left(sbl), alu_type(alu_type) {}
 };
 
 

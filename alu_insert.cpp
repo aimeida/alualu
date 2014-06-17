@@ -10,22 +10,14 @@ void alu_mate_flag( BamFileHandler * bam_fh, string fn_output, string &header, m
     if ( ! key_exists(bam_fh->rID_chrn, record.rID) ) continue;
     int len_seq = length(record.seq);
     if ( count_non_match(record) >= CLIP_BP )  continue; // want very good quality reads 
-    if ( (record.rID < record.rNextId and bam_fh->rID_chrn.find(record.rNextId) != bam_fh->rID_chrn.end() ) or 
+    ///// allow pair to be mapped to decoy,  key_exists(bam_fh->rID_chrn, record.rNextId)
+    if ( record.rID < record.rNextId or
 	 (record.rID == record.rNextId and record.beginPos < record.pNext and abs(record.tLen) > DISCORDANT_LEN) ) {
       fout << record.qName << " " << record.rID << " " << record.rNextId <<  " " << record.beginPos << " " << record.pNext
 	   << " " << hasFlagRC(record) << " " << hasFlagNextRC(record) << " " << len_seq << " " << get_rgIdx(rg_to_idx, record) << endl;      
     }
   }
   fout.close();
-}
-
-bool parse_line2(string &line, int &this_pos, int &len_read, string &alu_type) {
-  string type_flag, qname;
-  int this_chr, bad_chr, bad_pos;
-  stringstream ss;
-  ss.clear(); ss.str( line );
-  ss >> type_flag >> qname >> this_chr >> this_pos >> bad_chr >> bad_pos >> len_read >> alu_type;
-  return len_read > 50; //NB!!! sometimes read length is only 56 bp. eg: AIATSYJ 
 }
 
 int parse_line3( string &line, int & pos) {
@@ -36,24 +28,25 @@ int parse_line3( string &line, int & pos) {
   return lr_num + rr_num;
 }
 
-
-void get_scan_pos(string fn, list <int> & pos_to_scan, int combine_bp/*=8*/){ 
-  string line, type_flag, qname, alu_type;
-  int this_chr, this_pos, len_read, previous_end;  
+void get_scan_pos(string fn, list <int> & pos_to_scan, int combine_bp){ 
+  pos_to_scan.clear();
   stringstream ss;
+  string line, qname;
+  int this_rID, this_pos, len_read, previous_end;  
+  bool this_isRC;
   ifstream fin( fn.c_str());
   assert(fin); // init, 700 * 30 /100 = 210 
-  getline(fin, line); 
-  pos_to_scan.clear();
-  while (pos_to_scan.empty() ) {
-    getline(fin, line); 
+  getline(fin, line);   
+  while (pos_to_scan.empty()) {
+    getline(fin, line);
     ss.clear(); ss.str(line);
-    ss >> type_flag >> qname >> this_chr >> this_pos;
-    if ( this_pos > 2 *  combine_bp ) pos_to_scan.push_back(this_pos);
-  }  
+    ss >> qname >> this_rID >> this_pos >> this_isRC >> len_read;
+    if ( this_pos > SCAN_WIN_LEN ) pos_to_scan.push_back(this_pos);
+  }
   while (getline(fin, line)) {
-    previous_end = this_pos + len_read;
-    parse_line2(line, this_pos, len_read, alu_type);
+    previous_end = this_pos + len_read;    
+    ss.clear(); ss.str(line);
+    ss >> qname >> this_rID >> this_pos >> this_isRC >> len_read;
     if (this_pos - previous_end > 3 * combine_bp) pos_to_scan.push_back(previous_end + combine_bp);
     if (this_pos - pos_to_scan.back() > 2 * combine_bp) pos_to_scan.push_back(this_pos - combine_bp);
   }
@@ -64,6 +57,7 @@ void join_location(string file1, string file2, int pos_dif, int max_region_len){
   ifstream fin( file1.c_str());
   assert(fin);    
   string line;
+  getline(fin, line); // skip header
   getline(fin, line);
   int pos, pos_pre;
   int nowCount = parse_line3(line, pos_pre);
@@ -96,31 +90,39 @@ void join_location(string file1, string file2, int pos_dif, int max_region_len){
   fout.close();
 }
 
-void alumate_counts_filter(string fn_input, string fn_output, vector<string>  &chrns){
-  int lr_num, rr_num, this_pos, len_read;
-  string line, alu_type;
+void alumate_counts_filter(string fn_input, string fn_output, string fn_output2, vector<string>  &chrns){
+  int lr_num, rr_num, this_rID, this_pos, len_read;
+  string line, qname;
+  bool this_isRC;
+  stringstream ss;
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     string chrn = *ci;
     string f_input = fn_input + "." + chrn;
     string f_output = fn_output + "." + chrn;
+    string f_output2 = fn_output2 + "." + chrn;
     list <int> pos_to_scan;    
-    get_scan_pos(f_input, pos_to_scan, 8);
+    get_scan_pos(f_input, pos_to_scan, 8); // no big diff when change 8 to 20
+    // cout << f_input << " " << pos_to_scan.size() << endl;
     list< READ_INFO *> lr_reads;    
-    ifstream fin ( f_input.c_str());
-    assert(fin); // init, 700 * 30 /100 = 210 
+    ifstream fin ( f_input.c_str());  // init, 700 * 30 /100 = 210 
+    assert(fin); 
     ofstream fout( f_output.c_str());
+    fout << "check_pos lr_num rr_num\n";	
     getline(fin, line); // skip header
     getline(fin, line); 
-    parse_line2(line, this_pos, len_read, alu_type);
-    lr_reads.push_back(new READ_INFO(this_pos, len_read, "AluY")); 
+    ss.clear(); ss.str(line);
+    ss >> qname >> this_rID >> this_pos >> this_isRC >> len_read;
+    lr_reads.push_back(new READ_INFO(this_pos, len_read, !this_isRC, "")); 
     bool readable = true;
     while ( readable and pos_to_scan.size()) {
       int check_pos = pos_to_scan.front();
       pos_to_scan.pop_front();
       while (readable and (lr_reads.empty() or lr_reads.back()-> endPos < check_pos + SCAN_WIN_LEN) ) {
 	if (getline(fin, line)) {
-	  if (parse_line2(line, this_pos, len_read, alu_type))
-	    lr_reads.push_back(new READ_INFO(this_pos, len_read, alu_type));
+	  ss.clear(); ss.str(line);
+	  ss >> qname >> this_rID >> this_pos >> this_isRC >> len_read;
+	  if ( len_read > 50)
+	    lr_reads.push_back(new READ_INFO(this_pos, len_read, !this_isRC, ""));
 	} else 
 	  readable = false;
       }
@@ -133,16 +135,16 @@ void alumate_counts_filter(string fn_input, string fn_output, vector<string>  &c
 	  ri = lr_reads.erase(ri); // <==> lr_reads.erase(ri++)
 	  continue;
 	}
-	if ( (*ri)->endPos < check_pos) lr_num++;
-	else if ( (*ri)->beginPos > check_pos) rr_num++;
+	if ( (*ri)->endPos < check_pos and (*ri)->should_be_left) lr_num++;
+	else if ( (*ri)->beginPos > check_pos and !(*ri)->should_be_left ) rr_num++;
 	ri++;
-	if ( (*ri)->endPos > check_pos + SCAN_WIN_LEN ) break;
+	if ( (*ri)->endPos >= check_pos + SCAN_WIN_LEN ) break;
       }
       if (lr_num + rr_num >= LEFT_PLUS_RIGHT) fout << check_pos << " " << lr_num  << " " << rr_num << endl;	
     }
     fin.close();
     fout.close();
-    join_location(f_output, f_output, MAX_POS_DIF, MAX_LEN_REGION);    		       
+    join_location(f_output, f_output2, MAX_POS_DIF, MAX_LEN_REGION);    		       
     cout << "done " << f_output << endl;
   }
 }
@@ -248,7 +250,7 @@ void read_match_rid(string fn, int col_val, list< AlumateINFO *> & alumate_list)
   }
 }
 
-void keep_alu_mate(int alu_rid, string file1, MapFO & fileMap, string file_alu){
+void keep_alu_mate(BamFileHandler * bam_fh, int alu_rid, string file1, MapFO & fileMap, string file_alu){
   list< AlumateINFO *> alumate_list;
   read_match_rid(file1, alu_rid, alumate_list);  
   alumate_list.sort(AlumateINFO::sort_pos2);  
@@ -261,12 +263,13 @@ void keep_alu_mate(int alu_rid, string file1, MapFO & fileMap, string file_alu){
     assert ( (*ri)->rid2 == alu_rid );
     left_pos = (*ri)->pos2;   
     while ( ( left_pos >= alurefpos->get_endP() ) and bei < be_size) { alurefpos->nextdb(); bei++; }
-    if (  min(  alurefpos->get_endP(), left_pos + (*ri)->len_read ) - max( alurefpos->get_beginP(), left_pos) > ALU_MIN_LEN and n_alu++)  
+    if (  min(  alurefpos->get_endP(), left_pos + (*ri)->len_read ) - max( alurefpos->get_beginP(), left_pos) > ALU_MIN_LEN and
+	  key_exists(bam_fh->rID_chrn, (*ri)->rid1) and n_alu++) 
       *(fileMap[(*ri)->rid1]) << (*ri)->qname << " " << (*ri)->rid1 << " " << (*ri)->pos1 << " " << (*ri)->RC1 << " " << (*ri)->len_read 
 			      << " " << (*ri)->rid2 << " "  << left_pos << " " << (*ri)->RC2 << " " << (*ri)->rgIdx << " " << alurefpos->get_type() << endl ;          
   }
-  ////// about 18% err counts are mapped to Alu region
-  ////cout << file1 << " err counts: " << alumate_list.size() << ", alu mate: " << n_alu << endl; 
+  ////// about 18% err counts are mapped to Alu region(normal chrns)
+  cout << file1 << " err counts: " << alumate_list.size() << ", alu mate: " << n_alu << endl; 
   AlumateINFO::delete_list(alumate_list);
   delete alurefpos;      
 }
@@ -301,14 +304,14 @@ bool write_tmpFile_all_loci( vector<string> &fn_inputs, vector <string> & fn_idx
   return true;
 }
 
-void filter_outlier_pn(string path_input, map<int, string> &ID_pn, string chrn, string file_pn_used, float percentage_pn_used) {
+void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID_pn, string chrn, string file_pn_used, float percentage_pn_used) {
   string line;
   int ni;
   map < string, int > pn_lineCnt;
   set <int> lineCnt;  
   for (map<int, string>::iterator pi = ID_pn.begin(); pi != ID_pn.end(); pi++) {
-    string file4st = path_input + pi->second + ".tmp4st" + "." + chrn;
-    ifstream fin(file4st.c_str());
+    string file_st = path_input + pi->second + "." + fn_suffix + "." + chrn;
+    ifstream fin(file_st.c_str());
     ni = 0;
     while (fin >> line) ni++;
     fin.close();
@@ -465,62 +468,60 @@ int main( int argc, char* argv[] )
   get_pn(cf_fh.get_conf( "file_pn"), ID_pn);
   
   if (opt == "write_tmps") {     
-    // write pn.tmp1.
+
     int idx_pn = seqan::lexicalCast<int> (argv[3]);
     string pn = ID_pn[idx_pn];
     cout << "reading pn: " << idx_pn << " " << pn << "..................\n";
-    string file1_prefix = path0 + pn + ".tmp1";
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, "");
-    map <string, int> rg_to_idx;
-    
-    parse_reading_group( get_name_rg(cf_fh.get_conf("file_dist_prefix"), pn), rg_to_idx );
-    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
-    alu_mate_flag(bam_fh, file1_prefix, header1, rg_to_idx);
-    cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
-    //// write pn.tmp1.chr*.  use database to filter alu mate
-    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
-    MapFO fileMap;    
-    map<int, string>::iterator rc ;
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      fileMap[rc->first] = new ofstream( (file1_prefix + "." + rc->second).c_str() );  // write down reads whose pair is mapped to Alu
-      assert(fileMap[rc->first]);
-     *(fileMap[rc->first]) << header2 ;
-    }     
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-     keep_alu_mate(rc->first,  file1_prefix, fileMap, cf_fh.get_conf( "file_alupos_prefix") + rc->second);           
-    close_fhs(fileMap, bam_fh->rID_chrn);    
-    move_files(path0+"tmp1s/", file1_prefix);    
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-      sort_file_by_col(file1_prefix + "." + rc->second, "this_pos");
+    string file1_prefix = path0 + pn + ".tmp1";
+
+//    //// step1: write pn.tmp1.
+//    map <string, int> rg_to_idx;    
+//    parse_reading_group( get_name_rg(cf_fh.get_conf("file_dist_prefix"), pn), rg_to_idx );    
+//    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
+//    alu_mate_flag(bam_fh, file1_prefix, header1, rg_to_idx);
+//    cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
+//    //// step2: write pn.tmp1.chr*.  use database to filter alu mate
+//    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
+//    MapFO fileMap;    
+//    map<int, string>::iterator rc ;
+//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+//      fileMap[rc->first] = new ofstream( (file1_prefix + "." + rc->second).c_str() );  // write down reads whose pair is mapped to Alu
+//      assert(fileMap[rc->first]);
+//      *(fileMap[rc->first]) << header2 ;
+//    }     
+//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
+//      keep_alu_mate(bam_fh, rc->first,  file1_prefix, fileMap, cf_fh.get_conf( "file_alupos_prefix") + rc->second);           
+//    close_fhs(fileMap, bam_fh->rID_chrn);    
+//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
+//      sort_file_by_col(file1_prefix + "." + rc->second, "this_pos");
+//    move_files(path0+"tmp1s/", file1_prefix);    
     
 #ifdef DEBUG_MODE   // only look at chr1 for now 
-    cerr << "!!!! DEBUG_MODE: only chr1 tested\n ";
+    cerr << "!!!! DEBUG_MODE: only chr1 tested\n";
     chrns.clear();
     chrns.push_back("chr1");
 #endif       
 
-    //     string file4_prefix =  path0 + pn + ".tmp4";    
-    //     alumate_counts_filter(file3_prefix, file4_prefix, chrns);  //  20 mins
-    //     move_files(path0+"tmp3s/", path0 + pn + ".tmp3.chr*") ;
-    //     path_move = path0+"tmp3s/";
-    //     check_folder_exists(path_move);
-    //     system(("mv "+ path0 + pn + ".tmp3.chr* " + path_move).c_str());        
-
-    // filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
-//    RepMaskPos *repmaskPos;
-//    repmaskPos = new RepMaskPos(cf_fh.get_conf( "file_repeatMask"), chrns, REP_MASK_JOIN); 
-//    string file4st_prefix = path0 + pn + ".tmp4st";  // subset of *tmp4
-//    filter_location_rep(file4_prefix, file4st_prefix, chrns, repmaskPos);
-    
+    string file2_prefix =  path0 + pn + ".tmp2";    // left and right counts at each check position
+    string file3_prefix =  path0 + pn + ".tmp3";    // combine *tmp2 files into regions
+    alumate_counts_filter(file1_prefix, file2_prefix, file3_prefix, chrns); 
+    move_files(path0+"tmp1s/", path0 + pn + ".tmp1.chr*") ;
+    move_files(path0+"tmp2s/", path0 + pn + ".tmp2.chr*") ;
+    //// filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
+    RepMaskPos *repmaskPos;
+    repmaskPos = new RepMaskPos(cf_fh.get_conf( "file_repeatMask"), chrns, REP_MASK_JOIN); 
+    string file3st_prefix = path0 + pn + ".tmp3st";  // subset of *tmp3
+    filter_location_rep(file3_prefix, file3st_prefix, chrns, repmaskPos);    
     delete bam_fh;
-//    delete repmaskPos;
+    delete repmaskPos;
     
     }  else if (opt == "combine_pos") { // combine positions from multiple individuals
     // eg. debug/alu_insert 3 config.dk\n";
     float percentage_pn_used = seqan::lexicalCast<float> (cf_fh.get_conf("percentage_pn_used"));
     string file_pn_used = cf_fh.get_conf( "file_pn_used");
-    filter_outlier_pn(path0, ID_pn, "chr1", file_pn_used, percentage_pn_used);
+    filter_outlier_pn(path0, "tmp3st", ID_pn, "chr1", file_pn_used, percentage_pn_used);
     cout << (int)(100 * percentage_pn_used) << "% pn are used, written in " << file_pn_used << endl;
     cout << (int)(100 * (1 - percentage_pn_used)) << "% pn with too many alu mate are ignored\n";
     
