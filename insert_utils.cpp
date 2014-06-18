@@ -115,3 +115,27 @@ int align_alu_cons_call(string & ref_fa, AluconsHandler *alucons_fh, float & sim
   return 0;
 }
 
+void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID_pn, string chrn, string file_pn_used_output, float percentage_pn_used) {
+  string line;
+  int ni;
+  map < string, int > pn_lineCnt;
+  set <int> lineCnt;  
+  for (map<int, string>::iterator pi = ID_pn.begin(); pi != ID_pn.end(); pi++) {
+    string file_st = path_input + pi->second + "." + fn_suffix + "." + chrn;
+    ifstream fin(file_st.c_str());
+    ni = 0;
+    while (fin >> line) ni++;
+    fin.close();
+    lineCnt.insert(ni);
+    pn_lineCnt[pi->second] = ni;
+  }  
+  set <int>::iterator li = lineCnt.begin();
+  int cnt_th ;
+  ni = 0;
+  while ( ni++ < percentage_pn_used * lineCnt.size())
+    if ( ++li != lineCnt.end() ) cnt_th = *li;
+  ofstream fout(file_pn_used_output.c_str());
+  for (map < string, int >::iterator pi = pn_lineCnt.begin(); pi != pn_lineCnt.end(); pi++)
+    if ( pi->second <= cnt_th) fout << pi->first << endl;
+  fout.close();
+}

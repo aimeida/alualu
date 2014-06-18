@@ -18,8 +18,7 @@ file_repeatMask /home/qianyuxx/faststorage/AluDK/inputs/raw_data/rmsk.hg19
 file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/		  
 file_alu_insert1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/
 ## insert_pos
-percentage_pn_used 1.
-file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used 
+file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used  ### manually create, otherwise use each pn.
 file_clip_reads /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/clip/
 freq_min 0.02
 freq_max 1 

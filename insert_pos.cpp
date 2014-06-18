@@ -561,6 +561,7 @@ int main( int argc, char* argv[] )
   for (int i = 1; i < 23; i++) chrns.push_back("chr" + int_to_string(i));
   chrns.push_back("chrX");
   chrns.push_back("chrY");
+
   ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
   string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
   string fout_path = cf_fh.get_conf( "file_clip_reads");
@@ -668,7 +669,7 @@ int main( int argc, char* argv[] )
     write_tmp2(file_tmp1, file_tmp2, pdf_rg);
     EmpiricalPdf::delete_map(pdf_rg);
 
-  }  else if ( opt == "fixme_cons_reads_pos" ) { // very fast, collect reads by clip position 
+  }  else if ( opt == "fixme_cons_reads_pos" ) { 
     
     cout << "fixme: need to rewrite this option !!\n";
     return 1;

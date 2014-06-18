@@ -15,9 +15,10 @@ def print1(pn_all, fn_path, path1, bin_path, fastq = True):
             print >>fout, "cd %s" % path1
             #print >>fout, '%(bin_path)sbuild_dist config.dk build_dist %(pi)d'%locals() 
             #print >>fout, '%(bin_path)salu_delete config.dk write_tmps %(pi)d'%locals() 
-            print >>fout, '%(bin_path)salu_insert config.dk write_tmps %(pi)d'%locals()
+            #print >>fout, '%(bin_path)salu_insert config.dk write_tmps %(pi)d'%locals()
             #print >>fout, '%(bin_path)salu_insert config.dk combine_pos %(pi)d'%locals()            
             #print >>fout, '%(bin_path)sinsert_pos config.dk clipReads_by_pn %(pi)d'%locals()
+            print >>fout, '%(bin_path)sinsert_pos config.dk fixed_delete0 %(pi)d'%locals()
             #print >>fout, '%(bin_path)sinsert_pos config.dk cons_reads_pn %(pi)d'%locals()
         pi += 1
 
@@ -26,6 +27,6 @@ if __name__ == '__main__':
     pn_all = map(lambda x:x.strip(), file('/home/qianyuxx/faststorage/AluDK/inputs/PN_all').readlines())
     #print1(pn_all, path1+"q_dist/", path1)
     #print1(pn_all, path1+"q_ai/", path1, path1 + 'debug/', True)
-    print1(pn_all, path1+"q_ai/", path1, path1 + 'opt3/', True)
+    print1(pn_all, path1+"q_ai2/", path1, path1 + 'opt3/', False)
     #print1(pn_all, path1+"q_ai/", path1, path1 + 'opt3/', False)
     #print1(pn_all, path1+"q_ad/", path1, path1 + 'opt3/', False)

@@ -90,7 +90,7 @@ void join_location(string file1, string file2, int pos_dif, int max_region_len){
   fout.close();
 }
 
-void alumate_counts_filter(string fn_input, string fn_output, string fn_output2, vector<string>  &chrns){
+void alumate_counts_filter(string fn_input, string fn_output, string fn_output2, vector<string>  &chrns, int th_cnt){
   int lr_num, rr_num, this_rID, this_pos, len_read;
   string line, qname;
   bool this_isRC;
@@ -140,7 +140,7 @@ void alumate_counts_filter(string fn_input, string fn_output, string fn_output2,
 	ri++;
 	if ( (*ri)->endPos >= check_pos + SCAN_WIN_LEN ) break;
       }
-      if (lr_num + rr_num >= LEFT_PLUS_RIGHT) fout << check_pos << " " << lr_num  << " " << rr_num << endl;	
+      if (lr_num + rr_num >= th_cnt) fout << check_pos << " " << lr_num  << " " << rr_num << endl;	
     }
     fin.close();
     fout.close();
@@ -304,31 +304,6 @@ bool write_tmpFile_all_loci( vector<string> &fn_inputs, vector <string> & fn_idx
   return true;
 }
 
-void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID_pn, string chrn, string file_pn_used, float percentage_pn_used) {
-  string line;
-  int ni;
-  map < string, int > pn_lineCnt;
-  set <int> lineCnt;  
-  for (map<int, string>::iterator pi = ID_pn.begin(); pi != ID_pn.end(); pi++) {
-    string file_st = path_input + pi->second + "." + fn_suffix + "." + chrn;
-    ifstream fin(file_st.c_str());
-    ni = 0;
-    while (fin >> line) ni++;
-    fin.close();
-    lineCnt.insert(ni);
-    pn_lineCnt[pi->second] = ni;
-  }  
-  set <int>::iterator li = lineCnt.begin();
-  int cnt_th ;
-  ni = 0;
-  while ( ni++ < percentage_pn_used * lineCnt.size())
-    if ( ++li != lineCnt.end() ) cnt_th = *li;
-  ofstream fout(file_pn_used.c_str());
-  for (map < string, int >::iterator pi = pn_lineCnt.begin(); pi != pn_lineCnt.end(); pi++)
-    if ( pi->second <= cnt_th) fout << pi->first << endl;
-  fout.close();
-}
-
 void join_all_loci(string f_in, string f_out, int block_dist, int block_len) {
   string line, pn;
   int cnt, sum_cnt, pa, pb, pa_block, pb_block;
@@ -375,7 +350,7 @@ void combine_fn(vector<string> & fn_inputs, string fn_output, vector<string> & f
   system( ("rm " + fn_output + ".tmp").c_str() );  
 }
 
-bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string output_prefix, int group_size, string path0) {
+bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string tmpn,  string output_prefix, int group_size, string path0) {
   string fn_prefix = output_prefix + chrn ; // some random names
   // first iteration
   map <string, vector<string> > fnOut_fnInput;   
@@ -389,14 +364,14 @@ bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string output_pre
     fnOut = (n_size <= group_size) ? fn_prefix : (fn_prefix + "." + int_to_string(i) + ".tmp0");
     for ( j = 0; j < group_size; j++) {
       pn = id_pn_map[ i*group_size+j ];
-      fnOut_fnInput[fnOut].push_back(path0 + pn + ".tmp4st." + chrn);
+      fnOut_fnInput[fnOut].push_back(path0 + pn + "." + tmpn + "." + chrn);
       fnOut_pns[fnOut].push_back(pn);
     }
   }
   fnOut = (n_size <= group_size) ? fn_prefix : (fn_prefix + "." + int_to_string(n_group) + ".tmp0");
   for ( j = n_group * group_size; j < n_size; j++) {
     pn = id_pn_map[ j ];
-    fnOut_fnInput[fnOut].push_back(path0 + pn + ".tmp4st." + chrn);	
+    fnOut_fnInput[fnOut].push_back(path0 + pn + "." + tmpn + "." + chrn);	
     fnOut_pns[fnOut].push_back(pn);
   }
   for (fni = fnOut_fnInput.begin(); fni != fnOut_fnInput.end(); fni ++) 
@@ -506,7 +481,7 @@ int main( int argc, char* argv[] )
 
     string file2_prefix =  path0 + pn + ".tmp2";    // left and right counts at each check position
     string file3_prefix =  path0 + pn + ".tmp3";    // combine *tmp2 files into regions
-    alumate_counts_filter(file1_prefix, file2_prefix, file3_prefix, chrns); 
+    alumate_counts_filter(file1_prefix, file2_prefix, file3_prefix, chrns, LEFT_PLUS_RIGHT); 
     move_files(path0+"tmp1s/", path0 + pn + ".tmp1.chr*") ;
     move_files(path0+"tmp2s/", path0 + pn + ".tmp2.chr*") ;
     //// filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
@@ -518,30 +493,35 @@ int main( int argc, char* argv[] )
     delete repmaskPos;
     
     }  else if (opt == "combine_pos") { // combine positions from multiple individuals
-    // eg. debug/alu_insert 3 config.dk\n";
-    float percentage_pn_used = seqan::lexicalCast<float> (cf_fh.get_conf("percentage_pn_used"));
-    string file_pn_used = cf_fh.get_conf( "file_pn_used");
-    filter_outlier_pn(path0, "tmp3st", ID_pn, "chr1", file_pn_used, percentage_pn_used);
-    cout << (int)(100 * percentage_pn_used) << "% pn are used, written in " << file_pn_used << endl;
-    cout << (int)(100 * (1 - percentage_pn_used)) << "% pn with too many alu mate are ignored\n";
-    
+
 #ifdef DEBUG_MODE   // only look at chr1 for now 
     chrns.clear();
     chrns.push_back("chr1");
 #endif               
-    string output_prefix = path1 + "insert_pos.";
-    map<int, string> id_pn_map;   
-    float freq_min = seqan::lexicalCast<float> (cf_fh.get_conf("freq_min"));
-    float freq_max = seqan::lexicalCast<float> (cf_fh.get_conf("freq_max"));
-    string fn_suffix = get_name_suffix(freq_min, freq_max);
-    
+
+    string file_pn_used = cf_fh.get_conf( "file_pn_used");
     ifstream fin(file_pn_used.c_str());
+    if (!fin) {
+      cerr << "which individuals should be used for further analysis?\n";
+      cerr << "this information should be in file " << file_pn_used << endl;
+      return 1;
+    }
+
+    assert(fin);
+    map<int, string> id_pn_map;   
     int i = 0;
     string pn;
     while (fin >> pn) id_pn_map[i++] = pn;
-    fin.close();          
+    fin.close();              
+    cout << id_pn_map.size() << " individuals out of " << ID_pn.size() << " individuals are used, change "
+	 << file_pn_used << " if you want to modify\n";
+
+    string output_prefix = path1 + "insert_pos.";
+    float freq_min = seqan::lexicalCast<float> (cf_fh.get_conf("freq_min"));
+    float freq_max = seqan::lexicalCast<float> (cf_fh.get_conf("freq_max"));
+    string fn_suffix = get_name_suffix(freq_min, freq_max);   
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      combine_pn_pos(*ci, id_pn_map, output_prefix, 10, path0);  // takes about 12 mins to run !   
+      combine_pn_pos(*ci, id_pn_map, "tmp3st", output_prefix, 10, path0);  // takes about 12 mins to run !   
       system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
       string fn_input = path1 + "insert_pos."+ *ci;
       filter_pos_freq( fn_input, fn_input + fn_suffix, freq_min, freq_max, id_pn_map.size() );
