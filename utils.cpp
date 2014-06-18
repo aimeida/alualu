@@ -57,7 +57,7 @@ BamFileHandler::BamFileHandler(vector<string> &chrns, string bam_input, string b
     assert(open(outStream, bam_output.c_str(), "w") );
     assert(write2(outStream, header, context, seqan::Bam()) == 0);
   }
-  int rID;
+  int rID = -1;
   for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     assert ( (*ci).substr(0,3) == "chr");
     if ( !getIdByName(nameStore, *ci, rID, nameStoreCache) )
@@ -124,6 +124,14 @@ void BamFileHandler::print_mapping_rID2chrn(){
 bool BamFileHandler::write_a_read(seqan::BamAlignmentRecord & record) {
   if (fn_bam_out.empty())  return false;
   return write2(outStream, record, context, seqan::Bam()) == 0;
+}
+
+BamFileHandler * BamFileHandler::openBam_24chr(string bam_input, string bai_input) {
+  vector<string> chrns;
+  for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
+  chrns.push_back("chrX");
+  chrns.push_back("chrY");
+  return new BamFileHandler(chrns, bam_input, bai_input);
 }
 
 FastaFileHandler::FastaFileHandler(string fn_fa) {

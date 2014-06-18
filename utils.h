@@ -93,6 +93,8 @@ class BamFileHandler{
   bool get_chrn(int query_rid, string & pairChrn);
   void print_mapping_rID2chrn();
   bool write_a_read(seqan::BamAlignmentRecord & record);  
+  static BamFileHandler * openBam_24chr(string bam_input, string bai_input=""); // chr1 - chrY
+
  private:
   TNameStore  nameStore;
   TNameStoreCache nameStoreCache;

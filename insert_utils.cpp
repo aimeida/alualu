@@ -49,6 +49,34 @@ bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_f
   return true;
 }
 
+bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header) {
+  // modified based on pn_with_insertion() from previous commits, only keep clip read with very good mapping quality 
+  int ref_plus_bp = 10; // allow small indels
+  int score;
+  seqan::CharString ref_fa;
+  seqan::CharString read_clip_fa;
+  int read_len = length(record.seq);
+  if (left_right == 'R') {
+    fasta_fh->fetch_fasta_upper(adj_clipPos, adj_clipPos + align_len + ref_plus_bp, ref_fa);    
+    read_clip_fa = infix(record.seq, read_len - align_len, read_len);
+  } else if (left_right == 'L') {
+    fasta_fh->fetch_fasta_upper(adj_clipPos - align_len - ref_plus_bp, adj_clipPos, ref_fa);
+    read_clip_fa = infix(record.seq, 0, align_len);
+  }
+//      debug_print_read(record, cout);
+//      cout << "#R " << get_cigar(record) << " " << adj_clipPos << " " << adj_clipPos + align_len << endl;
+//      cout << record.seq << endl;
+//      fasta_fh->fetch_fasta_upper(adj_clipPos - 10, adj_clipPos + align_len + 10, ref_fa);    
+//      cout << infix(ref_fa, 0, 10) << " " <<  infix(ref_fa, 10, 10 + align_len) << " " << infix(ref_fa, 10 + align_len, align_len + 20) << endl;
+//      global_align_insert( hasFlagRC(record), infix(record.seq, read_len - align_len, read_len), ref_fa, score, ALIGN_END_CUT, 0.7, true);
+
+  if (global_align_insert( hasFlagRC(record), read_clip_fa, ref_fa, score, ALIGN_END_CUT, 0.7) ) {
+    fout << header << left_right << " " << adj_clipPos << " " << record.qName << " " << clipPos << " " <<  get_cigar(record) << " " << record.tLen << " " << record.seq << endl;
+    return true;
+  }
+  return false;
+}
+
 bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose){
   score = 0;
   if (verbose) {
@@ -130,7 +158,7 @@ void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID
     pn_lineCnt[pi->second] = ni;
   }  
   set <int>::iterator li = lineCnt.begin();
-  int cnt_th ;
+  int cnt_th = 0;
   ni = 0;
   while ( ni++ < percentage_pn_used * lineCnt.size())
     if ( ++li != lineCnt.end() ) cnt_th = *li;

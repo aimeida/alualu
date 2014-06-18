@@ -39,19 +39,16 @@ int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <st
   return 1;
 }
 
-int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_prefix, int coverage_max, map<string, int> &rg_to_idx) {    
+int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_prefix, int coverage_max, map<string, int> &rg_to_idx) {    
   map < seqan::CharString, T_READ> qName_info;  
   ofstream f_tmp1( f_out.c_str()); 
   f_tmp1 << "chr aluBegin aluEnd mean_coverage midCnt clipCnt unknowCnt unknowStr\n";
   ofstream f_log1( f_log.c_str());  // print out info for clip reads 
-
-  BamFileHandler *bam_fh = new BamFileHandler(chrns, bam_input, bai_input);
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrn = *ci;
     string file_alupos = file_alupos_prefix + chrn;
     AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, minLen_alu_del); // default 200
-    FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);
-    
+    FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);    
     int aluBegin, aluEnd;
     for (int count_loci = 0; ; count_loci++) {
       float coverage_mean = 0;
@@ -83,7 +80,6 @@ int delete_search(int minLen_alu_del, string & bam_input, string &bai_input, str
   }
   f_tmp1.close();
   f_log1.close();
-  delete bam_fh;
   return 0;
 }
 
@@ -364,13 +360,18 @@ int main( int argc, char* argv[] )
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
     
     unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
-    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
-    string bai_input = bam_input + ".bai";  
     string file_alupos_prefix = cf_fh.get_conf("file_alupos_prefix"); 
     string fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
     string fn_log1 = get_name_tmp(path0, pn, ".log1");
     int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
-    delete_search(minLen_alu_del, bam_input, bai_input, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
+
+    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
+    string bai_input = bam_input + ".bai";      
+
+    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
+    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
+    delete bam_fh;
+
     string path_move = path0 + "log1s/";
     check_folder_exists(path_move);
     system(("mv " + path0 + pn + ".log1 " + path_move).c_str());

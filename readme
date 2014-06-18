@@ -22,7 +22,7 @@ config.decode: used by Yu in Iceland, where the old files sitting
    /** reads are classified as mid reads (cross alu region, indication of no deletion), clip reads (clip mapped at alu boundary, indication of 
        deletion) and unknown reads (can't know for sure if it is mid or clip read, use insert length instead) .   
        */
-   opt = write_tmp2: 
+   opt = write_tmps: 
        write temporary results: (@C)file_alu_delete0
        generate *log1: high coverage region
        generate *tmp1: counts of 3 types of read, and insert length for unknow reads. 
@@ -40,20 +40,18 @@ config.decode: used by Yu in Iceland, where the old files sitting
        debug purpose
        
 ##################################
-#### alu insertion (3 steps: alu_insert.cpp, insert_pos.cpp, ins_del.cpp)
-1. alu_insert.cpp 
-   opt = "write_tmps": 
+#### alu insertion (alu_insert.cpp)
+1. alu_insert.cpp  (5 steps )
+   opt = "write_tmps_pn": 
        write results: (@C)file_alu_insert0
        for each pn, scan the genome and find potention loci for alu insertion, this generate a lot of temporary files. 
-       *tmp1, *tmp2 and *tmp3 files can be ignored after this step
+       *tmp1 files can be ignored after this step
        *tmp1, reads mapped at dif chrn or far away
-       *tmp2, subset of *tmp1, where one end is mapped to alu 
-              keep_alu_mate(), read_sort_by_col(tmp1)
-       *tmp3, rewrite *tmp2 and sort rows by position, read_sort_by_col()
-       *tmp4, subset of *tmp3, where only left_alu_cnt + right_alu_cnt >= 4 is considered. 
-       *tmp4st, subset of *tmp4, with pos in repetitive regions are excluded 
+       *tmp1.chr1, result of *tmp1, where one end is mapped to alu 
+       *tmp3, left_alu_cnt + right_alu_cnt >= 4 is considered. 
+       *tmp3st, subset of *tmp3, with pos in repetitive regions are excluded 
        
-   opt = "combine_pos" :
+   opt = "combine_pos_pns" :
         write results: (@C)file_alu_insert1
         find common insertion positions of multiple individuals, also filter out insertions outside pre_defined freq range.
         eg:  only insertions with freq in [minfreq, maxfreq] are considered, I use [0.02, 1] as in config.dk file
@@ -64,27 +62,15 @@ config.decode: used by Yu in Iceland, where the old files sitting
               I chose to ignore them. For each chromosome, 15% individuals with extremely high potential insert positions are ignored. 
               (search 0.85 in alu_insert.cpp in order to modify this number)
 	
-2. insert_pos.cpp
-   this file find the exact insertion positions (insertBegin, insertEnd) 
-
    opt = "clipreads_by_pn":
      for each pn, write the broken reads at these insertion positions to files at (@C)file_clip_reads/chr1/pn_minfreq_maxfreq.
      a read is considered as broken reads only if cigar string shows soft clip, AND the score after realignment is high.
 
-   opt = "clipreads_by_pos":
+   opt = "clipreads_pos_pns":
      write files at  (@C)file_clip_reads/chr1_pos/regionBegin_regionEnd
      all broken reads with insertion between regionBegin and regionEnd are written into corresponding files. 
      exact position is written at (@C)file_alu_insert1/chr1_0.02_1.tmp
      exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
 
-   opt = "fixed_delete0":
+   opt = "fixed_delete0_pn":
      write *tmp1 and *tmp2 files for alu_deletion methods, with a fixed alu consensus sequence, instead of inferred length
-             
-3. ins_del.cpp ( depreciated !)
-   
-   opt = "write_tmp1":
-       write *tmp1 files, which are similar to *tmp1 files at 
-
-   opt = "write_testbam":
-       write small test bam files 
-      
