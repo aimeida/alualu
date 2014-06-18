@@ -22,7 +22,7 @@ config.decode: used by Yu in Iceland, where the old files sitting
    /** reads are classified as mid reads (cross alu region, indication of no deletion), clip reads (clip mapped at alu boundary, indication of 
        deletion) and unknown reads (can't know for sure if it is mid or clip read, use insert length instead) .   
        */
-   opt = write_tmps: 
+   opt = write_tmps_pn: 
        write temporary results: (@C)file_alu_delete0
        generate *log1: high coverage region
        generate *tmp1: counts of 3 types of read, and insert length for unknow reads. 
@@ -30,7 +30,7 @@ config.decode: used by Yu in Iceland, where the old files sitting
                        header l0, l1, l2: genotype prob based on mid/clip reads
                        header m0, m1, m2: genotype prob based on mid/clip/unknow reads
 
-   opt = write_vcf:
+   opt = write_vcf_pns:
        write final results: (@C)file_alu_delete0
        mutation that is private (only 1 individual has) is ignore. 
        generate *vcf and *pos files: as before, "lr" used mid/clip reads,  "mr" used mid/clip/unknow reads

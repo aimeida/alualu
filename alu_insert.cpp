@@ -1,5 +1,6 @@
 #define SEQAN_HAS_ZLIB 1
 #include "insert_utils.h"
+#include "delete_utils.h"
 
 void alu_mate_flag( BamFileHandler * bam_fh, string fn_output, string &header, map <string, int> & rg_to_idx){
   ofstream fout (fn_output.c_str() );  
@@ -173,39 +174,6 @@ void filter_location_rep(string file1, string file2, vector<string> &chrns, RepM
     fin.close();
     fout.close();
   }
-}
-
-void sort_file_by_col(string fn, string col_name) {
-  ifstream fin( fn.c_str());
-  assert(fin); 
-  string header, line, tmp1;
-  int colv, coln = 0;
-  bool col_name_exist = false;
-  getline(fin, header);
-  stringstream ss;
-  ss.clear(); ss.str( header );
-  while ( ss >> tmp1) { 
-    coln++;
-    if (tmp1 == col_name) {
-      col_name_exist = true;
-      break;
-    }
-  }
-  assert (col_name_exist);
-  list< IntString> rows_list;  
-  while (getline(fin, line)) {
-    ss.clear(); ss.str( line );
-    for (int i = 0; i < coln-1; i++) ss >> tmp1;
-    ss >> colv;
-    rows_list.push_back( make_pair(colv, line) );
-  }
-  fin.close();
-  rows_list.sort(compare_IntString);
-  ofstream fout( fn.c_str() );
-  fout << header << endl;
-  for (list< IntString>::iterator ri = rows_list.begin(); ri != rows_list.end(); ri++) 
-    fout << ri->second << endl;
-  fout.close();
 }
 
 int read_sort_by_col(string fn, int coln, bool has_header, list< IntString> &rows_list) {
@@ -416,15 +384,6 @@ void filter_pos_freq(string fn_input, string fn_output, float freq_min, float fr
   fin.close();
   fout.close();
 }
-
-void read_file_pn_used(string fn, std::set <string> & pns_used) {
-  ifstream fin(fn.c_str()) ;
-  assert(fin);
-  string pn;
-  while (fin >> pn) pns_used.insert(pn);
-  fin.close();
-}
-
 
 bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, FastaFileHandler *fasta_fh,  string fin_pos, string fout_reads) {
   ifstream fin( (fin_pos).c_str());
@@ -940,27 +899,33 @@ int main( int argc, char* argv[] )
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input);
     string file1_prefix = path0 + pn + ".tmp1";
-//    //// step1: write pn.tmp1.
-//    map <string, int> rg_to_idx;    
-//    parse_reading_group( get_name_rg(cf_fh.get_conf("file_dist_prefix"), pn), rg_to_idx );    
-//    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
-//    alu_mate_flag(bam_fh, file1_prefix, header1, rg_to_idx);
-//    cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
-//    //// step2: write pn.tmp1.chr*.  use database to filter alu mate
-//    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
-//    MapFO fileMap;    
-//    map<int, string>::iterator rc ;
-//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-//      fileMap[rc->first] = new ofstream( (file1_prefix + "." + rc->second).c_str() );  // write down reads whose pair is mapped to Alu
-//      assert(fileMap[rc->first]);
-//      *(fileMap[rc->first]) << header2 ;
-//    }     
-//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-//      keep_alu_mate(bam_fh, rc->first,  file1_prefix, fileMap, cf_fh.get_conf( "file_alupos_prefix") + rc->second);           
-//    close_fhs(fileMap, bam_fh->rID_chrn);    
-//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-//      sort_file_by_col(file1_prefix + "." + rc->second, "this_pos");
-//    move_files(path0+"tmp1s/", file1_prefix);    
+    map<int, string>::iterator rc ;
+
+    //// step1: write pn.tmp1.
+    map <string, int> rg_to_idx;    
+    parse_reading_group( get_name_rg(cf_fh.get_conf("file_dist_prefix"), pn), rg_to_idx );    
+    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
+    alu_mate_flag(bam_fh, file1_prefix, header1, rg_to_idx);
+    cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
+    //// step2: write pn.tmp1.chr*.  use database to filter alu mate
+    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
+    MapFO fileMap;    
+    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+      fileMap[rc->first] = new ofstream( (file1_prefix + "." + rc->second).c_str() );  // write down reads whose pair is mapped to Alu
+      assert(fileMap[rc->first]);
+      *(fileMap[rc->first]) << header2 ;
+    }     
+    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
+      keep_alu_mate(bam_fh, rc->first,  file1_prefix, fileMap, cf_fh.get_conf( "file_alupos_prefix") + rc->second);           
+    close_fhs(fileMap, bam_fh->rID_chrn);    
+    
+    int col_idx = 0;
+    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+      string file1 = file1_prefix + "." + rc->second;
+      if (!col_idx) col_idx = get_col_idx(file1, "this_pos"); 
+      sort_file_by_col<int> (file1, col_idx, true);
+    }
+    move_files(path0+"tmp1s/", file1_prefix);    
     
     string file2_prefix =  path0 + pn + ".tmp2";    // left and right counts at each check position
     string file3_prefix =  path0 + pn + ".tmp3";    // combine *tmp2 files into regions
@@ -975,7 +940,7 @@ int main( int argc, char* argv[] )
     delete bam_fh;
     delete repmaskPos;
     
-    }  else if (opt == "combine_pos_pns") { // combine positions from multiple individuals
+  }  else if (opt == "combine_pos_pns") { // combine positions from multiple individuals
     string file_pn_used = cf_fh.get_conf( "file_pn_used");
     ifstream fin(file_pn_used.c_str());
     if (!fin) {
@@ -983,11 +948,13 @@ int main( int argc, char* argv[] )
       cerr << "please write this information should be in file " << file_pn_used << endl;
       return 1;
     }
+
     map<int, string> id_pn_map;   
     int i = 0;
     string _pn;
     while (fin >> _pn) id_pn_map[i++] = _pn;
     fin.close();              
+
     cout << id_pn_map.size() << " individuals out of " << ID_pn.size() << " individuals are used, change "
 	 << file_pn_used << " if you want to modify\n";
     string output_prefix = path1 + "insert_pos.";
@@ -1057,11 +1024,10 @@ int main( int argc, char* argv[] )
     
     string path_cons = cf_fh.get_conf("file_ins_cons");  // for consensus sequence
     check_folder_exists( path_cons);
-    string path0 = cf_fh.get_conf("file_ins_fixed_del0");  // write tmp0 file
-    check_folder_exists( path0);    
-    string file_tmp1 = path0 + pn + ".tmp1";
-    string file_tmp2 = path0 + pn + ".tmp2";
-    
+    string path_del0 = cf_fh.get_conf("file_ins_fixed_del0");  // write tmp0 file
+    check_folder_exists( path_del0);    
+    string file_tmp1 = path_del0 + pn + ".tmp1";
+    string file_tmp2 = path_del0 + pn + ".tmp2";    
     ofstream fout1 ( file_tmp1.c_str());
     fout1 << "chr insertBegin insertEnd estimatedAluLen midCnt clipCnt unknowCnt unknowStr\n";
     for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
@@ -1086,6 +1052,24 @@ int main( int argc, char* argv[] )
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     write_tmp2(file_tmp1, file_tmp2, pdf_rg);
     EmpiricalPdf::delete_map(pdf_rg);
+    move_files(path_del0 + "tmp1s/", file_tmp1);
+    move_files(path_del0 + "tmp2s/", file_tmp2);
+
+  } else if (opt == "fixed_vcf_pns") {
+    string path_del0 = cf_fh.get_conf("file_ins_fixed_del0") ;
+    vector <string> pns;
+    read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns); 
+    string path_input = path_del0 + "tmp2s/";
+    
+    string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";
+    int col_idx =  get_col_idx(tmp_file_pn, "00");
+    assert (col_idx == 7 );
+
+    string fn_pos = path_del0 + int_to_string( pns.size()) + ".pos";
+    filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, col_idx);
+    string fn_vcf = path_del0 + int_to_string( pns.size()) + ".vcf";  
+    combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf, pns, chrns, col_idx);  
+
   } else {
     cout << "unknown option ! \n";
   }

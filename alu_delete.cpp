@@ -1,8 +1,5 @@
 #define SEQAN_HAS_ZLIB 1
-#include <seqan/vcf_io.h>
 #include "delete_utils.h"
-
-inline string get_name_tmp(string path, string fn, string suffix){ return path + fn + suffix;}
 
 void count_reads(map <seqan::CharString, T_READ> &qName_info, map < T_READ, int > &readCnt) {
   readCnt.clear();
@@ -145,160 +142,6 @@ void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *
   fout.close();
 }
 
-void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
-  stringstream ss;
-  string line, chrn, tmpfield;
-  int aluBegin, flag;
-  float p0, p1, p2;
-
-  map < int, int > pos_altCnt; // count of alternative alleles 
-  map < int, int > pos_pnCnt;  // count of pns having polymorphism at this loci
-  map < int, map<string, GENO_PROB * > > pos_pnProb;  
-  map < int, map<string, GENO_PROB * > >::iterator pp;
-  map < string, GENO_PROB * >::iterator ppi;
-
-  ofstream fout(f_out.c_str());  
-  fout <<  "chrn aluBegin pnCnt alleleFreq Log_LikelihoodRatio\n"; 
-  int alleleCnt = pns.size() * 2; 
-  for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-    for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-      ifstream fin( get_name_tmp(path0, *pi, f_in_suffix).c_str() );
-      //cout << "reading " << get_name_tmp(path0, *pi, f_in_suffix) << endl;
-      assert(fin);
-      getline(fin, line); 
-      flag = 1;
-      while ( getline(fin, line) ) {
-	ss.clear(); ss.str( line );
-	ss >> chrn >>  aluBegin;
-	for (int ti = 0; ti < col_00 - 3; ti++) ss >> tmpfield;
-	ss >> p0 >> p1 >> p2 ;
-	if (chrn != *ci) {
-	  if (flag) continue;
-	  else break;
-	}
-	flag = 0;
-	pos_pnProb[ aluBegin ][*pi] = new GENO_PROB( p0, p1, p2);	  
-	if (p1 > p0 or p2 > p0) {
-	  addKey(pos_altCnt, aluBegin, p1 > p2 ? 1 : 2);	
-	  addKey(pos_pnCnt, aluBegin, 1);
-	}
-      }
-      fin.close();
-    }
-    
-    map<int, int>::iterator pan = pos_pnCnt.begin();
-    for ( map<int, int>::iterator pa = pos_altCnt.begin(); pa != pos_altCnt.end(); pa++, pan++) {
-      if ( pan->second <= 1) continue; // no private 
-      float altFreq = (pa->second) / (float)alleleCnt;
-      float freq0 = (1 - altFreq) * (1 - altFreq);
-      float freq1 = 2 * altFreq * (1 - altFreq);
-      float freq2 = altFreq * altFreq;
-      float llh_alt = 0, llh_00 = 0;
-      for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-	if ( (ppi = pos_pnProb[pa->first].find(*pi)) != pos_pnProb[pa->first].end() ) {
-	  llh_00 +=  ( (ppi->second)->g0 > 0 ? log( (ppi->second)->g0 ) : ( - LOG10_GENO_PROB ) ) ;
-	  llh_alt += log (freq0 * (ppi->second)->g0 + freq1 * (ppi->second)->g1 + freq2 * (ppi->second)->g2);  
-	} else
-	  llh_alt += log (freq0);  // g0 = 1	
-      }
-      fout << *ci << " " << pa->first << " " << pan->second << " " << altFreq << " " << llh_alt - llh_00 << endl;
-    }
-    cout << "done with " << *ci << endl;
-
-    pos_altCnt.clear(); 
-    pos_pnCnt.clear();
-    for (pp = pos_pnProb.begin(); pp != pos_pnProb.end(); pp++) {
-      for ( ppi = (pp->second).begin(); ppi != (pp->second).end(); ppi++) 
-	delete ppi->second;
-    }
-    pos_pnProb.clear();
-  } 
-  fout.close();
-}
-
-bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
-  ifstream fin;
-  stringstream ss;
-  string line, chrn, tmp1, tmp2;
-  int aluBegin, aluEnd, cii, flag;
-
-  map < pair<int, int>, map<string, string> > pos_pnProb;
-  map < pair<int, int>, map<string, string> > pos_pnProb_all;
-  map < pair<int, int>, map<string, string> >::iterator ppp;
-  map<string, string>::iterator pp;
-  vector <string>::iterator ci, pi;
-  //seqan::VcfStream vcfout("-", seqan::VcfStream::WRITE);
-  seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE);
-  for ( ci = chrns.begin(); ci != chrns.end(); ci++)
-    appendValue(vcfout.header.sequenceNames, *ci);
-  for ( pi = pns.begin(); pi != pns.end(); pi++) 
-    appendValue(vcfout.header.sampleNames, *pi);
-  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileformat", "VCFv4.1"));
-  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileDate", "201402"));
-  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("reference", "hg18"));
-  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=PL,Number=3,Type=Integer, Description=\"Phred-scaled likelihoods for genotypes\">"));
-  seqan::VcfRecord record;    
-  record.ref = ".";
-  record.alt = "1";
-  record.qual = 0;
-  record.filter = ".";
-  record.info = ".";
-  record.format = ".";
-  float p0, p1, p2;      
-  string tmpfield;
-  for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
-    pos_pnProb.clear();
-    pos_pnProb_all.clear();
-    for ( pi = pns.begin(); pi != pns.end(); pi++) {
-      fin.open( get_name_tmp(path0, *pi, f_in_suffix).c_str() );
-      assert(fin);
-      getline(fin, line); 
-      flag = 1;
-      while ( getline(fin, line) ) {
-	ss.clear(); ss.str( line );
-	ss >> chrn >>  aluBegin >> aluEnd;
-	for (int ti = 0; ti < col_00 - 4; ti++) ss >> tmpfield;
-	ss >> p0 >> p1 >> p2 ;
-
-	if (chrn != *ci) {
-	  if (flag) continue;
-	  else break;
-	  }
-	flag = 0;
-	string phred_scaled_str = phred_scaled(p0, p1, p2);
-	pos_pnProb_all[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
-	if (p1 > p0 or p2 > p0) pos_pnProb[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
-      }
-      //cout << get_name_tmp(path0, *pi, f_in_suffix) << endl;
-      fin.close();
-    }
-    cout << *ci << " size " << pos_pnProb.size() << endl;
-    // Write out the records.
-    for (ppp = pos_pnProb.begin(); ppp != pos_pnProb.end(); ppp++) {
-      record.beginPos = (ppp->first).first;
-      record.rID = cii;
-      record.id = int_to_string((ppp->first).second);
-      int n_pn = 0;
-      for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-	if ( (pp = ppp->second.find(*pi)) != ppp->second.end() ) { 
-	  appendValue(record.genotypeInfos, pp->second);
-	  n_pn++ ;
-	} else if ((pp = pos_pnProb_all[ppp->first].find(*pi)) !=  pos_pnProb_all[ppp->first].end() ) {
-	  appendValue(record.genotypeInfos,  pos_pnProb_all[ppp->first][*pi]); 	  
-	} else {
-	  appendValue(record.genotypeInfos, "0,255,255"); // otherwise vcf consider it as missing
-	}
-      }
-      if (n_pn > 1) writeRecord(vcfout, record);  // don't output private loci
-      clear(record.genotypeInfos);
-    }        
-    cout << "done with " << *ci << endl;
-  }  // chrn finished
-  clear(record);
-  seqan::close(vcfout);
-  return true;
-}
-
 void read_highCov_region(string f_input, map < string, set<int> > & chrn_aluBegin) {
   ifstream fin(f_input.c_str());
   string tmp1, tmp2, chrn;
@@ -312,7 +155,10 @@ void remove_highCov_region(string f_input, string f_output, int offset, map <str
   int aluBegin;
   stringstream ss;
   ifstream fin(f_input.c_str());
-  assert(fin);
+  if(!fin) {
+    cerr << f_input << " does not exist!\n";
+    exit(0);
+  }
   ofstream fout(f_output.c_str());
   getline(fin, line);
   fout << line << endl;
@@ -348,72 +194,60 @@ int main( int argc, char* argv[] )
   string file_fa_prefix = cf_fh.get_conf("file_fa_prefix");
   string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
 
-  if ( opt == "write_tmps" ) { 
+  string path0 = cf_fh.get_conf("file_alu_delete0");
+  check_folder_exists(path0);
+
+  if ( opt == "write_tmps_pn" ) { 
     int idx_pn = seqan::lexicalCast<int> (argv[3]);
     assert(argc == 4);
     string pn = ID_pn[idx_pn];
-    cout << "reading pn: " << idx_pn << " " << pn << "..................\n";
-
-    string path0 = cf_fh.get_conf("file_alu_delete0");
-    check_folder_exists(path0);
     map<string, int> rg_to_idx;
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
     
     unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
     string file_alupos_prefix = cf_fh.get_conf("file_alupos_prefix"); 
-    string fn_tmp1 = get_name_tmp(path0, pn, ".tmp1");
-    string fn_log1 = get_name_tmp(path0, pn, ".log1");
+    string fn_tmp1 = path0 + pn + ".tmp1";
+    string fn_log1 = path0 + pn + ".log1";
     int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
 
     string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";      
-
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
     delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
     delete bam_fh;
+    move_files(path0+"log1s/", path0 + pn + ".log1") ;
 
-    string path_move = path0 + "log1s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".log1 " + path_move).c_str());
-
-    string fn_tmp2 = get_name_tmp(path0, pn, ".tmp2");
+    string fn_tmp2 = path0 + pn + ".tmp2";
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg); 
     EmpiricalPdf::delete_map(pdf_rg);
-
-    path_move = path0 + "tmp1s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".tmp1 " + path_move).c_str());
-    path_move = path0 + "tmp2s/";
-    check_folder_exists(path_move);
-    system(("mv " + path0 + pn + ".tmp2 " + path_move).c_str());
+    move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
+    move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
     
-  } else if (opt == "write_vcf") {   // write vcf for all pn
-    string path0 = cf_fh.get_conf("file_alu_delete0");
+  } else if (opt == "write_vcf_pns") {   // write vcf for all pn
     string path1 = cf_fh.get_conf("file_alu_delete1");
     check_folder_exists(path1);
-    string pn;
     vector <string> pns;
-    int i = 0, ni = 3000;
-    ifstream fin(cf_fh.get_conf("file_pn").c_str());
-    while ( i++ < ni and  fin >> pn) pns.push_back( pn );
-    fin.close();    
+    read_file_pn_used(cf_fh.get_conf("file_pn"), pns);
     string path_input = path0 + "tmp2s/";
     string fn_pos, fn_vcf;
     fn_pos = path1 + int_to_string( pns.size()) + ".pos";
-    //filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos + ".tmp", pns, chrns, 7);
+    filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos + ".tmp", pns, chrns, 7);
     fn_vcf = path1 + int_to_string( pns.size()) + ".vcf";  
-    //combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf + ".tmp", pns, chrns, 7);  //  10 mins
+    combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf + ".tmp", pns, chrns, 7);  
     
     map <string, set<int> > chrn_aluBegin;
     for ( vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-      string fn_log1 = get_name_tmp(path0 + "log1s/", *pi, ".log1");  
+      string fn_log1 = path0 + "log1s/" + *pi + ".log1";  
       read_highCov_region(fn_log1, chrn_aluBegin);
     }
     remove_highCov_region(fn_pos+".tmp", fn_pos, 0, chrn_aluBegin);
     remove_highCov_region(fn_vcf+".tmp", fn_vcf, -1, chrn_aluBegin);
+    system( ("rm " + fn_pos+".tmp").c_str() );    
+    system( ("rm " + fn_vcf+".tmp").c_str() );    
+    cout << "regions with high coverage are removed\n";
 
   } else if (opt == "debug") { // debugging and manually check some regions 
     string pn = ID_pn[0];

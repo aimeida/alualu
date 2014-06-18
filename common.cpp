@@ -61,6 +61,21 @@ void get_pn(string pn_file, map<int, string> &ID_pn){
   fin.close();
 }
 
+void read_file_pn_used(string fn, std::set <string> & pns_used) {
+  ifstream fin(fn.c_str()) ;
+  assert(fin);
+  string pn;
+  while (fin >> pn) pns_used.insert(pn);
+  fin.close();
+}
+
+void read_file_pn_used(string fn, vector <string> & pns_used) {
+  ifstream fin(fn.c_str()) ;
+  assert(fin);
+  string pn;
+  while (fin >> pn) pns_used.push_back(pn);
+  fin.close();
+}
 
 int is_nonempty_file(string fn){
   FILE * pFile = fopen(fn.c_str(), "r");
@@ -88,30 +103,3 @@ void nonempty_files_ls(string path1, vector <string> fns){
   }
 }
 
-/*
-void sort_file_by_col(string fn, int coln, bool has_header){
-  ifstream fin( fn.c_str());
-  assert(fin);
-  string line, tmpv, header;
-  stringstream ss;
-  int valn;
-  list < pair<int, string> > rows;
-  if (has_header) getline(fin, header);
-  while (getline(fin, line)) {
-    ss.clear(); ss.str( line );
-    if (coln == 0) ss >> valn;
-    else {
-      for (int i = 0; i < coln-1; i++) ss >> tmpv;
-      ss >> valn;
-    }
-    rows.push_back( make_pair(valn, line) );
-  }
-  fin.close();
-  rows.sort(compare_first < pair<int, string> >);
-  ofstream fout( fn.c_str());
-  if (has_header) fout << header << endl;
-  for (list < pair<int, string> >::iterator ri = rows.begin(); ri != rows.end(); ri++)
-    fout << (*ri).second << endl;
-  fout.close();
-}
-*/

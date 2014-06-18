@@ -59,6 +59,33 @@ inline bool compare_IntString(const IntString & a, const IntString & b) {
   return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
 }
 
+inline void check_folder_exists(string path) {
+  if ( access( path.c_str(), 0 ) != 0 ) system( ("mkdir " + path).c_str() );    
+}
+
+inline void move_files(string path_move, string fns) {
+  check_folder_exists(path_move);
+  system(("mv " + fns + " " + path_move).c_str());    
+}
+
+inline int get_col_idx(string fn, string col_name) {
+  int coln = 0;
+  ifstream fin( fn.c_str());
+  assert(fin); 
+  string header, tmp1;
+  getline(fin, header);
+  stringstream ss;
+  ss.clear(); ss.str( header );
+  while ( ss >> tmp1) { 
+    coln++;
+    if (tmp1 == col_name) {
+      fin.close();
+      return coln;
+    }
+  }
+  fin.close();
+  return 0;
+}
 
 template < typename K >
 bool compare_first(const K & a, const K & b) {
@@ -104,8 +131,6 @@ void get_mapVal(map <K,V> &m, K key, V & default_val)
   if ((it=m.find(key)) != m.end()) 
     default_val = it->second;
 };
-
-
 
 template <class K, class V>
 void debugprint_map(map <K,V> &m, size_t n_max = 0) {
@@ -164,6 +189,8 @@ class ConfigFileHandler{
 string int_to_string(int i);
 string get_pn(string pn_file, int idx_pn);
 void get_pn(string pn_file, map<int, string> &ID_pn);
+void read_file_pn_used(string fn, std::set <string> & pns_used);
+void read_file_pn_used(string fn, vector <string> & pns_used);
 int is_nonempty_file(string fn);
 void nonempty_files_ls(string path1, vector <string> fns);
 

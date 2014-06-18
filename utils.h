@@ -5,6 +5,7 @@
 #include <seqan/basic.h>
 #include <seqan/sequence.h>
 #include <seqan/modifier.h>
+#include <seqan/vcf_io.h>
 #include "common.h"
 #ifndef UTILS_H
 #define UTILS_H
@@ -25,15 +26,6 @@ struct MyUpper : public unary_function<char,char> {
 
 inline string get_name_rg(string prefix, string pn){ return prefix + "RG." + pn;}
 inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_param){ return prefix + pn + ".count." + rg + "." + pdf_param; }
-
-inline void check_folder_exists(string path) {
-  if ( access( path.c_str(), 0 ) != 0 ) system( ("mkdir " + path).c_str() );    
-}
-
-inline void move_files(string path_move, string fns) {
-  check_folder_exists(path_move);
-  system(("mv " + fns + " " + path_move).c_str());    
-}
 
 inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);}
 
