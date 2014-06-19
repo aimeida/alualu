@@ -1066,9 +1066,9 @@ int main( int argc, char* argv[] )
     assert (col_idx == 7 );
 
     string fn_pos = path_del0 + int_to_string( pns.size()) + ".pos";
-    filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, col_idx);
+    filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, col_idx, true);
     string fn_vcf = path_del0 + int_to_string( pns.size()) + ".vcf";  
-    combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf, pns, chrns, col_idx);  
+    combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf, pns, chrns, col_idx, true);  
 
   } else {
     cout << "unknown option ! \n";

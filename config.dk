@@ -5,8 +5,8 @@ file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/alu_
 file_fa_prefix /home/qianyuxx/faststorage/AluDK/inputs/fa_hg19/
 ## delete_search
 minLen_alu_del 200
-file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/	
-file_alu_delete1 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu1/	
+#file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/	
+file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/
 coverage_max 90	   
 alu_flank 600	      
 ## insert_length_dist
@@ -26,9 +26,7 @@ bin_path /home/qianyuxx/faststorage/Alu/
 ## ins_del
 file_ins_cons /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons/
 file_ins_del0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/delete0/   ## insert consensus alu (built from scratch) for each location
-file_ins_del1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/delete1/
 file_ins_fixed_del0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/  ## insert a fixed alu seq for all locations 
-file_ins_fixed_del1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete1/
 file_alu_cons /home/qianyuxx/faststorage/AluDK/inputs/alu_cons.fa	
 type_alu_cons AluY
 

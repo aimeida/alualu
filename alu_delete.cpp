@@ -227,15 +227,13 @@ int main( int argc, char* argv[] )
     move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
     
   } else if (opt == "write_vcf_pns") {   // write vcf for all pn
-    string path1 = cf_fh.get_conf("file_alu_delete1");
-    check_folder_exists(path1);
     vector <string> pns;
     read_file_pn_used(cf_fh.get_conf("file_pn"), pns);
     string path_input = path0 + "tmp2s/";
     string fn_pos, fn_vcf;
-    fn_pos = path1 + int_to_string( pns.size()) + ".pos";
+    fn_pos = path0 + int_to_string( pns.size()) + ".pos";
     filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos + ".tmp", pns, chrns, 7);
-    fn_vcf = path1 + int_to_string( pns.size()) + ".vcf";  
+    fn_vcf = path0 + int_to_string( pns.size()) + ".vcf";  
     combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf + ".tmp", pns, chrns, 7);  
     
     map <string, set<int> > chrn_aluBegin;
