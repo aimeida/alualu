@@ -1,5 +1,12 @@
 #include "delete_utils.h"
 
+string debug_print_tread(T_READ td){
+  if ( td == unknow_read ) return "unknow_read";
+  if ( td == mid_read ) return "mid_read";
+  if ( td == clip_read ) return "clip_read";
+  return "";
+}
+
 bool get_align_pos(int aluBegin, int aluEnd, int beginPos, int endPos, int &ref_a, int &ref_b, int &read_a, int &read_b, seqan::BamAlignmentRecord &record){
   unsigned nl = length(record.cigar) - 1; // ignore complicated alignment between S and M
   int len_read = length(record.seq);
@@ -51,11 +58,18 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
   return ( align_len >= min_align_len and score >= min_align_score(align_len) );
 }
 
-T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh){
-  ////return unknow_read;  
+T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool only_tLen_info){
   bool read_is_left = left_read(record);
   int beginPos = record.beginPos;
-  int endPos = record.beginPos + align_len;  
+  int endPos = record.beginPos + getAlignmentLengthInRef(record);    
+  int pair_begin = read_is_left ? beginPos : beginPos + record.tLen;
+  int pair_end = pair_begin + abs(record.tLen);
+
+  if (only_tLen_info ) {// silly to use only insert length info. (1) mid reads with small insert length will be wrongly interpreted. (2) many clip reads are ignored 
+    if ( pair_begin < aluBegin + BOUNDARY_OFFSET and pair_end > aluEnd - BOUNDARY_OFFSET ) return unknow_read;
+    else return useless_read;
+  }
+
   if ( (has_soft_first(record, CLIP_BP) and abs(beginPos - aluEnd) <= BOUNDARY_OFFSET ) or 
        ( has_soft_last(record, CLIP_BP) and abs(endPos - aluBegin) <= BOUNDARY_OFFSET ) ) {    
     int ref_a, ref_b, read_a, read_b;
@@ -69,9 +83,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int align_len, int aluB
   // only consider as mid_read if very certain, otherwise classify as unknown read
   if ( beginPos < aluEnd - BOUNDARY_OFFSET and endPos > aluBegin + BOUNDARY_OFFSET and count_non_match(record) <= 5)       
     return mid_read;    
-  int pair_begin = read_is_left ? beginPos : beginPos + record.tLen;
-  int pair_end = pair_begin + abs(record.tLen);
-  if ( min(pair_end, aluEnd) - max(pair_begin, aluBegin) > - BOUNDARY_OFFSET )
+  if ( pair_begin < aluBegin + BOUNDARY_OFFSET and pair_end > aluEnd - BOUNDARY_OFFSET )
     return unknow_read;  
   return useless_read;  // alu_flank is too large, we have a lot reads not useful 
 }

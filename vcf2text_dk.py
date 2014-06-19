@@ -90,7 +90,7 @@ def read_vcftxt(f_vcftxt):
                 seqs[i] += j
     return chr_pos, seqs
 
-def one_family(pn1, pn2, pn3, pos):
+def one_family(pn1, pn2, pn3, pos, allow_denovo):
     def p2c(parent):
         if parent == '2':
             return [1]
@@ -106,16 +106,24 @@ def one_family(pn1, pn2, pn3, pos):
         from1 = p2c(pn1[i])
         from2 = p2c(pn2[i])
         if int(pn3[i]) not in [sum(x) for x in itertools.product(from1, from2)]:
-            conflict_pos.append(pos[i])
-    conflict_rate = len(conflict_pos) / float(nlen)
-    print 'confliction rate: %.1f %%, %d out of %d positions' %(conflict_rate * 100, len(conflict_pos), nlen)
+            if allow_denovo: 
+                if not (pn1[i] == '0' and pn2[i] == '0' and pn3[i] == '1'):
+                    conflict_pos.append(pos[i])
+            else:
+                conflict_pos.append(pos[i])
 
+    conflict_rate = len(conflict_pos) / float(nlen)
+    print 'allow denovo', allow_denovo
+    print 'confliction rate: %.1f %%, %d out of %d positions' %(conflict_rate * 100, len(conflict_pos), nlen)
+    print '\n'.join(conflict_pos)
 
 
 if __name__ == "__main__":
-
+    
     opt = sys.argv[1]
     
+    allow_denovo = False
+
     if opt == '1':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.pos'
@@ -127,9 +135,11 @@ if __name__ == "__main__":
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.vcf' 
 
     elif opt == '3':
+        file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/30.pos' 
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/30.vcf' 
 
+        
     print 'checking vcf file of', f_vcf
 
     pn_used = map(lambda x:x.strip(), file(file_pn_used).readlines())
@@ -142,12 +152,13 @@ if __name__ == "__main__":
     trio_group= parse_trio_group(f_vcf)
     chr_pos, seqs = read_vcftxt(f_vcftxt2)
     for gn, v1 in trio_group.items():
+        if gn != '1006':
+            continue
         if len(v1) != 3:
             continue
         pn_father = v1['F']
         pn_mother = v1['M']
         pn_child = v1['C']
         print 'check family ', gn
-        one_family(seqs[pn_father], seqs[pn_mother], seqs[pn_child], chr_pos)
-            
+        one_family(seqs[pn_father], seqs[pn_mother], seqs[pn_child], chr_pos, allow_denovo)
         

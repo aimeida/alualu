@@ -5,8 +5,7 @@ file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/alu_
 file_fa_prefix /home/qianyuxx/faststorage/AluDK/inputs/fa_hg19/
 ## delete_search
 minLen_alu_del 200
-#file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/	
-file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/
+file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/	
 coverage_max 90	   
 alu_flank 600	      
 ## insert_length_dist

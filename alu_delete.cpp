@@ -7,21 +7,19 @@ void count_reads(map <seqan::CharString, T_READ> &qName_info, map < T_READ, int 
     addKey(readCnt, rt->second); 
 }
  
-int check_chr_alupos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <string, int> &rg_to_idx, string chrn, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &qName_info,  map<seqan::CharString, string> & rg_str){  
+int check_one_pos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <string, int> &rg_to_idx, string chrn, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &qName_info,  map<seqan::CharString, string> & rg_str){  
   qName_info.clear();
   int reads_cnt = 0;
-  seqan::BamAlignmentRecord record;
-  
+  seqan::BamAlignmentRecord record;  
   while ( true ) {
     string read_status = bam_fh->fetch_a_read(chrn, aluBegin - ALU_FLANK, aluEnd + ALU_FLANK, record);
     if (read_status == "stop" ) break;
     if (read_status == "skip" or !QC_delete_read(record)) continue;
     reads_cnt ++;  
-    int align_len = getAlignmentLengthInRef(record);    
     map <seqan::CharString, T_READ >::iterator qItr = qName_info.find(record.qName);
     if ( qItr != qName_info.end() and qItr->second != unknow_read) 
       continue;
-    T_READ iread = classify_read( record, align_len, aluBegin, aluEnd, fasta_fh);    
+    T_READ iread = classify_read( record, aluBegin, aluEnd, fasta_fh);   
     if ( iread == useless_read) continue;    
     qName_info[record.qName] = iread;
     if ( qItr == qName_info.end() and iread == unknow_read) {
@@ -44,17 +42,18 @@ int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_pre
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrn = *ci;
     string file_alupos = file_alupos_prefix + chrn;
-    AluRefPosRead *alurefpos = new AluRefPosRead(file_alupos, minLen_alu_del); // default 200
+    AluRefPos *alurefpos = new AluRefPos(file_alupos, minLen_alu_del); // default 200
     FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);    
     int aluBegin, aluEnd;
     for (int count_loci = 0; ; count_loci++) {
       float coverage_mean = 0;
-      if (! alurefpos->updatePos(aluBegin, aluEnd)) 
-	break;      
+      if ( !alurefpos->nextdb() ) break;      
+      aluBegin = alurefpos->get_beginP();
+      aluEnd = alurefpos->get_endP();
       if (aluBegin <= ALU_FLANK or !bam_fh->jump_to_region(chrn, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK))
 	continue;
       map<seqan::CharString, string> rg_str;
-      int check_alu = check_chr_alupos(bam_fh, fasta_fh, rg_to_idx, chrn, aluBegin, aluEnd, coverage_max, coverage_mean, qName_info, rg_str);
+      int check_alu = check_one_pos(bam_fh, fasta_fh, rg_to_idx, chrn, aluBegin, aluEnd, coverage_max, coverage_mean, qName_info, rg_str);
       if ( check_alu == 0 ) continue;
       if ( check_alu == COVERAGE_HIGH) {
 	f_log1 << "COVERAGE_HIGH " << chrn << " " << aluBegin << " " << aluEnd << " " << setprecision(2) << coverage_mean << endl;
@@ -248,19 +247,9 @@ int main( int argc, char* argv[] )
     cout << "regions with high coverage are removed\n";
 
   } else if (opt == "debug") { // debugging and manually check some regions 
-    string pn = ID_pn[0];
+    string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
 
-    /* print header info
-    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
-    seqan::BamStream bamIO(bam_input.c_str());
-    for (unsigned i = 0; i < length(bamIO.header.records); ++i) {
-      cout << i << " " << bamIO.header.records[i].tags[0].i1 
-	   << " " << bamIO.header.records[i].tags[0].i2 
-	   << " " << bamIO.header.records[i].tags[1].i1 
-	   << " " << bamIO.header.records[i].tags[1].i2 << endl;
-    }
-    */
-
+    /*
     float *log10_gp = new float[3];
     float *gp = new float[3];
     float offset = 0.4;
@@ -268,15 +257,20 @@ int main( int argc, char* argv[] )
     log10_gp[1] = -0.60814 + offset;
     log10_gp[2] = -23.9364 + offset;
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);
-    cout << "test1 done " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2]; 
+    cout << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2]; 
+    delete log10_gp;
+    delete gp;
+    cout << "test1 done\n";
+    */
      
+    /*
     string line, output_line;
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-    
     cout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
-    line = "chr1 1455790 1456098 6 2 1 0";
+    
+    line = "chr1 17684780 17685090 36 19 3 0";
     parseline_del_tmp1(line, output_line, pdf_rg);
     cout << output_line << endl;
     line = "chr1 1455790 1456098 6 2 0 2 0:733 1:748";
@@ -286,8 +280,72 @@ int main( int argc, char* argv[] )
     parseline_del_tmp1(line, output_line, pdf_rg);
     cout << output_line << endl;
     cout << "test2 done\n";
-    delete log10_gp;
-    delete gp;
+    */
+    
+    string chrn = "chr3";
+    int aluBegin = 129912695;
+    int aluEnd = 129913004;
+    map < seqan::CharString, T_READ> qName_info;  
+    
+    FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);    
+    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
+    string bai_input = bam_input + ".bai";      
+    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
+    seqan::BamAlignmentRecord record;  
+
+    bam_fh->jump_to_region(chrn, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK);
+    while ( true ) {
+      string read_status = bam_fh->fetch_a_read(chrn, aluBegin - ALU_FLANK, aluEnd + ALU_FLANK, record);
+      if (read_status == "stop" ) break;
+      if (read_status == "skip" or !QC_delete_read(record)) continue;
+      map <seqan::CharString, T_READ >::iterator qItr = qName_info.find(record.qName);
+      if ( qItr != qName_info.end() and qItr->second != unknow_read) 
+	continue;
+      T_READ iread = classify_read( record, aluBegin, aluEnd, fasta_fh);    
+      if ( iread == useless_read) continue;    
+      qName_info[record.qName] = iread;
+    }
+    
+    map <seqan::CharString, int> unknow_reads;
+    for (map < seqan::CharString, T_READ>::iterator qi = qName_info.begin(); qi != qName_info.end(); qi ++ ) {
+      if ( qi->second == unknow_read) {
+	unknow_reads[qi->first] = 1;
+      }
+    }
+    
+    bam_fh->jump_to_region(chrn, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK);
+    while ( true ) {
+      string read_status = bam_fh->fetch_a_read(chrn, aluBegin - ALU_FLANK, aluEnd + ALU_FLANK, record);
+      if (read_status == "stop" ) break;
+      if (read_status == "skip" or !QC_delete_read(record)) continue;
+
+      /*
+	T_READ one_read = useless_read;
+      get_mapVal(qName_info, record.qName, one_read);
+      if (one_read != useless_read) {
+      cout << debug_print_tread(one_read) << " ";
+      debug_print_read(record, cout);
+      }
+      */
+      
+      /*
+      map <seqan::CharString, int>::iterator ui = unknow_reads.find(record.qName);
+      if ( ui != unknow_reads.end() and ui -> second == 1) {
+	debug_print_read(record, cout);
+	ui -> second = 0;
+      }
+      */
+    }
+    
+    map < T_READ, int > readCnt;
+    count_reads(qName_info, readCnt); 
+    for (map < T_READ, int >::iterator ri = readCnt.begin(); ri != readCnt.end(); ri++ ) {
+      cout << debug_print_tread(ri->first) << " " << ri->second << endl;
+    }
+    cout << chrn << " " << aluBegin << " " << aluEnd << " " << qName_info.size() << endl;
+
+    delete bam_fh;
+    
     // genotype call /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/jon_chr0/pn1.check
   } else {
     cout << "unknown options !\n";

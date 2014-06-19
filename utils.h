@@ -121,7 +121,7 @@ class AluconsHandler : public FastaFileHandler {
   map <int, seqan::CharString> seqs;
 };
 
-class AluRefPosRead // used by alu_del and alu_hg18
+class AluRefPosRead // used only by alu_hg18
 {
   queue<int> beginP, endP;
   queue<char> strandP;
@@ -129,7 +129,6 @@ class AluRefPosRead // used by alu_del and alu_hg18
  public:
   int minP, maxP;
   AluRefPosRead(string file_alupos, int minLen = 200);
-  int updatePos(int &beginPos, int &endPos);   // alu_delete, alu_hg18 used
   int updatePos(int &beginPos, int &endPos, char & chain, string & alu_type);
 };
 
@@ -141,12 +140,12 @@ class RepDB1 {
   bool operator<(const RepDB1 & other)const { return begin_pos < other.begin_pos; } 
 };
 
-class AluRefPos   // used by alu_insert
+class AluRefPos   // used by alu_delete, alu_insert
 {
 public: 
   int db_size;
-  AluRefPos(string fn);   
-  void nextdb(){ adi++;}
+  AluRefPos(string fn, int minLen_alu = 0);   
+  bool nextdb(){ adi++; return adi != alu_db.end();}
   int get_beginP() const { assert(adi != alu_db.end()); return (*adi).begin_pos; }
   int get_endP() const { assert(adi != alu_db.end()); return (*adi).end_pos; }
   string get_type() const { assert(adi != alu_db.end()); return (*adi).alu_type; }

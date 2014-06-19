@@ -370,18 +370,9 @@ AluRefPosRead::AluRefPosRead(string file_alupos, int minLen) {
     aluType.push(alu_type);
   }
   maxP = ep;
-  cerr << "queue from " << file_alupos << " with " << beginP.size() << " loci, " << minP << " to " << maxP << endl;
+  //cerr << "queue from " << file_alupos << " with " << beginP.size() << " loci, " << minP << " to " << maxP << endl;
   fin.close();
 }
-
-int AluRefPosRead::updatePos(int &beginPos, int &endPos){
-  if (!beginP.size()) return 0;
-  beginPos = beginP.front();
-  endPos = endP.front();
-  beginP.pop();
-  endP.pop();
-  return 1;
-}  
 
 int AluRefPosRead::updatePos(int &beginPos, int &endPos, char &chain, string & alu_type){
   if (!beginP.size()) return 0;
@@ -396,7 +387,7 @@ int AluRefPosRead::updatePos(int &beginPos, int &endPos, char &chain, string & a
   return 1;
 }  
 
-AluRefPos::AluRefPos(string fn) {
+AluRefPos::AluRefPos(string fn, int minLen_alu) {
   ifstream fin( fn.c_str());
   assert(fin);
   string chrn, at, line;
@@ -405,6 +396,7 @@ AluRefPos::AluRefPos(string fn) {
   while ( getline(fin, line)) {
     ss.clear(); ss.str(line);
     ss >> chrn >> bp >> ep >> at;
+    if ( minLen_alu > 0 and ep - bp < minLen_alu) continue;
     RepDB1 one_alu = RepDB1(bp, ep, at);
     alu_db.insert( one_alu );
   }

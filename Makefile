@@ -1,7 +1,7 @@
 #-*-makefile-*-
 OD=debug
 #make debug/alu_delete
-OD=opt3
+#OD=opt3
 include Makefile.vars
 
 INCLUDE = -I/home/qianyuxx/local/include/
