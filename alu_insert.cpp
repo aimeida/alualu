@@ -91,16 +91,16 @@ void join_location(string file1, string file2, int pos_dif, int max_region_len){
   fout.close();
 }
 
-void alumate_counts_filter(string fn_input, string fn_output, string fn_output2, vector<string>  &chrns, int th_cnt){
+void alumate_counts_filter(string & path0, string pn, string fn_suffix_input, string fn_suffix_output, string fn_suffix_output2, vector<string>  &chrns, int th_cnt){
   int lr_num, rr_num, this_rID, this_pos, len_read;
   string line, qname;
   bool this_isRC;
   stringstream ss;
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     string chrn = *ci;
-    string f_input = fn_input + "." + chrn;
-    string f_output = fn_output + "." + chrn;
-    string f_output2 = fn_output2 + "." + chrn;
+    string f_input = path0 + chrn + "/" + pn + fn_suffix_input;
+    string f_output = path0 + chrn + "/" + pn + fn_suffix_output;
+    string f_output2 = path0 + chrn + "/" + pn + fn_suffix_output2;
     list <int> pos_to_scan;    
     get_scan_pos(f_input, pos_to_scan, 8); // no big diff when change 8 to 20
     // cout << f_input << " " << pos_to_scan.size() << endl;
@@ -150,12 +150,12 @@ void alumate_counts_filter(string fn_input, string fn_output, string fn_output2,
   }
 }
 
-void filter_location_rep(string file1, string file2, vector<string> &chrns, RepMaskPos *repmaskPos){
+void filter_location_rep(string path0, string pn, string file1_suffix, string file2_suffix, vector<string> &chrns, RepMaskPos *repmaskPos){
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
     string chrn = *ci;
-    ifstream fin( (file1 + "." + chrn).c_str());
+    ifstream fin( (path0 + chrn + "/" + pn + file1_suffix).c_str());
     assert(fin);
-    ofstream fout( (file2 + "." + chrn).c_str());
+    ofstream fout( (path0 + chrn + "/" + pn + file2_suffix).c_str());
     string line;
     stringstream ss;
     int readCnt, pos_left, pos_right;
@@ -330,14 +330,14 @@ bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string tmpn,  str
     fnOut = (n_size <= group_size) ? fn_prefix : (fn_prefix + "." + int_to_string(i) + ".tmp0");
     for ( j = 0; j < group_size; j++) {
       pn = id_pn_map[ i*group_size+j ];
-      fnOut_fnInput[fnOut].push_back(path0 + pn + "." + tmpn + "." + chrn);
+      fnOut_fnInput[fnOut].push_back(path0 + chrn  + "/" + pn + tmpn);
       fnOut_pns[fnOut].push_back(pn);
     }
   }
   fnOut = (n_size <= group_size) ? fn_prefix : (fn_prefix + "." + int_to_string(n_group) + ".tmp0");
   for ( j = n_group * group_size; j < n_size; j++) {
     pn = id_pn_map[ j ];
-    fnOut_fnInput[fnOut].push_back(path0 + pn + "." + tmpn + "." + chrn);	
+    fnOut_fnInput[fnOut].push_back(path0 + chrn + "/" + pn + tmpn);
     fnOut_pns[fnOut].push_back(pn);
   }
   for (fni = fnOut_fnInput.begin(); fni != fnOut_fnInput.end(); fni ++) 
@@ -870,10 +870,19 @@ int main( int argc, char* argv[] )
   boost::timer clocki;    
   clocki.restart();
   ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
+
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   chrns.push_back("chrX");
   chrns.push_back("chrY");
+  
+  string path0 = cf_fh.get_conf( "file_alu_insert0") ;    
+  string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
+  check_folder_exists(path0);
+  check_folder_exists(path1);
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
+    check_folder_exists(path0 + *ci +  "/");
+  }
   
 #ifdef DEBUG_MODE   // only look at chr1 for now 
   cerr << "!!!! DEBUG_MODE: only chr1 tested\n";
@@ -881,11 +890,6 @@ int main( int argc, char* argv[] )
   chrns.push_back("chr1");
 #endif       
 
-  string path0 = cf_fh.get_conf( "file_alu_insert0") ;    
-  string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
-  string path_move;
-  check_folder_exists(path0);
-  check_folder_exists(path1);
   map <int, string> ID_pn;
   get_pn(cf_fh.get_conf( "file_pn"), ID_pn);
   
@@ -898,49 +902,46 @@ int main( int argc, char* argv[] )
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input);
-    string file1_prefix = path0 + pn + ".tmp1";
+    string file1 = path0 + pn + ".tmp1";
     map<int, string>::iterator rc ;
 
-    //// step1: write pn.tmp1.
+    //// write pn.tmp1.
     map <string, int> rg_to_idx;    
     parse_reading_group( get_name_rg(cf_fh.get_conf("file_dist_prefix"), pn), rg_to_idx );    
     string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
-    alu_mate_flag(bam_fh, file1_prefix, header1, rg_to_idx);
+    alu_mate_flag(bam_fh, file1, header1, rg_to_idx);
     cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
-    //// step2: write pn.tmp1.chr*.  use database to filter alu mate
+
+    //// write chr*/pn.tmp1  use database to filter alu mate
     string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
     MapFO fileMap;    
     for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      fileMap[rc->first] = new ofstream( (file1_prefix + "." + rc->second).c_str() );  // write down reads whose pair is mapped to Alu
+      fileMap[rc->first] = new ofstream( ( path0 + rc->second + "/" + pn + ".tmp1").c_str() );
       assert(fileMap[rc->first]);
       *(fileMap[rc->first]) << header2 ;
     }     
     for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-      keep_alu_mate(bam_fh, rc->first,  file1_prefix, fileMap, cf_fh.get_conf( "file_alupos_prefix") + rc->second);           
+      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_prefix") + rc->second);           
     close_fhs(fileMap, bam_fh->rID_chrn);    
     
     int col_idx = 0;
     for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      string file1 = file1_prefix + "." + rc->second;
-      if (!col_idx) col_idx = get_col_idx(file1, "this_pos"); 
-      sort_file_by_col<int> (file1, col_idx, true);
+      string file_tmp1 =  path0 + rc->second +"/" + pn + ".tmp1";
+      if (!col_idx) col_idx = get_col_idx(file_tmp1, "this_pos"); 
+      sort_file_by_col<int> (file_tmp1, col_idx, true);
     }
-    move_files(path0+"tmp1s/", file1_prefix);    
+    move_files(path0+"tmp1s/", file1);    
     
-    string file2_prefix =  path0 + pn + ".tmp2";    // left and right counts at each check position
-    string file3_prefix =  path0 + pn + ".tmp3";    // combine *tmp2 files into regions
-    alumate_counts_filter(file1_prefix, file2_prefix, file3_prefix, chrns, LEFT_PLUS_RIGHT); 
-    move_files(path0+"tmp1s/", path0 + pn + ".tmp1.chr*") ;
-    move_files(path0+"tmp2s/", path0 + pn + ".tmp2.chr*") ;
+    alumate_counts_filter(path0, pn, ".tmp1", ".tmp2", ".tmp3", chrns, LEFT_PLUS_RIGHT); 
     //// filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
     RepMaskPos *repmaskPos;
     repmaskPos = new RepMaskPos(cf_fh.get_conf( "file_repeatMask"), chrns, REP_MASK_JOIN); 
-    string file3st_prefix = path0 + pn + ".tmp3st";  // subset of *tmp3
-    filter_location_rep(file3_prefix, file3st_prefix, chrns, repmaskPos);    
+    filter_location_rep( path0, pn, ".tmp3", ".tmp3st", chrns, repmaskPos);    
     delete bam_fh;
     delete repmaskPos;
     
   }  else if (opt == "combine_pos_pns") { // combine positions from multiple individuals
+
     string file_pn_used = cf_fh.get_conf( "file_pn_used");
     ifstream fin(file_pn_used.c_str());
     if (!fin) {
@@ -959,7 +960,7 @@ int main( int argc, char* argv[] )
 	 << file_pn_used << " if you want to modify\n";
     string output_prefix = path1 + "insert_pos.";
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      combine_pn_pos(*ci, id_pn_map, "tmp3st", output_prefix, 10, path0);  // takes about 12 mins to run !   
+      combine_pn_pos(*ci, id_pn_map, ".tmp3st", output_prefix, 10, path0);  // takes about 12 mins to run !   
       system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
       string fn_input = path1 + "insert_pos."+ *ci;
       filter_pos_freq( fn_input, fn_input + fn_suffix, freq_min, freq_max, id_pn_map.size() );
