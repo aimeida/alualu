@@ -1095,19 +1095,37 @@ int main( int argc, char* argv[] )
 
     int region_begin = clipLeft - ALU_FLANK; // no need for larger flank region, if i only want to build consensus
     int region_end = clipRight + ALU_FLANK;	
-    bam_fh->jump_to_region(chrn, region_begin, region_end);
 
-    string read_status;
-    
+    map < seqan::CharString, string > qname_iread;
+
+    bam_fh->jump_to_region(chrn, region_begin, region_end);    
     while ( true ) {
-      read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
+      string read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
       if (read_status == "stop" ) break;
       if (read_status == "skip" or !QC_insert_read(record)) continue;      
+      map < seqan::CharString, string >::iterator qi = qname_iread.find(record.qName);
+      if ( qi != qname_iread.end() and qi->second != "unknow_read")
+	continue;
       string iread = classify_read(record, clipLeft, clipRight, CLIP_BP_LEFT, CLIP_BP_RIGHT);
-      if ( iread != "useless") 
-	cout << iread << " " << record.qName << endl;
+      if ( iread == "clip_read") {
+	string ir = "";   
+	get_mapVal(qname_iread, record.qName, ir);  // skip reads can not be assigned as clip reads!
+	if ( ir != "skip_read")  qname_iread[record.qName] = iread;
+      }  else if ( iread == "skip_read" or "unknow_read") {    
+	qname_iread[record.qName] = iread;
+      }
     }
-
+    
+    bam_fh->jump_to_region(chrn, region_begin, region_end);    
+    while ( true ) {
+      string read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
+      if (read_status == "stop" ) break;
+      if (read_status == "skip" or !QC_insert_read(record)) continue;      
+      map < seqan::CharString, string >::iterator qi = qname_iread.find(record.qName);
+      if ( qi == qname_iread.end() or qi->second=="useless") continue;
+      cout << qi->second << " " ;
+      debug_print_read(record, cout);
+    }
 
   } else {
     cout << "unknown option ! \n";

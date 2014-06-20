@@ -1,4 +1,4 @@
-#define DEBUG_MODE  // test only chr1 for now
+//#define DEBUG_MODE  // test only chr1 for now
 #define SEQAN_HAS_ZLIB 1
 #include "utils.h"
 #ifndef INSERT_UTILS_H
