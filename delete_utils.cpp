@@ -62,7 +62,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEn
   bool read_is_left = left_read(record);
   int beginPos = record.beginPos;
   int endPos = record.beginPos + getAlignmentLengthInRef(record);    
-  int pair_begin = read_is_left ? beginPos : beginPos + record.tLen;
+  int pair_begin = read_is_left ? beginPos : record.pNext;
   int pair_end = pair_begin + abs(record.tLen);
 
   if (only_tLen_info ) {// silly to use only insert length info. (1) mid reads with small insert length will be wrongly interpreted. (2) many clip reads are ignored 

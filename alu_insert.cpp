@@ -712,8 +712,12 @@ void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & i
 	continue;
       }
       // unknown read
-      if ( (read_is_left and (record.beginPos) < clipLeft and record.pNext > clipLeft ) or 
-	   (!read_is_left and (record.pNext) < clipLeft and thisEnd > clipLeft ) ) {
+//      if ( (read_is_left and (record.beginPos) < clipLeft and record.pNext > clipLeft ) or 
+//	   (!read_is_left and (record.pNext) < clipLeft and thisEnd > clipLeft ) ) {
+      
+      int pair_begin = read_is_left ? record.beginPos : record.pNext;
+      int pair_end = pair_begin + abs(record.tLen);
+      if ( pair_begin <= clipLeft + offset_left and pair_end >= clipLeft - offset_left) { // change it same as delete_utils      
 	int rgIdx = get_rgIdx(rg_to_idx, record);
 	stringstream rg_ss;
 	rg_ss << " " << rgIdx << ":" << abs(record.tLen) + alucons_len;
@@ -1070,6 +1074,10 @@ int main( int argc, char* argv[] )
     filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, col_idx, true);
     string fn_vcf = path_del0 + int_to_string( pns.size()) + ".vcf";  
     combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf, pns, chrns, col_idx, true);  
+
+  } else if (opt == "debug") {
+    //chr1 25158703 25158703 299
+
 
   } else {
     cout << "unknown option ! \n";

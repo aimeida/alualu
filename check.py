@@ -90,7 +90,7 @@ def read_vcftxt(f_vcftxt):
                 seqs[i] += j
     return chr_pos, seqs
 
-def one_family(pn1, pn2, pn3, pos, allow_denovo):
+def one_family(pn1, pn2, pn3, pos, allow_denovo, verbose):
     def p2c(parent):
         if parent == '2':
             return [1]
@@ -101,10 +101,15 @@ def one_family(pn1, pn2, pn3, pos, allow_denovo):
         else:
             print "ERROR!"
     nlen = len(pn1)
+    npos = 0
     conflict_pos = []
     for i in range(nlen):
         from1 = p2c(pn1[i])
         from2 = p2c(pn2[i])
+        if (pn1[i] == '0' and pn2[i] == '0' and pn3[i] == '0'):
+            continue
+
+        npos += 1
         if int(pn3[i]) not in [sum(x) for x in itertools.product(from1, from2)]:
             if allow_denovo: 
                 if not (pn1[i] == '0' and pn2[i] == '0' and pn3[i] == '1'):
@@ -112,22 +117,29 @@ def one_family(pn1, pn2, pn3, pos, allow_denovo):
             else:
                 conflict_pos.append(pos[i])
 
-    conflict_rate = len(conflict_pos) / float(nlen)
-    print 'allow denovo', allow_denovo
-    print 'confliction rate: %.1f %%, %d out of %d positions' %(conflict_rate * 100, len(conflict_pos), nlen)
-    print '\n'.join(conflict_pos)
+    conflict_rate = len(conflict_pos) / float(npos)
+    print '%d positions OK, confliction rate: %.1f %% for %d positions' %(npos - len(conflict_pos), conflict_rate * 100, npos)
+    if verbose:
+        print '\n'.join(conflict_pos)
 
 
 if __name__ == "__main__":
     
     opt = sys.argv[1]
     
-    allow_denovo = False
+    allow_denovo = True 
+    #allow_denovo = False
+    verbose = False
 
     if opt == '1':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.pos'
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.vcf'
+        
+    elif opt == '1b':
+        file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
+        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_backup/29.pos'
+        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_backup/29.vcf'
         
     elif opt == '2':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
@@ -141,24 +153,32 @@ if __name__ == "__main__":
 
         
     print 'checking vcf file of', f_vcf
+    print 'allow denovo', allow_denovo
 
     pn_used = map(lambda x:x.strip(), file(file_pn_used).readlines())
     f_vcftxt = f_vcf + '.txt'
     f_vcftxt2 = f_vcftxt + '.filter'
 
     idx = get_idx(f_vcf, pn_used)
-    vcf_to_text(pn_used, idx, f_vcf, f_vcftxt)        
-    filter_chisq(f_llh, f_vcftxt, f_vcftxt2) 
+    # vcf_to_text(pn_used, idx, f_vcf, f_vcftxt)        
+    # filter_chisq(f_llh, f_vcftxt, f_vcftxt2) 
+    
+    npos = len(file(f_vcftxt2).readlines()) - 1
+    print npos, 'positions considered'
+
     trio_group= parse_trio_group(f_vcf)
     chr_pos, seqs = read_vcftxt(f_vcftxt2)
     for gn, v1 in trio_group.items():
-        if gn != '1006':
+        
+        verbose = True
+        if gn != '1006': 
             continue
+        
         if len(v1) != 3:
             continue
         pn_father = v1['F']
         pn_mother = v1['M']
         pn_child = v1['C']
         print 'check family ', gn
-        one_family(seqs[pn_father], seqs[pn_mother], seqs[pn_child], chr_pos, allow_denovo)
+        one_family(seqs[pn_father], seqs[pn_mother], seqs[pn_child], chr_pos, allow_denovo, verbose)
         
