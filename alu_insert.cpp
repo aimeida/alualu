@@ -663,6 +663,31 @@ void exactpos_pns(string fn_input, string path1, string fn_output){
   fout.close();
 }
 
+string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clipRight, int offset_left, int offset_right ) {
+  int thisEnd = record.beginPos + (int)getAlignmentLengthInRef(record);   
+  if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) {
+    if ( ( thisEnd < clipLeft and !hasFlagRC(record) ) or ( record.beginPos > clipRight and hasFlagRC(record) ) ) return "alu_read";
+    else return "useless";    
+  }
+  // otherwise only look at proper mapped reads 
+  bool read_is_left = left_read(record);
+  if ( hasFlagRC(record) == hasFlagNextRC(record) or read_is_left == hasFlagRC(record) ) 
+    return "useless";
+  if ( ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - clipRight) <=  offset_right) or
+       ( has_soft_last(record, CLIP_BP) and abs( thisEnd - clipLeft ) <= offset_left ) )
+    return "clip_read";
+  // skip reads, fixme: add align_aluSkip(record.seq, fasta_fh, length(record.seq) ??? in ins_del.cpp
+  if ( (record.beginPos) < clipLeft - CLIP_BP and thisEnd > clipLeft + CLIP_BP and count_non_match(record) <= 5 ) 
+    return "skip_read";
+  // unknown read
+  //  if ( (read_is_left and (record.beginPos) < clipLeft and record.pNext > clipLeft ) or (!read_is_left and (record.pNext) < clipLeft and thisEnd > clipLeft))
+  int pair_begin = read_is_left ? record.beginPos : record.pNext;
+  int pair_end = pair_begin + abs(record.tLen);
+  if ( pair_begin <= clipLeft + offset_left and pair_end >= clipLeft - offset_left) 
+    return "unknow_read";
+  return "useless";
+}
+
 void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_output,  map < int, vector<ALUREAD_INFO> > & rid_alureads, map < int, vector < string >  > & insertBegin_unknowreads, map < int, int > & insertBegin_skipreads,  map < int, int > & insertBegin_midreads, map<string, int> & rg_to_idx, int alucons_len) {
 
   ofstream fout(file_output.c_str());    
@@ -681,69 +706,49 @@ void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & i
       continue;    
 
     map < seqan::CharString, string > rg_str;
-    std::set < seqan::CharString > clipreads_qname;
-    std::set < seqan::CharString > skipreads_qname;
+    map < seqan::CharString, string > qname_iread;
+
     while ( true ) {
       read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
       if (read_status == "stop" ) break;
-      if (read_status == "skip" or !QC_insert_read(record)) continue;
-      int thisEnd = record.beginPos + (int)getAlignmentLengthInRef(record);   
-      if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) {
-	if ( ( thisEnd < clipLeft and !hasFlagRC(record) ) or 
-	     ( record.beginPos > clipRight and hasFlagRC(record) ) ) {
-	  ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, clipLeft, record.pNext, pn, hasFlagRC(record)==hasFlagNextRC(record) );
-	  rid_alureads[record.rNextId].push_back(one_aluRead);
-	}
+      if (read_status == "skip" or !QC_insert_read(record)) continue;      
+
+      map < seqan::CharString, string >::iterator qi = qname_iread.find(record.qName);
+      if ( qi != qname_iread.end() and qi->second != "unknow_read")
 	continue;
-      }      
-      // otherwise only look at proper mapped reads 
-      bool read_is_left = left_read(record);
-      if ( hasFlagRC(record) == hasFlagNextRC(record) or read_is_left == hasFlagRC(record) ) continue;       
-      // clip reads
-      if ( ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - clipRight) <=  offset_right) or
-	   ( has_soft_last(record, CLIP_BP) and abs( thisEnd - clipLeft ) <= offset_left ) ) {  	    
+
+      string iread = classify_read(record, clipLeft, clipRight, offset_left, offset_right);      
+      if ( iread == "alu_read") {
+	ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, clipLeft, record.pNext, pn, hasFlagRC(record)==hasFlagNextRC(record) );
+	rid_alureads[record.rNextId].push_back(one_aluRead);
+      } else if ( iread == "clip_read") {
 	fout << clipLeft << " " << record.seq  <<  " clipRead -1 " << record.qName << endl;
-	clipreads_qname.insert(record.qName);
-	continue;
-      }      
-      // skip reads, fixme: add align_aluSkip(record.seq, fasta_fh, length(record.seq) ??? in ins_del.cpp
-      if ( (record.beginPos) < clipLeft - CLIP_BP and thisEnd > clipLeft + CLIP_BP and count_non_match(record) <= 5 ) {
-	skipreads_qname.insert(record.qName);
-	continue;
-      }
-      // unknown read
-//      if ( (read_is_left and (record.beginPos) < clipLeft and record.pNext > clipLeft ) or 
-//	   (!read_is_left and (record.pNext) < clipLeft and thisEnd > clipLeft ) ) {
-      
-      int pair_begin = read_is_left ? record.beginPos : record.pNext;
-      int pair_end = pair_begin + abs(record.tLen);
-      if ( pair_begin <= clipLeft + offset_left and pair_end >= clipLeft - offset_left) { // change it same as delete_utils      
+	string ir = "";   
+	get_mapVal(qname_iread, record.qName, ir);  // skip reads can not be assigned as clip reads!
+	if ( ir != "skip_read")  qname_iread[record.qName] = iread;
+      }  else if ( iread == "skip_read") {    
+	qname_iread[record.qName] = iread;
+      }  else if ( iread == "unknow_read") {    
+	qname_iread[record.qName] = iread;
 	int rgIdx = get_rgIdx(rg_to_idx, record);
 	stringstream rg_ss;
 	rg_ss << " " << rgIdx << ":" << abs(record.tLen) + alucons_len;
-	rg_str[record.qName] = rg_ss.str();	
+	rg_str[record.qName] = rg_ss.str();
       }
     }
-    int err_cnt = 0; 
-    if ( !clipreads_qname.empty() and !skipreads_qname.empty()) 
-      for ( std::set < seqan::CharString >::iterator si = skipreads_qname.begin(); si != skipreads_qname.end(); si++) {
-	std::set < seqan::CharString >::iterator ci = clipreads_qname.find( *si );
-	if ( ci != clipreads_qname.end()) {
-	  clipreads_qname.erase(ci);  // more sure about skipreads
-	  err_cnt += 1;
-	}
+    
+    for (map < seqan::CharString, string >::iterator qi = qname_iread.begin(); qi != qname_iread.end(); qi++ ) {
+      if ( qi->second == "skip_read") 
+	addKey(insertBegin_skipreads, clipLeft, 1);
+      else if ( qi->second == "clip_read") 
+	addKey(insertBegin_midreads, clipLeft, 1);
+      else if ( qi->second == "unknow_read") {
+	insertBegin_unknowreads[clipLeft].push_back( rg_str[qi->first] );	
       }
-    //if (err_cnt) cout << err_cnt << " err reads are discarded\n"; 
-    insertBegin_skipreads[clipLeft] = skipreads_qname.size();
-    insertBegin_midreads[clipLeft] = clipreads_qname.size();
+    }
     
-    for ( map < seqan::CharString, string >::iterator ri = rg_str.begin(); ri != rg_str.end(); ri++) 
-      if ( clipreads_qname.find(ri->first) == clipreads_qname.end() and skipreads_qname.find(ri->first) == skipreads_qname.end() ) 
-	insertBegin_unknowreads[clipLeft].push_back( ri->second );
-    rg_str.clear(); 
-    
-    //cout << clipLeft  << "  "  <<  clipreads_qname.size() << endl;
-
+    rg_str.clear();     
+    cout << clipLeft  << endl;
   }
   fout.close();
 }
@@ -1057,6 +1062,7 @@ int main( int argc, char* argv[] )
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     write_tmp2(file_tmp1, file_tmp2, pdf_rg);
     EmpiricalPdf::delete_map(pdf_rg);
+
     move_files(path_del0 + "tmp1s/", file_tmp1);
     move_files(path_del0 + "tmp2s/", file_tmp2);
 
@@ -1077,6 +1083,30 @@ int main( int argc, char* argv[] )
 
   } else if (opt == "debug") {
     //chr1 25158703 25158703 299
+    string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
+    string chrn = "chr1";
+    int clipLeft = 25158703;
+    int clipRight = 25158703;
+
+    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
+    string bai_input = bam_input + ".bai";      
+    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
+    seqan::BamAlignmentRecord record;  
+
+    int region_begin = clipLeft - ALU_FLANK; // no need for larger flank region, if i only want to build consensus
+    int region_end = clipRight + ALU_FLANK;	
+    bam_fh->jump_to_region(chrn, region_begin, region_end);
+
+    string read_status;
+    
+    while ( true ) {
+      read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
+      if (read_status == "stop" ) break;
+      if (read_status == "skip" or !QC_insert_read(record)) continue;      
+      string iread = classify_read(record, clipLeft, clipRight, CLIP_BP_LEFT, CLIP_BP_RIGHT);
+      if ( iread != "useless") 
+	cout << iread << " " << record.qName << endl;
+    }
 
 
   } else {
