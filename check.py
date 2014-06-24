@@ -131,22 +131,22 @@ if __name__ == "__main__":
     #allow_denovo = False
     verbose = False
 
-    if opt == '1':
+    if opt == 'i0':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.pos'
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.vcf'
+        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_0/29.pos'
+        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_0/29.vcf'
         
-    elif opt == '1b':
+    elif opt == 'i1':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_backup/29.pos'
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_backup/29.vcf'
+        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.pos'
+        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.vcf'
         
-    elif opt == '2':
+    elif opt == 'd1':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.pos' 
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.vcf' 
 
-    elif opt == '3':
+    elif opt == 'd0':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/30.pos' 
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/30.vcf' 
@@ -160,8 +160,8 @@ if __name__ == "__main__":
     f_vcftxt2 = f_vcftxt + '.filter'
 
     idx = get_idx(f_vcf, pn_used)
-    # vcf_to_text(pn_used, idx, f_vcf, f_vcftxt)        
-    # filter_chisq(f_llh, f_vcftxt, f_vcftxt2) 
+    vcf_to_text(pn_used, idx, f_vcf, f_vcftxt)        
+    filter_chisq(f_llh, f_vcftxt, f_vcftxt2) 
     
     npos = len(file(f_vcftxt2).readlines()) - 1
     print npos, 'positions considered'
@@ -170,8 +170,9 @@ if __name__ == "__main__":
     chr_pos, seqs = read_vcftxt(f_vcftxt2)
     for gn, v1 in trio_group.items():
         
+        ## debugging
         verbose = True
-        if gn != '1006': 
+        if gn != '1473': 
             continue
         
         if len(v1) != 3:

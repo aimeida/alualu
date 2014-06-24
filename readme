@@ -59,8 +59,8 @@ config.decode: used by Yu in Iceland, where the old files sitting
         Note: some PNs with extreme large amount of reads (that might be alu mate). (almost 10 times of other PNs)
               eg: MXQBTEO, HYKJEJS, EIVHBDQ, KSRDJGR
               EITHER:  > 4G memory to fun; OR: ignore them
-              I chose to ignore them. For each chromosome, 15% individuals with extremely high potential insert positions are ignored. 
-              (search 0.85 in alu_insert.cpp in order to modify this number)
+              I chose to ignore them. For each chromosome, about 15% individuals with extremely high potential insert positions are ignored. 
+
 	
    opt = "clipreads_by_pn":
      for each pn, write the broken reads at these insertion positions to files at (@C)file_clip_reads/chr1/pn_minfreq_maxfreq.

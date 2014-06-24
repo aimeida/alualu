@@ -3,20 +3,19 @@ file_bam_prefix /home/qianyuxx/faststorage/AluDK/inputs/bamFile/
 file_test_bam_prefix /home/qianyuxx/faststorage/AluDK/inputs/test_bamFile/
 file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/alu_
 file_fa_prefix /home/qianyuxx/faststorage/AluDK/inputs/fa_hg19/
+## insert_length_dist
+file_insertlen_count /home/qianyuxx/faststorage/AluDK/outputs/insert_len/count/
+file_dist_prefix /home/qianyuxx/faststorage/AluDK/outputs/insert_len/prob/
+pdf_param 100_1000_5
 ## delete_search
 minLen_alu_del 200
 file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/	
 coverage_max 90	   
 alu_flank 600	      
-## insert_length_dist
-file_insertlen_count /home/qianyuxx/faststorage/AluDK/outputs/insert_len/count/
-file_dist_prefix /home/qianyuxx/faststorage/AluDK/outputs/insert_len/prob/
-pdf_param 100_1000_5
 ## alu_insert
 file_repeatMask /home/qianyuxx/faststorage/AluDK/inputs/raw_data/rmsk.hg19
 file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/		  
 file_alu_insert1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/
-## insert_pos
 file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used  ### manually create, otherwise use each pn.
 file_clip_reads /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/clip/
 freq_min 0.02
