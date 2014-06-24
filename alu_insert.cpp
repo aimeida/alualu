@@ -742,8 +742,7 @@ void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & i
 	stringstream rg_ss;
 	rg_ss << " " << rgIdx << ":" << abs(record.tLen) + alucons_len;
 	rg_str[record.qName] = rg_ss.str();
-      }
-      
+      }      
     }
     
     for (map < seqan::CharString, string >::iterator qi = qname_iread.begin(); qi != qname_iread.end(); qi++ ) {
@@ -758,15 +757,13 @@ void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & i
     }
     
     rg_str.clear();     
-    cout << clipLeft  << endl;
+    // cout << clipLeft  << endl;
   }
   fout.close();
 }
 
-void add_aluReads(BamFileHandler *bam_fh, string file_cons,  map < int, vector<ALUREAD_INFO> > & rid_alureads, AluconsHandler *alucons_fh, map < int, int > & insertBegin_midreads) {
-  fstream fout;
-  map < string, bool > align_alucons_pass;
-  fout.open(file_cons.c_str(), fstream::app|fstream::out);
+void add_aluReads(BamFileHandler *bam_fh, fstream & fout,  map < int, vector<ALUREAD_INFO> > & rid_alureads, AluconsHandler *alucons_fh, map < int, int > & insertBegin_midreads) {
+  map < string, bool > align_alucons_pass; // same sequence no need to align twice
   seqan::BamAlignmentRecord record;
   for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
     for ( vector<ALUREAD_INFO>::iterator ai = (ri->second).begin(); ai != (ri->second).end(); ai++ ) {
@@ -774,8 +771,8 @@ void add_aluReads(BamFileHandler *bam_fh, string file_cons,  map < int, vector<A
       while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
 	if (record.qName == (*ai).qName) {
 	  string record_seq = toCString(record.seq);
-	  // fixme: why ok at alu_insdel "reverseComplement(record_seq)" without seqan:: ?
 	  if ((*ai).sameRC)  seqan::reverseComplement(record_seq); 
+
 	  map < string, bool >::iterator api = align_alucons_pass.find(record_seq);
 	  if ( api != align_alucons_pass.end() ) {
 	    if ( api->second) {
@@ -791,6 +788,7 @@ void add_aluReads(BamFileHandler *bam_fh, string file_cons,  map < int, vector<A
 	      addKey(insertBegin_midreads, (*ai).clipLeft, 1);
 	    }
 	  }
+	  
 	  break;
 	}
       }  // this pos, done
@@ -798,7 +796,37 @@ void add_aluReads(BamFileHandler *bam_fh, string file_cons,  map < int, vector<A
     //cout << ri->first << " " << (ri->second).size() << endl;
     (ri->second).clear();
   }
-  fout.close();
+}
+
+void add_aluReads2(BamFileHandler *bam_fh, string fn_input, fstream &fout, int query_rid, vector<ALUREAD_INFO> & aluinfos, map < int, int > & insertBegin_midreads) {
+  ifstream fin(fn_input.c_str());
+  assert(fin);
+  stringstream ss;
+  string line, qname;
+  std::set <string> qnames;
+  getline(fin,line);
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line); 
+    ss >> qname;
+    qnames.insert(qname);
+  }
+  fin.close();
+
+  for ( vector<ALUREAD_INFO>::iterator ai = aluinfos.begin(); ai != aluinfos.end(); ai++ ) {
+    if ( qnames.find( toCString( (*ai).qName) ) != qnames.end() and bam_fh->jump_to_region( query_rid, (*ai).pos - 20, (*ai).pos + 20) ) {
+      seqan::BamAlignmentRecord record;
+      while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
+	if (record.qName == (*ai).qName) {
+	  string record_seq = toCString(record.seq);
+	  if ((*ai).sameRC)  seqan::reverseComplement(record_seq); 
+	  fout << (*ai).clipLeft << " " << record_seq << " aluRead " << (*ai).sameRC << " " <<  record.qName <<  endl;	      
+	  addKey(insertBegin_midreads, (*ai).clipLeft, 1);
+	  break;
+	}
+      }
+    }
+  }  
+  qnames.clear();
 }
   
 void write_tmp1(string chrn, vector< pair<int, int> > & insert_pos, ofstream & fout, map < int, vector< string> > & insertBegin_unknowreads, map < int, int > & insertBegin_skipreads,  map < int, int > & insertBegin_midreads,  int alucons_len) {
@@ -1029,6 +1057,8 @@ int main( int argc, char* argv[] )
   } else if ( opt == "fixed_delete0_pn" ) {   // write fasta reads for consensus, use clip reads first 
     assert (argc == 4);
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
+    string filter_alu_read = "use_tmp1_file";  // more useful informative reads are used !!
+
     std::set <string> pns_used;
     read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns_used); // some pn is ignored, due to too many reads
     if ( pns_used.find(pn) == pns_used.end() ){ // a bit slow
@@ -1061,7 +1091,22 @@ int main( int argc, char* argv[] )
       map < int, int > insertBegin_skipreads;   
       map < int, int > insertBegin_midreads;   // midreads (inserting a alu seq) = clip + alu reads 
       clip_skip_unknow_reads(pn, *ci, insert_pos, bam_fh, file_output, rid_alureads, insertBegin_unknowreads, insertBegin_skipreads, insertBegin_midreads, rg_to_idx, alucons_fh->seq_len);      
-      add_aluReads(bam_fh, file_output, rid_alureads, alucons_fh, insertBegin_midreads); // get seq from bam instead of genome.fa      
+      
+      fstream fout; // one file for each pn
+      fout.open(file_output.c_str(), fstream::app|fstream::out);
+      if ( filter_alu_read == "use_alucons" ) {
+	add_aluReads(bam_fh, fout, rid_alureads, alucons_fh, insertBegin_midreads); // get seq from bam instead of genome.fa      
+      } else if ( filter_alu_read == "use_tmp1_file" ) {	
+	for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
+	  string chrn;
+	  if (bam_fh->get_chrn(ri->first, chrn) ) {
+	    string file_tmp1 =  path0 + chrn +"/" + pn + ".tmp1";	    
+	    add_aluReads2(bam_fh, file_tmp1, fout, ri->first, ri->second, insertBegin_midreads);	    
+	  }
+	}
+      }      
+      fout.close();
+
       sort_file_by_col<int> (file_output, 1, true);  // sort by clip pos
       rid_alureads.clear();      
       write_tmp1(*ci, insert_pos, fout1, insertBegin_unknowreads,  insertBegin_skipreads, insertBegin_midreads, alucons_fh->seq_len);
@@ -1139,7 +1184,7 @@ int main( int argc, char* argv[] )
     //bool verbose = true;
     bool verbose = false;
 
-    if (verbose) {
+    if (verbose) {  // print more reads
         while ( true ) {
           string read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
           if (read_status == "stop" ) break;
@@ -1153,9 +1198,8 @@ int main( int argc, char* argv[] )
 	  cout << iread << " " ; debug_print_read(record, cout);      
         }
 	
-    } else {
+    } else {  // print useful reads only
 
-      cout << "count only\n";
       while ( true ) {
 	string read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
 	if (read_status == "stop" ) break;

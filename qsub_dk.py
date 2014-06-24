@@ -46,5 +46,5 @@ if __name__ == '__main__':
 
     pn_all = map(lambda x:x.strip(), file('/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used').readlines())
     #print2(pn_all, path1+"q_ai/", path1, path1 + 'opt3/', False)
-    print2(pn_all, path1+"q_ai/", path1, path1 + 'debug/', True)
+    print2(pn_all, path1+"q_ai/", path1, path1 + 'opt3/', True)
     

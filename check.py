@@ -128,7 +128,7 @@ if __name__ == "__main__":
     opt = sys.argv[1]
     
     allow_denovo = True 
-    #allow_denovo = False
+#    allow_denovo = False
     verbose = False
 
     if opt == 'i0':
@@ -170,10 +170,10 @@ if __name__ == "__main__":
     chr_pos, seqs = read_vcftxt(f_vcftxt2)
     for gn, v1 in trio_group.items():
         
-        ## debugging
-        verbose = True
-        if gn != '1473': 
-            continue
+##         ## debugging
+##         verbose = True
+##         if gn != '1473': 
+##             continue
         
         if len(v1) != 3:
             continue
