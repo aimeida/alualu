@@ -88,7 +88,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEn
   return useless_read;  // alu_flank is too large, we have a lot reads not useful 
 }
 
-void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00, bool switch_01) {
+void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
   stringstream ss;
   string line, chrn, tmpfield;
   int aluBegin, flag;
@@ -114,8 +114,7 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
 	ss >> chrn >>  aluBegin;
 	for (int ti = 0; ti < col_00 - 3; ti++) ss >> tmpfield;
 
-	if ( ! switch_01 ) ss >> p0 >> p1 >> p2 ;
-	else ss >> p2 >> p1 >> p0 ;
+	ss >> p0 >> p1 >> p2 ;
 	  
 	if (chrn != *ci) {
 	  if (flag) continue;
@@ -161,7 +160,7 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
   fout.close();
 }
 
-bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00, bool switch_01) {
+bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
   ifstream fin;
   stringstream ss;
   string line, chrn, tmp1, tmp2;
@@ -202,8 +201,7 @@ bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, v
 	ss.clear(); ss.str( line );
 	ss >> chrn >>  aluBegin >> aluEnd;
 	for (int ti = 0; ti < col_00 - 4; ti++) ss >> tmpfield;
-	if ( ! switch_01 ) ss >> p0 >> p1 >> p2 ;
-	else ss >> p2 >> p1 >> p0 ;
+	ss >> p0 >> p1 >> p2 ;
 	if (chrn != *ci) {
 	  if (flag) continue;
 	  else break;
