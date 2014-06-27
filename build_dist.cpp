@@ -7,7 +7,7 @@
 void write_counts(map <seqan::CharString, map<int, int> > &rg_lenCounts, string &rg_lenCnt_file){
   map <seqan::CharString, map<int, int> >::iterator sii;
   map<int, int>::iterator si;
-  cerr << "output to: " << rg_lenCnt_file << endl;
+  cout << "output to: " << rg_lenCnt_file << endl;
   for (sii = rg_lenCounts.begin(); sii != rg_lenCounts.end() ; sii++) {
     ofstream fout((rg_lenCnt_file + toCString(sii->first)).c_str());
     for (si = (sii->second).begin(); si != (sii->second).end(); si++) 
@@ -60,7 +60,7 @@ void write_pdf(string &f_count, string &f_prob, int len_min, int len_max, int bi
   for (map<int, int>::iterator bc = bin_counts.begin(); bc != bin_counts.end(); bc++)
     fout << len_min + (bc->first) * bin_width + half_bin_width << " " << (bc->second) / (float)counts << endl;
   fout.close();
-  cerr << "written into " << f_prob << endl;
+  cout << "written into " << f_prob << endl;
 }
 
 
@@ -92,7 +92,7 @@ int main( int argc, char* argv[] )
       fout << seqan::toCString(ri->first) << endl;  // need to use toCString, otherwise has ^@ in the ending (due to binary file)
     fout.close(); 
     
-    cerr << "counting: " << pn << " done\n";
+    cout << "counting: " << pn << " done\n";
     stringstream ss;
     string pdf_param = cf_fh.get_conf( "pdf_param");
     ss.str(pdf_param);
@@ -111,7 +111,7 @@ int main( int argc, char* argv[] )
     while (fin >> rg) {
       string f_count = path_count + pn + ".count." + rg;
       string f_prob = path_prob + pn + ".count." + rg + "." + pdf_param;
-      cerr << "Reading " << f_count << "\nWriting " << f_prob << endl;
+      cout << "Reading " << f_count << "\nWriting " << f_prob << endl;
       write_pdf(f_count, f_prob, len_min, len_max, bin_width);    
     }
     fin.close();

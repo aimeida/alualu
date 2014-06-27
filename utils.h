@@ -27,6 +27,12 @@ struct MyUpper : public unary_function<char,char> {
 inline string get_name_rg(string prefix, string pn){ return prefix + "RG." + pn;}
 inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_param){ return prefix + pn + ".count." + rg + "." + pdf_param; }
 
+inline string get_name_suffix(float freq_min, float freq_max) { // used for alu_insert 
+  stringstream ss;
+  ss << "_" << setprecision(3) << freq_min << "_" << setprecision(3) << freq_max;
+  return ss.str();   // eg:  _0.02_1
+}
+
 inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);}
 
 inline bool QC_read( seqan::BamAlignmentRecord &record){  

@@ -47,12 +47,13 @@ using namespace std;
 #define CLIP_BP_LEFT 5
 #define CLIP_BP_RIGHT 30
 #define MIN_VOTE_FREQ 0.4
-// macros for ins_del
-#define REF_EXT_LEN 150 // extend exact insert pos to both sides. This data, max read len = 135
-#define ALU_INSERT_FLANK 400  // 600 (alu_delete.cpp) - 200 (min alu length)
 #define ALUCONS_SIMILARITY 0.8
 #define MIN_READS_CNT 3 // min interesting reads, in order to consider this pos
-#define MIN_MATCH_LEN 60 // in order to use this read
+#define CON_LEN_RESOLUTION 6  // how accurate the estimation should be 
+
+inline int ceil_by_resolution(int x, int r) {
+  return r * ceil ( (float) x / (float) r );
+}
 
 typedef pair<int, string > IntString;
 inline bool compare_IntString(const IntString & a, const IntString & b) {
@@ -191,7 +192,7 @@ string get_pn(string pn_file, int idx_pn);
 void get_pn(string pn_file, map<int, string> &ID_pn);
 void read_file_pn_used(string fn, std::set <string> & pns_used);
 void read_file_pn_used(string fn, vector <string> & pns_used);
-int is_nonempty_file(string fn);
+int check_file_size(string fn);
 void nonempty_files_ls(string path1, vector <string> fns);
 
 

@@ -41,11 +41,6 @@ public:
   ALUREAD_INFO(seqan::CharString & qn, int cl, int p, string pn, bool t) : qName(qn), clipLeft(cl), pos(p), pn(pn), sameRC(t) {}
 };
 
-inline string get_name_suffix(float freq_min, float freq_max) {
-  stringstream ss;
-  ss << "_" << setprecision(3) << freq_min << "_" << setprecision(3) << freq_max;
-  return ss.str();   // eg:  _0.02_1
-}
 
 bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
@@ -54,7 +49,7 @@ bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align
 bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose = false);
 bool align_alu_cons(string &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th);
 int align_alu_cons_call(string & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th);
-bool align_aluSkip(seqan::CharString & seq_read, seqan::CharString & seq_ref, int readLen, float th_score = 0.8, float th_sim = 0.9);
+int align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);
 
 // following, depreciated
 string parse_alu_type(string alu_name);

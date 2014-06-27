@@ -143,6 +143,43 @@ int align_alu_cons_call(string & ref_fa, AluconsHandler *alucons_fh, float & sim
   return 0;
 }
 
+int align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
+  const int max_diff_cnt = 6;
+  refBegin = 0, refEnd = 0; // initial 
+  int shortLen = shortSeq.size();
+  TAlign align;
+  seqan::Score<int> scoringScheme(0, -2, -2, -4); 
+  resize(rows(align), 2);
+  assignSource(row(align,0), shortSeq);  // 2,3
+  assignSource(row(align,1), longSeq);   // 1,4, free gap at end
+  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
+  int long0 = toViewPosition(row(align, 1), 0);
+  int long1 = toViewPosition(row(align, 1), longSeq.size());
+  int short0 = toViewPosition(row(align, 0), 0);
+  int short1 = toViewPosition(row(align, 0), shortLen);
+  if ( (short0 < long0) or (short1 > long1) or ( short1 - short0 - shortLen >= max_diff_cnt ) )
+    return 0;
+
+  TRow &row0 = row(align,0);
+  TRowIterator it0 = begin(row0);
+  TRow &row1 = row(align,1);
+  TRowIterator it1 = begin(row1);
+  int i = 0, dif = 0;
+  while ( i++ < short0 ) {  it0++; it1++; }
+  while ( i++ <= short1 ) {
+    if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
+    it0++; it1++;
+  }
+  if ( dif <= max_diff_cnt) {
+    if ( clipLen > 0 )  
+      refEnd = short0 + clipLen;
+    if ( clipLen < 0 )  
+      refBegin = short1 + clipLen;
+    ///cout << refBegin << " " << refEnd << " " << clipLen << " " << short0 << " " << short1 << endl;
+  }    
+  return 0;
+}
+
 void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID_pn, string chrn, string file_pn_used_output, float percentage_pn_used) {
   string line;
   int ni;

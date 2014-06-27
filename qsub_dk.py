@@ -10,7 +10,7 @@ def print1(pn_all, fn_path, path1, bin_path, fast_queue = True):
             print >>fout, "#PBS -q normal"
             print >>fout, "#PBS -l nodes=1:ppn=1"
             if fast_queue:
-                print >>fout, "#PBS -l walltime=0:59:0"
+                print >>fout, "#PBS -l walltime=0:30:0"
             print >>fout, "#PBS -N %d_%s" % (pi, pn)
             print >>fout, "cd %s" % path1
             #print >>fout, '%(bin_path)sbuild_dist config.dk build_dist %(pi)d'%locals() 
@@ -28,7 +28,7 @@ def print2(pn_all, fn_path, path1, bin_path, fast_queue = True):
             print >>fout, "#PBS -q normal"
             print >>fout, "#PBS -l nodes=1:ppn=1"
             if fast_queue:
-                print >>fout, "#PBS -l walltime=0:59:0"
+                print >>fout, "#PBS -l walltime=0:30:0"
             print >>fout, "#PBS -N %d_%s" % (pi, pn)
             print >>fout, "cd %s" % path1
             #print >>fout, '%(bin_path)salu_insert config.dk clipReads_by_pn %(pi)d'%locals()

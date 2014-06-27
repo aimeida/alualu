@@ -77,7 +77,7 @@ void read_file_pn_used(string fn, vector <string> & pns_used) {
   fin.close();
 }
 
-int is_nonempty_file(string fn){
+int check_file_size(string fn){
   FILE * pFile = fopen(fn.c_str(), "r");
   if (pFile == NULL) return -1; // not exist
   else {
@@ -97,7 +97,7 @@ void nonempty_files_ls(string path1, vector <string> fns){
   if (d) {
     while ( (dir = readdir(d))!=NULL )  {
       string fn = dir->d_name;
-      if (is_nonempty_file(fn)) fns.push_back(fn);
+      if (check_file_size(fn)) fns.push_back(fn);
     }
     closedir(d);
   }
