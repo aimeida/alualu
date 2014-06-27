@@ -18,7 +18,6 @@ void read_seq(string pn, string fn, map <string, vector<string> > & pos_seqs){
   fin.close();
 }
 
-
 bool read_Tseq(string fn, seqan::StringSet <TSeq> & seqs, bool allow_duplicate ) {
   ifstream fin( fn.c_str() );
   string line, pn, seq;
@@ -119,24 +118,25 @@ int main( int argc, char* argv[] )
   chrns.push_back("chr1");
 #endif       
 
-  string path_cons = cf_fh.get_conf("file_ins_cons");    
   std::set <string> pns_used;
   read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns_used); // some pn is ignored, due to too many reads
-  string pathClip = cf_fh.get_conf( "file_clip_reads");
-  string pathCons = cf_fh.get_conf( "file_ins_cons");
-  string fn_suffix = get_name_suffix(seqan::lexicalCast<float> (cf_fh.get_conf("freq_min")), seqan::lexicalCast<float> (cf_fh.get_conf("freq_max")) );
+  string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
+  string pathClip = path1 + "clip/";
+  string pathCons = path1 + "cons/";
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
+    check_folder_exists( pathCons + *ci + "_pos/") ;
+  }
+
 
   if (opt == "cons_reads_pns" ) {  // rewrite reads to another folder 
     
     for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
-      string path_tmp = path_cons + *ci + "_pos/";
-      check_folder_exists( path_tmp );
       map <string, vector<string> > pos_seqs;
       for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
-	read_seq(*pi, path_cons + *ci + "/" + *pi, pos_seqs);
+	read_seq(*pi, pathCons + *ci + "/" + *pi, pos_seqs);
       if (pos_seqs.empty()) continue;      
       for (map <string,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-	string file_cons1 = path_tmp + pi->first;
+	string file_cons1 = pathCons + *ci + "_pos/" + pi->first;
 	ofstream fout1(file_cons1.c_str());
 	for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
 	  fout1 << *si << endl;
@@ -159,7 +159,7 @@ int main( int argc, char* argv[] )
     if (clipPos)
       insert_pos.push_back( make_pair ( clipPos, clipPos) );
     else
-      read_first2col( pathClip + chrn + fn_suffix, insert_pos, true);   
+      read_first2col( pathClip + chrn, insert_pos, true);   
 
     bool allow_duplicate = false; 
     for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
@@ -203,7 +203,7 @@ int main( int argc, char* argv[] )
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
       string chrn = *ci;
       vector < pair<int, int> > insert_pos;
-      read_first2col( pathClip + chrn + fn_suffix ,insert_pos, true);   
+      read_first2col( pathClip + chrn ,insert_pos, true);   
       ofstream fout( (pathCons + chrn + "_cons_seqlen").c_str() );
       fout << "clipLeft insert_len cons_len\n";
       for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {

@@ -11,21 +11,13 @@ pdf_param 100_1000_5
 minLen_alu_del 200
 file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/	
 coverage_max 90	   
-alu_flank 600	      
 ## alu_insert
 file_repeatMask /home/qianyuxx/faststorage/AluDK/inputs/raw_data/rmsk.hg19
 file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/		  
 file_alu_insert1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/
 file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used  ### manually create, otherwise use each pn.
-file_clip_reads /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/clip/
-freq_min 0.02
-freq_max 1 
-bin_path /home/qianyuxx/faststorage/Alu/
-## ins_del
-file_ins_cons /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons/
-file_ins_del0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/delete0/   ## insert consensus alu (built from scratch) for each location
-file_ins_fixed_del0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/  ## insert a fixed alu seq for all locations 
 file_alu_cons /home/qianyuxx/faststorage/AluDK/inputs/alu_cons.fa	
 type_alu_cons AluY
-
+freq_min 0.02
+freq_max 1 
 

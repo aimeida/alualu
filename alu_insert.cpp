@@ -451,10 +451,10 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
 }
 
 // for each insertion region, combine reads from different pns 
-void combine_clipreads_by_pos(std::set<string> &pns_used, ConfigFileHandler & cf_fh, string fn_suffix, string chrn) {
+void combine_clipreads_by_pos(std::set<string> &pns_used, string path, string chrn) {
   map< pair<string, string>, vector<string> > regionPos_lines;
   for (std::set<string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
-    string file_input_clip = cf_fh.get_conf( "file_clip_reads") + chrn + "/" + *pi + fn_suffix;
+    string file_input_clip = path + chrn + "/" + *pi;
     ifstream fin(file_input_clip.c_str());
     if (!fin) {
       cout << "error " << file_input_clip <<  " missing \n";
@@ -472,7 +472,7 @@ void combine_clipreads_by_pos(std::set<string> &pns_used, ConfigFileHandler & cf
   } 
   map< pair<string, string>, vector<string> >::iterator ri;
   for (ri = regionPos_lines.begin(); ri != regionPos_lines.end(); ri ++) {
-    string file_output_clip = cf_fh.get_conf( "file_clip_reads") + chrn + "_pos/" + (ri->first).first + "_" + (ri->first).second;	
+    string file_output_clip = path + chrn + "_pos/" + (ri->first).first + "_" + (ri->first).second;	
     ofstream fout(file_output_clip.c_str() );
     for (vector<string>::iterator ii = (ri->second).begin(); ii != (ri->second).end(); ii++) 
       fout << *ii << endl;
@@ -926,20 +926,24 @@ int main( int argc, char* argv[] )
   chrns.push_back("chrY");
   
   string path0 = cf_fh.get_conf( "file_alu_insert0") ;    
-  string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
-  string pathClip = cf_fh.get_conf( "file_clip_reads");
-  string pathCons = cf_fh.get_conf("file_ins_cons");  // for consensus sequence
-  string pathDel0 = cf_fh.get_conf("file_ins_fixed_del0");  // write tmp0 file
-
   check_folder_exists(path0);
+  string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
   check_folder_exists(path1);
+  string pathClip = path1 + "clip/";
   check_folder_exists(pathClip);     
-  check_folder_exists( pathCons);
-  check_folder_exists( pathDel0);    
+  string pathCons = path1 + "cons/";
+  check_folder_exists(pathCons);
+  string pathDel0 = path1 + "fixed_delete0/";
+  check_folder_exists(pathDel0);    
 
+  string file_pn_used = cf_fh.get_conf( "file_pn_used");
   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
-    check_folder_exists(path0 + *ci +  "/");
+    check_folder_exists(path0 + *ci +  "/" );
+    check_folder_exists(pathClip + *ci +  "/");
+    check_folder_exists(pathClip + *ci + "_pos/");
+    check_folder_exists(pathCons + *ci);
   }
+
   
 #ifdef DEBUG_MODE   // only look at chr1 for now 
   cerr << "!!!! DEBUG_MODE: only chr1 tested\n";
@@ -999,7 +1003,6 @@ int main( int argc, char* argv[] )
     
   }  else if (opt == "combine_pos_pns") { // combine positions from multiple individuals
 
-    string file_pn_used = cf_fh.get_conf( "file_pn_used");
     ifstream fin(file_pn_used.c_str());
     if (!fin) {
       cerr << "which individuals should be used for further analysis?\n";
@@ -1028,7 +1031,7 @@ int main( int argc, char* argv[] )
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
     
     std::set <string> pns_used;
-    read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns_used); // some pn is ignored, due to too many reads
+    read_file_pn_used( file_pn_used, pns_used); // some pn is ignored, due to too many reads
     if ( pns_used.find(pn) == pns_used.end() ){
       cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
       return 0;
@@ -1039,25 +1042,21 @@ int main( int argc, char* argv[] )
     string file_fa = cf_fh.get_conf("file_fa_prefix");    
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {      
       string fin_pos = path1 + "insert_pos." + *ci + fn_suffix;      
-      string tmp_path = pathClip + *ci + "/";
-      check_folder_exists( tmp_path);
-      string fout_reads = tmp_path + pn + fn_suffix;
+      string fout_reads = pathClip + *ci + "/" + pn;
       FastaFileHandler * fasta_fh = new FastaFileHandler(file_fa + *ci + ".fa", *ci);
       clipreads_at_insertPos(pn, *ci, bam_fh, fasta_fh, fin_pos, fout_reads);
       delete fasta_fh;
     }
     delete bam_fh;
-    cout << "output to " << pathClip << "chr*/" << pn << fn_suffix << endl;
+    cout << "output to " << pathClip << "chr*/" << pn  << endl;
     
   } else if ( opt == "clipReads_pos_pns" ) { 
-
     std::set <string> pns_used;
-    read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns_used); // some pn is ignored, due to too many reads
+    read_file_pn_used( file_pn_used, pns_used); // some pn is ignored, due to too many reads
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      combine_clipreads_by_pos(pns_used, cf_fh, fn_suffix, *ci);
+      combine_clipreads_by_pos(pns_used, pathClip, *ci);
       string tmp_path = pathClip + *ci + "_pos/";
-      check_folder_exists( tmp_path );      
-      string file_clipPos = pathClip + *ci + fn_suffix;
+      string file_clipPos = pathClip + *ci;
       regions_pos_vote(tmp_path, file_clipPos + ".tmp");
       exactpos_pns(file_clipPos + ".tmp", tmp_path, file_clipPos);
     }
@@ -1068,7 +1067,7 @@ int main( int argc, char* argv[] )
     string filter_alu_read = "use_tmp1_file";  // more useful informative reads are used !!
 
     std::set <string> pns_used;
-    read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns_used); // some pn is ignored, due to too many reads
+    read_file_pn_used(file_pn_used, pns_used); // some pn is ignored, due to too many reads
     if ( pns_used.find(pn) == pns_used.end() ){ // a bit slow
       cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
       return 0;
@@ -1085,9 +1084,8 @@ int main( int argc, char* argv[] )
     ofstream fout1 ( file_tmp1.c_str());
     fout1 << "chr insertBegin insertEnd estimatedAluLen midCnt clipCnt unknowCnt unknowStr\n";
     for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
-      check_folder_exists( pathCons + *ci);
       string file_output = pathCons + *ci + "/" + pn;
-      string file_clipPos = pathClip + *ci + fn_suffix;
+      string file_clipPos = pathClip + *ci ;
       vector< pair<int, int> > insert_pos;      
       read_first2col( file_clipPos , insert_pos, true);   
       map < int, vector<ALUREAD_INFO>  > rid_alureads;       // info of alu reads 
@@ -1129,11 +1127,9 @@ int main( int argc, char* argv[] )
     move_files(pathDel0 + "tmp2s/", file_tmp2);
 
   } else if (opt == "fixed_vcf_pns") {
-    string pathDel0 = cf_fh.get_conf("file_ins_fixed_del0") ;
     vector <string> pns;
-    read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns); 
+    read_file_pn_used(file_pn_used, pns); 
     string path_input = pathDel0 + "tmp2s/";
-    
     string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";
     int col_idx =  get_col_idx(tmp_file_pn, "00");
     assert (col_idx == 7 );
