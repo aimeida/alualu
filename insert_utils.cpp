@@ -49,9 +49,19 @@ bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_f
   return true;
 }
 
+
+bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName) {
+  stringstream ss;
+  string tmp1, tmp2, sleft_right;
+  int clipPos;
+  ss.str( line );
+  ss >> pn >> tmp1 >> tmp2 >> sleft_right >> clipPos >> qName;
+  int match_offset =  ( sleft_right[0] == 'L') ? CLIP_BP_LEFT : CLIP_BP_RIGHT ;
+  return  abs(clipPos - clipLeft ) <= match_offset;
+}
+
 bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header) {
-  // modified based on pn_with_insertion() from previous commits, only keep clip read with very good mapping quality 
-  int ref_plus_bp = 10; // allow small indels
+  const int ref_plus_bp = 10; // allow small indels
   int score;
   seqan::CharString ref_fa;
   seqan::CharString read_clip_fa;

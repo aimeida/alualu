@@ -27,12 +27,6 @@ struct MyUpper : public unary_function<char,char> {
 inline string get_name_rg(string prefix, string pn){ return prefix + "RG." + pn;}
 inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_param){ return prefix + pn + ".count." + rg + "." + pdf_param; }
 
-inline string get_name_suffix(float freq_min, float freq_max) { // used for alu_insert 
-  stringstream ss;
-  ss << "_" << setprecision(3) << freq_min << "_" << setprecision(3) << freq_max;
-  return ss.str();   // eg:  _0.02_1
-}
-
 inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);}
 
 inline bool QC_read( seqan::BamAlignmentRecord &record){  
@@ -184,7 +178,7 @@ string get_cigar(seqan::BamAlignmentRecord &record);
 void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os = cout);
 bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region);
 int numOfBestHits(seqan::BamAlignmentRecord &record);
-void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int maxi = 0);
+void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int min_pn);
 
 
 #endif /*UTILS_H*/

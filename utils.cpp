@@ -490,22 +490,21 @@ void log10P_to_P(float *log_gp, float *gp, int max_logp_dif){
   }    
 }
 
-void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int maxi ) {
+void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int min_pn) {
   insert_pos.clear();
   ifstream fin(fn.c_str());
   assert(fin);
   stringstream ss;
-  string line;
+  string line, tmpv;
   if (has_header)  getline(fin, line); 
   int beginPos, endPos;
-  int ni = 0;
   while (getline(fin, line)) {
     ss.clear(); ss.str( line );  
     ss >> beginPos >> endPos;
-    ni ++ ;
-    if ( maxi > 0 and ni == maxi)
-      break;
-    insert_pos.push_back( make_pair(beginPos, endPos) );
+    int tmpn = 0;
+    while ( ss >> tmpv) tmpn++;
+    if ( tmpn >= min_pn )
+      insert_pos.push_back( make_pair(beginPos, endPos) );
   }
   fin.close();
 }

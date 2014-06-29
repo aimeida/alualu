@@ -87,19 +87,3 @@ int check_file_size(string fn){
     return size;  // empty OR >0
   }
 }
-
-
-void nonempty_files_ls(string path1, vector <string> fns){
-  DIR *d;
-  struct dirent *dir;
-  d = opendir(path1.c_str());
-  fns.clear();
-  if (d) {
-    while ( (dir = readdir(d))!=NULL )  {
-      string fn = dir->d_name;
-      if (check_file_size(fn)) fns.push_back(fn);
-    }
-    closedir(d);
-  }
-}
-

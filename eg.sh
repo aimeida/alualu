@@ -13,5 +13,6 @@
 # opt3/alu_insert config.dk fixed_delete0_pn 0
 # opt3/alu_insert config.dk fixed_vcf_pns 
 
-make OD=debug debug/alu_insert2
-debug/alu_insert2 config.dk delete0_pn
+make OD=opt3 opt3/alu_insert
+#debug/alu_insert config.dk clipReads_pos_pns
+

@@ -23,7 +23,6 @@
 using namespace std;
 
 // macro for alu_delete
-#define DEFAULT_READ_LEN 100 // if unknown, use default
 #define LOG10_RATIO_UB 3 // max log(OR) for a single read, estimated from quantile(0.95)/quantile(0.05), 1e3 to 1e4
 #define LOG10_GENO_PROB 5 // min genotype prob by reads 
 #define ALU_FLANK 600
@@ -31,25 +30,15 @@ using namespace std;
 #define CLIP_BP 10  // min length to be called soft clip 
 #define COVERAGE_HIGH 90
 // macro for alu_insert
-#define ALU_MIN_LEN 50  // min overlap in alu region
-#define INSERT_POS_GAP 40  // (seq, ref/alu_insertion, seq), max length of ref ( replaced by alu_insert)
 #define DISCORDANT_LEN 2000 
-#define REP_MASK_JOIN 200 
 #define INS_COVERAGE_MAX 6 // a random number, remove some high coverage regions 
 #define SCAN_WIN_LEN 400   // 0.99 quantile. 450 for 0.999 quantile. only approximate,different reading group differs
 #define LEFT_PLUS_RIGHT 3  // minimum sum of left and right reads
 #define MAX_LEN_REGION 100 // max length of insert region
 #define MAX_POS_DIF 50  // combine scanned insertion loci 
-#define NUM_PN_JOIN 10  // max number of pns to sort and join, only matters how fast it runs
-// macros for insert_pos
-#define FLANK_REGION_LEN 80
 #define ALIGN_END_CUT 10 // cut the last 10 bp while realign to reference
 #define CLIP_BP_LEFT 5
 #define CLIP_BP_RIGHT 30
-#define MIN_VOTE_FREQ 0.4
-#define ALUCONS_SIMILARITY 0.8
-#define MIN_READS_CNT 3 // min interesting reads, in order to consider this pos
-#define CON_LEN_RESOLUTION 6  // how accurate the estimation should be 
 
 inline int ceil_by_resolution(int x, int r) {
   return r * ceil ( (float) x / (float) r );
@@ -193,8 +182,5 @@ void get_pn(string pn_file, map<int, string> &ID_pn);
 void read_file_pn_used(string fn, std::set <string> & pns_used);
 void read_file_pn_used(string fn, vector <string> & pns_used);
 int check_file_size(string fn);
-void nonempty_files_ls(string path1, vector <string> fns);
-
-
 
 #endif /*COMMON_H*/

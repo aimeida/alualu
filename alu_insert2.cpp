@@ -85,8 +85,8 @@ int get_cons_seqlen(string file_input, const string & cons_seq ) {
   for (map < string, int >::iterator si = seq_clipLen.begin(); si != seq_clipLen.end(); si++) {
     int refBegin, refEnd;
     align_clip_to_consRef( si->first, cons_seq, refBegin, refEnd, si->second );
-    if (refBegin) addKey(refBegin_cnt, ceil_by_resolution(refBegin, CON_LEN_RESOLUTION), 1);
-    if (refEnd) addKey(refEnd_cnt, ceil_by_resolution(refEnd, CON_LEN_RESOLUTION), 1);
+    if (refBegin) addKey(refBegin_cnt, ceil_by_resolution(refBegin, CLIP_BP_LEFT), 1);
+    if (refEnd) addKey(refEnd_cnt, ceil_by_resolution(refEnd, CLIP_BP_LEFT), 1);
     //if (refBegin or refEnd) cout << "##" << refBegin << " " << refEnd << endl;      
   }
   if (refBegin_cnt.empty() or refEnd_cnt.empty()) 
@@ -159,7 +159,7 @@ int main( int argc, char* argv[] )
     if (clipPos)
       insert_pos.push_back( make_pair ( clipPos, clipPos) );
     else
-      read_first2col( pathClip + chrn, insert_pos, true);   
+      read_first2col( pathClip + chrn, insert_pos, true, 2);   
 
     bool allow_duplicate = false; 
     for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
@@ -200,10 +200,14 @@ int main( int argc, char* argv[] )
     
   } else if (opt == "delete0_pn" ) {  
     
+    int min_pn = 2;    
+    if (min_pn != 1)
+      cout << "NB: private insertions are ignored!\n";
+
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
       string chrn = *ci;
       vector < pair<int, int> > insert_pos;
-      read_first2col( pathClip + chrn ,insert_pos, true);   
+      read_first2col( pathClip + chrn ,insert_pos, true, min_pn);   
       ofstream fout( (pathCons + chrn + "_cons_seqlen").c_str() );
       fout << "clipLeft insert_len cons_len\n";
       for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
