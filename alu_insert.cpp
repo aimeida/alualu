@@ -366,34 +366,13 @@ bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string tmpn,  str
   return true;
 }
 
-void filter_pos_freq(string fn_input, string fn_output, float freq_min, float freq_max, int pn_cnt) {
-  ifstream fin(fn_input.c_str());
-  assert(fin);
-  ofstream fout(fn_output.c_str());
-  fout << "sum_LR_alumate regionBegin regionEnd pns\n";
-  stringstream ss;
-  string line, n_reads, refBegin, refEnd, pn;
-  while (getline(fin, line)) {
-    int n_pn = 0;
-    ss.clear(); ss.str( line );
-    ss >> n_reads >> refBegin >> refEnd;
-    while ( ss >> pn) n_pn ++ ;
-    float n_freq = (float)n_pn / pn_cnt; 
-    if ( n_freq <= freq_max and n_freq >= freq_min) 
-      fout << line << endl;
-  }
-  fin.close();
-  fout.close();
-}
-
 bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, FastaFileHandler *fasta_fh,  string fin_pos, string fout_reads) {
   const int FLANK_REGION_LEN = 80;
   ifstream fin( (fin_pos).c_str());
   if (!fin) return false;
   string line, numAluRead, _pn;
-  getline(fin, line); // skip header
   ofstream fout(fout_reads.c_str());
-  fout << "pn region_begin region_end left_right adj_clipPos qName clipPos cigar tLen seq\n" ;
+  fout << "pn region_begin region_end left_right adj_clipPos qName clipPos cigar\n" ;
   stringstream ss, ss_header;
   int region_begin, region_end, refBegin, refEnd;
   
@@ -667,7 +646,7 @@ void exactpos_pns(string fn_input, string path1, string fn_output, std::set < pa
       string line, pn, qName;
       while (getline(fin, line)) {
 	if (read_match_clipLeft(line, clipLeft, pn , qName))
-	  pn_qName[pn].insert(qName);
+	  pn_qName[pn].insert(qName);  // some reads are appear more than once 
       }
       fin.close();
     }
@@ -678,6 +657,27 @@ void exactpos_pns(string fn_input, string path1, string fn_output, std::set < pa
   }
   fout.close();
 }
+
+void get_clipReads(string file_input, string file_output, vector< pair<int, int> > & insert_pos) {
+  int cnt = 0;
+  ofstream fout(file_output.c_str());
+  for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
+    int clipLeft = (*pi).first;
+    ifstream fin(file_input.c_str());
+    assert(fin);
+    string line, pn, qName, cigar, seq;
+    getline(fin,line);
+    while (getline(fin, line)) 
+      if (read_match_clipLeft(line, clipLeft, pn, qName, cigar, seq)) {
+	fout << clipLeft << " " << seq <<  " " << cigar << endl;
+	cnt ++;
+      }
+    fin.close();
+  }
+  fout.close();
+  cout << "count  "  << cnt << endl;
+}
+
 
 bool is_clip_read(seqan::BamAlignmentRecord & record, int thisEnd, int clipLeft, int clipRight, int offset_left, int offset_right ) {  
   if ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - clipRight) <=  offset_right 
@@ -716,10 +716,9 @@ string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clip
   return "useless";
 }
 
-void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_output,  map < int, vector<ALUREAD_INFO> > & rid_alureads, map < int, vector < string >  > & insertBegin_unknowreads, map < int, int > & insertBegin_skipreads,  map < int, int > & insertBegin_midreads, map<string, int> & rg_to_idx, int alucons_len) {
-
-  ofstream fout(file_output.c_str());    
-  fout << "clipPos seq type_cigar RCcorrected_beginPos \n";   // seq is after correction 
+void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_clipreads,  map < int, vector<ALUREAD_INFO> > & rid_alureads, map<string, int> & rg_to_idx, int alucons_len) {
+  ofstream fout(file_clipreads.c_str());    
+  fout << "clipPos seq cigar beginPos \n";   // seq is after correction 
   seqan::BamAlignmentRecord record;
   string read_status;
   for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
@@ -732,9 +731,10 @@ void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & i
     int region_end = clipRight + ALU_FLANK;	
     if (! bam_fh->jump_to_region(chrn, region_begin, region_end)) 
       continue;    
+
     map < seqan::CharString, string > rg_str;
     map < seqan::CharString, string > qname_iread;
-
+    map < seqan::CharString, string > qname_foutStr;
     while ( true ) {
       read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
       if (read_status == "stop" ) break;
@@ -742,111 +742,98 @@ void clip_skip_unknow_reads(string pn, string chrn, vector< pair<int, int> > & i
       map < seqan::CharString, string >::iterator qi = qname_iread.find(record.qName);
       if ( qi != qname_iread.end() and qi->second != "unknow_read")
 	continue;
-
-      string iread = classify_read(record, clipLeft, clipRight, offset_left, offset_right);      
+      string iread = classify_read(record, clipLeft, clipRight, offset_left, offset_right);            
       if ( iread == "alu_read") {
-	ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, clipLeft, record.pNext, pn, hasFlagRC(record)==hasFlagNextRC(record) );
+	ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, clipLeft, record.pNext, hasFlagRC(record)==hasFlagNextRC(record) );
 	rid_alureads[record.rNextId].push_back(one_aluRead);
-      } else if ( iread == "clip_read") {
-	fout << clipLeft << " " << record.seq  << " " <<  get_cigar(record) << " " << record.beginPos << endl;
+      } else {
+	bool conflict = false;
 	string ir = "";   
-	get_mapVal(qname_iread, record.qName, ir);  // skip reads can not be assigned as clip reads!
-	if ( ir != "skip_read")  qname_iread[record.qName] = iread;
-      }  else if ( iread == "skip_read") {    
-	qname_iread[record.qName] = iread;
-      }  else if ( iread == "unknow_read") {    
-	qname_iread[record.qName] = iread;
-	int rgIdx = get_rgIdx(rg_to_idx, record);
-	stringstream rg_ss;
-	rg_ss << " " << rgIdx << ":" << abs(record.tLen) + alucons_len;
-	rg_str[record.qName] = rg_ss.str();
-      }      
-    }
-    
-    for (map < seqan::CharString, string >::iterator qi = qname_iread.begin(); qi != qname_iread.end(); qi++ ) {
-      assert ( qi->second != "useless"); // don't put it in qname_iread
-      if ( qi->second == "skip_read") 
-	addKey(insertBegin_skipreads, clipLeft, 1);
-      else if ( qi->second == "clip_read") 
-	addKey(insertBegin_midreads, clipLeft, 1);
-      else if ( qi->second == "unknow_read") {
-	insertBegin_unknowreads[clipLeft].push_back( rg_str[qi->first] );	
-      }
-    }
-    
-    rg_str.clear();     
-    // cout << clipLeft  << endl;
-  }
-}
-
-void add_aluReads(BamFileHandler *bam_fh, ofstream & fout,  map < int, vector<ALUREAD_INFO> > & rid_alureads, AluconsHandler *alucons_fh, map < int, int > & insertBegin_midreads) {
-  const float ALUCONS_SIMILARITY = 0.8;
-  map < string, bool > align_alucons_pass; // same sequence no need to align twice
-  seqan::BamAlignmentRecord record;
-  for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
-    for ( vector<ALUREAD_INFO>::iterator ai = (ri->second).begin(); ai != (ri->second).end(); ai++ ) {
-      if ( !bam_fh->jump_to_region( ri->first, (*ai).pos - 20, (*ai).pos + 20) ) continue;
-      while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
-	if (record.qName == (*ai).qName) {
-	  string record_seq = toCString(record.seq);
-	  if ((*ai).sameRC)  seqan::reverseComplement(record_seq); 
-
-	  map < string, bool >::iterator api = align_alucons_pass.find(record_seq);
-	  if ( api != align_alucons_pass.end() ) {
-	    if ( api->second) {
-	      fout << (*ai).clipLeft << " " << record_seq << " aluRead " << (*ai).sameRC <<  endl;	      
-	      addKey(insertBegin_midreads, (*ai).clipLeft, 1);
-	    }
-	  } else {
-	    float sim_rate;
-	    bool aa_pass = align_alu_cons_call( record_seq, alucons_fh, sim_rate, ALUCONS_SIMILARITY);
-	    align_alucons_pass[record_seq] = aa_pass;
-	    if (aa_pass) {
-	      fout << (*ai).clipLeft << " " << record_seq << " aluRead " << (*ai).sameRC << endl;
-	      addKey(insertBegin_midreads, (*ai).clipLeft, 1);
-	    }
-	  }
-	  
-	  break;
+	get_mapVal(qname_iread, record.qName, ir);  	
+	if  ( (iread == "clip_read" and ir == "skip_read") or (iread == "skip_read" and ir == "clip_read") ) 
+	  conflict = true;	
+	if  (iread == "clip_read" and !conflict) {
+	  qname_iread[record.qName] = iread;
+	  stringstream ssf;
+	  ssf << clipLeft << " " << record.seq  << " " <<  get_cigar(record) << " " << record.beginPos << endl;
+	  qname_foutStr[record.qName] = ssf.str();
+	}		
+	if (iread == "skip_read" and !conflict)
+	  qname_iread[record.qName] = iread;	
+	if ( iread == "unknow_read" or conflict) {    
+	  qname_iread[record.qName] = "unknow_read";
+	  int rgIdx = get_rgIdx(rg_to_idx, record);
+	  stringstream rg_ss;
+	  rg_ss << " " << rgIdx << ":" << abs(record.tLen) + alucons_len;
+	  rg_str[record.qName] = rg_ss.str();
 	}
-      }  // this pos, done
+      }
     }   
-    //cout << ri->first << " " << (ri->second).size() << endl;
-    (ri->second).clear();
+    vector<string>  str_unknowreads;   
+    int cnt_skipreads = 0;   
+    int cnt_midreads = 0;   // midreads (inserting a alu seq) = clip + alu reads     
+    for (map < seqan::CharString, string >::iterator qi = qname_iread.begin(); qi != qname_iread.end(); qi++ ) {
+      if ( qi->second == "skip_read") {
+	cnt_skipreads++;
+      } else if ( qi->second == "clip_read") {
+	cnt_midreads++;
+	fout << qname_foutStr[ qi->first ];
+      } else if ( qi->second == "unknow_read") {
+	str_unknowreads.push_back( rg_str[qi->first] );	
+      }
+    }    
+    if (str_unknowreads.empty() and !cnt_midreads)
+      continue;
+    ftmp1 <<  chrn << " " << clipLeft << " " << clipRight << " " << alucons_len  << " " << cnt_midreads << " " <<  cnt_skipreads << " " << str_unknowreads.size() ;
+    for  ( vector< string > ::iterator si = str_unknowreads.begin(); si != str_unknowreads.end(); si++ )
+      ftmp1 << " " << *si ;
+    ftmp1 << endl;
+    
   }
 }
 
-void add_aluReads2(BamFileHandler *bam_fh, string fn_input, ofstream &fout, int query_rid, vector<ALUREAD_INFO> & aluinfos, map < int, int > & insertBegin_midreads) {
-  ifstream fin(fn_input.c_str());
-  assert(fin);
-  stringstream ss;
-  string line, qname;
+void alumate_reads(BamFileHandler *bam_fh, string file_db, ofstream & fout, int query_rid, vector<ALUREAD_INFO> & aluinfos, AluconsHandler *alucons_fh, map < string, bool > & align_alucons_pass) {
+  const float ALUCONS_SIMILARITY = 0.8; 
   std::set <string> qnames;
-  getline(fin,line);
-  while (getline(fin, line)) {
-    ss.clear(); ss.str(line); 
-    ss >> qname;
-    qnames.insert(qname);
+  if (!file_db.empty()) {
+    ifstream fin(file_db.c_str());
+    assert(fin);
+    stringstream ss;
+    string line, qname;
+    getline(fin,line);
+    while (getline(fin, line)) {
+      ss.clear(); ss.str(line); 
+      ss >> qname;
+      qnames.insert(qname);
+    }
+    fin.close();
   }
-  fin.close();
 
   for ( vector<ALUREAD_INFO>::iterator ai = aluinfos.begin(); ai != aluinfos.end(); ai++ ) {
-    if ( qnames.find( toCString( (*ai).qName) ) != qnames.end() and bam_fh->jump_to_region( query_rid, (*ai).pos - 20, (*ai).pos + 20) ) {
-      seqan::BamAlignmentRecord record;
-      while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
-	if (record.qName == (*ai).qName) {
-	  string record_seq = toCString(record.seq);
-	  if ((*ai).sameRC)  seqan::reverseComplement(record_seq); 
-	  fout << (*ai).clipLeft << " " << record_seq << " aluRead " << (*ai).sameRC <<  endl;	      
-	  addKey(insertBegin_midreads, (*ai).clipLeft, 1);
-	  break;
+    if ( !bam_fh->jump_to_region( query_rid, (*ai).pos - 20, (*ai).pos + 20) ) continue;
+    bool mapped_db, aligned_alu;
+    mapped_db = qnames.find( toCString( (*ai).qName) ) != qnames.end() ;
+    seqan::BamAlignmentRecord record;
+    while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
+      if (record.qName == (*ai).qName) {
+	string record_seq = toCString(record.seq);
+	if ((*ai).sameRC)  seqan::reverseComplement(record_seq); 	
+	map < string, bool >::iterator api = align_alucons_pass.find(record_seq);
+	if ( api != align_alucons_pass.end() ) {
+	  aligned_alu = api->second;
+	} else {
+	  float sim_rate;
+	  aligned_alu = align_alu_cons_call( record_seq, alucons_fh, sim_rate, ALUCONS_SIMILARITY);
+	  align_alucons_pass[record_seq] = aligned_alu;
 	}
+	if ( mapped_db or aligned_alu)
+	  fout << (*ai).clipLeft << " " << record_seq << " " << (*ai).sameRC << " " << mapped_db << " " << aligned_alu << endl;
+	break;
       }
     }
-  }  
-  qnames.clear();
+  }
 }
-  
+
 void write_tmp1(string chrn, vector< pair<int, int> > & insert_pos, ofstream & fout, map < int, vector< string> > & insertBegin_unknowreads, map < int, int > & insertBegin_skipreads,  map < int, int > & insertBegin_midreads,  int alucons_len) {
   for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
     int clipLeft = (*pi).first;
@@ -960,12 +947,6 @@ int main( int argc, char* argv[] )
     check_folder_exists(pathClip + *ci + "_pos/");
     check_folder_exists(pathCons + *ci);
   }
-
-  float freq_min = seqan::lexicalCast<float> (cf_fh.get_conf("freq_min"));
-  float freq_max = seqan::lexicalCast<float> (cf_fh.get_conf("freq_max"));
-  stringstream ss;
-  ss << "_" << setprecision(3) << freq_min << "_" << setprecision(3) << freq_max;
-  string fn_suffix = ss.str();   // eg:  _0.02_1
   
 #ifdef DEBUG_MODE   // only look at chr1 for now 
   cerr << "!!!! DEBUG_MODE: only chr1 tested\n";
@@ -1037,11 +1018,10 @@ int main( int argc, char* argv[] )
 	 << file_pn_used << " if you want to modify\n";
 
     string output_prefix = path1 + "insert_pos.";
+    /// output "sum_LR_alumate regionBegin regionEnd pns"
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
       combine_pn_pos(*ci, id_pn_map, ".tmp3st", output_prefix, NUM_PN_JOIN, path0);  // takes about 12 mins to run !   
       system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
-      string fn_input = path1 + "insert_pos."+ *ci;
-      filter_pos_freq( fn_input, fn_input + fn_suffix, freq_min, freq_max, id_pn_map.size() );
     }        
     
   } else if (opt == "clipReads_by_pn") { // clip reads for each pn
@@ -1057,7 +1037,7 @@ int main( int argc, char* argv[] )
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");
     string file_fa = cf_fh.get_conf("file_fa_prefix");    
     for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {      
-      string fin_pos = path1 + "insert_pos." + *ci + fn_suffix; // eg: 10181 positions for chr1      
+      string fin_pos = path1 + "insert_pos." + *ci; // eg: 10181 positions for chr1      
       string fout_reads = pathClip + *ci + "/" + pn;
       FastaFileHandler * fasta_fh = new FastaFileHandler(file_fa + *ci + ".fa", *ci);
       clipreads_at_insertPos(pn, *ci, bam_fh, fasta_fh, fin_pos, fout_reads);
@@ -1084,8 +1064,6 @@ int main( int argc, char* argv[] )
   } else if ( opt == "fixed_delete0_pn" ) {   // write fasta reads for consensus, use clip reads first 
     assert (argc == 4);
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
-    string filter_alu_read = "alumate_database";  
-
     std::set <string> pns_used;
     read_file_pn_used(file_pn_used, pns_used); // some pn is ignored, due to too many reads
     if ( pns_used.find(pn) == pns_used.end() ){ // a bit slow
@@ -1099,58 +1077,53 @@ int main( int argc, char* argv[] )
     string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
     
-    string file_tmp1 = pathDel0 + pn + ".tmp1";
-    string file_tmp2 = pathDel0 + pn + ".tmp2";    
-    ofstream fout1 ( file_tmp1.c_str());
-    fout1 << "chr insertBegin insertEnd estimatedAluLen midCnt clipCnt unknowCnt unknowStr\n";
-
     int min_pn = 2;
     if (min_pn != 1)
       cout << "NB: private insertions are ignored!\n";
 
+    string file_tmp0 = pathDel0 + pn + ".tmp0";
+    ofstream fout1 ( file_tmp0.c_str());
+    fout1 << "chr insertBegin insertEnd estimatedAluLen midClipCnt clipCnt unknowCnt unknowStr\n";  // midClipCnt replaced midCnt
+
     for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
-      string file_output = pathCons + *ci + "/" + pn;
-      string file_clipPos = pathClip + *ci + ".clip_pn";
       vector< pair<int, int> > insert_pos;      
+      string file_clipPos = pathClip + *ci + ".clip_pn";
       read_first2col( file_clipPos , insert_pos, true, min_pn);    
+      string file_clip2 = pathCons + *ci + "/" + pn + ".clip";
       map < int, vector<ALUREAD_INFO>  > rid_alureads;       // info of alu reads 
-      map < int, vector<string> > insertBegin_unknowreads;   
-      map < int, int > insertBegin_skipreads;   
-      map < int, int > insertBegin_midreads;   // midreads (inserting a alu seq) = clip + alu reads 
-      clip_skip_unknow_reads(pn, *ci, insert_pos, bam_fh, file_output, rid_alureads, insertBegin_unknowreads, insertBegin_skipreads, insertBegin_midreads, rg_to_idx, alucons_fh->seq_len);      
-      
-      string file_output2 = pathCons + *ci + "/" + pn + "." + filter_alu_read;
-      ofstream fout(file_output2.c_str());       
-      fout << "clipPos seq type_cigar RCcorrected_beginPos \n";   // seq is after correction 
-
-      if ( filter_alu_read == "alumate_aligncons" ) {
-	add_aluReads(bam_fh, fout, rid_alureads, alucons_fh, insertBegin_midreads); // get seq from bam instead of genome.fa      
-
-      } else if ( filter_alu_read == "alumate_database" ) {	
-	for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
-	  string chrn;
-	  if (bam_fh->get_chrn(ri->first, chrn) ) {
-	    string file_tmp1 =  path0 + chrn +"/" + pn + ".tmp1";	    
-	    add_aluReads2(bam_fh, file_tmp1, fout, ri->first, ri->second, insertBegin_midreads);	    
-	  }
-	}
-	
-      }      
-      fout.close();
-      sort_file_by_col<int> (file_output, 1, true);  // sort by clip pos
-      rid_alureads.clear();      
-      write_tmp1(*ci, insert_pos, fout1, insertBegin_unknowreads,  insertBegin_skipreads, insertBegin_midreads, alucons_fh->seq_len);
+      clip_skip_unknow_reads(*ci, fout1, insert_pos, bam_fh, file_clip2, rid_alureads, rg_to_idx, alucons_fh->seq_len);            
+      string file_alu = pathCons + *ci + "/" + pn + ".alumate";
+      ofstream falu ( file_alu.c_str());
+      falu << "clipPos seq RCcorrected map_database align_" <<  cf_fh.get_conf("type_alu_cons") << endl;         
+      map < string, bool > align_alucons_pass; // same sequence no need to align twice
+      for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
+	string chrn, file_db;
+	if ( bam_fh->get_chrn(ri->first, chrn) ) file_db =  path0 + chrn +"/" + pn + ".tmp1";	    
+	else file_db = "";
+	cout << "start " << chrn << " " << (ri->second).size() <<  endl;
+	alumate_reads(bam_fh, file_db, falu, ri->first, ri->second, alucons_fh, align_alucons_pass);
+      }
+      falu.close();
+      cout << "align_alucons_pass size " << align_alucons_pass.size() << endl;
+      sort_file_by_col<int> (file_alu, 1, true);  // sort by clip pos      
     }   
     fout1.close();
 
+      ////// string file_clip1 = pathClip + *ci + "/" + pn;
+      ////// get_clipReads(file_clip1, file_clip2, insert_pos);
+    //       write_tmp1(*ci, insert_pos, fout1 );
+    /*
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
+    string file_tmp1 = pathDel0 + pn + ".tmp1";
+    string file_tmp2 = pathDel0 + pn + ".tmp2";    
     write_tmp2(file_tmp1, file_tmp2, pdf_rg);
     EmpiricalPdf::delete_map(pdf_rg);
 
     move_files(pathDel0 + "tmp1s/", file_tmp1);
     move_files(pathDel0 + "tmp2s/", file_tmp2);
+    */
 
   } else if (opt == "fixed_vcf_pns") {
     vector <string> pns;

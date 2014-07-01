@@ -60,6 +60,16 @@ bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qNam
   return  abs(clipPos - clipLeft ) <= match_offset;
 }
 
+bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName, string & cigar, string & seq) {
+  stringstream ss;
+  string tmp1, tmp2, tmp3, sleft_right, tLen;
+  int clipPos;
+  ss.str( line );
+  ss >> pn >> tmp1 >> tmp2 >> sleft_right >> clipPos >> qName >> tmp3 >> cigar >> tLen >> seq;
+  int match_offset =  ( sleft_right[0] == 'L') ? CLIP_BP_LEFT : CLIP_BP_RIGHT ;
+  return  abs(clipPos - clipLeft ) <= match_offset;
+}
+
 bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header) {
   const int ref_plus_bp = 10; // allow small indels
   int score;
@@ -81,7 +91,7 @@ bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align
 //      global_align_insert( hasFlagRC(record), infix(record.seq, read_len - align_len, read_len), ref_fa, score, ALIGN_END_CUT, 0.7, true);
 
   if (global_align_insert( hasFlagRC(record), read_clip_fa, ref_fa, score, ALIGN_END_CUT, 0.7) ) {
-    fout << header << left_right << " " << adj_clipPos << " " << record.qName << " " << clipPos << " " <<  get_cigar(record) << " " << record.tLen << " " << record.seq << endl;
+    fout << header << left_right << " " << adj_clipPos << " " << record.qName << " " << clipPos << " " <<  get_cigar(record) << endl;
     return true;
   }
   return false;

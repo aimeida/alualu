@@ -18,6 +18,4 @@ file_alu_insert1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/
 file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used  ### manually create, otherwise use each pn.
 file_alu_cons /home/qianyuxx/faststorage/AluDK/inputs/alu_cons.fa	
 type_alu_cons AluY
-freq_min 0.02
-freq_max 1 
 
