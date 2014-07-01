@@ -2,28 +2,21 @@ file_pn /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/PN_all
 file_bam_prefix /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/bamFile/
 file_alupos_prefix /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/alu_hg18/alu_
 file_fa_prefix /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/chromFa/
-## delete_search
-minLen_alu_del 200
-file_alu_delete0 /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/delete_alu0/	
-coverage_max 90	   
-alu_flank 600	      
 ## insert_length_dist
 file_insertlen_count /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/insert_len/count/
 file_dist_prefix /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/insert_len/prob/
 pdf_param 100_1000_5
+## delete_search
+minLen_alu_del 200
+file_alu_delete0 /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/delete_alu0/	
+coverage_max 90	   
 ## alu_insert
 file_repeatMask /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/raw_data/rmsk.hg18
 file_alu_insert0 /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu0/	
 file_alu_insert1 /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/
 file_pn_used     /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/pn_used ### manually create, otherwise use each pn.              
-file_clip_reads  /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/clip/
-file_ins_cons    /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/cons/
-file_ins_fixed_del0 /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/fixed_delete0/  ## insert a fixed alu seq for all location\
-file_alu_seq     /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/aluseq/
 file_alu_cons  /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/alu_cons.fa	
 type_alu_cons AluY
-freq_min 0.02
-freq_max 1
 
 
 

@@ -166,6 +166,7 @@ class RepMaskPos
   ~RepMaskPos(void);
 };
 
+string replace_chr0_chrn(string fn, string chrn, string chr0="chr0");
 void read_pdf_pn( string prefix, string pn, string pdf_param,  map <int, EmpiricalPdf *> & pdf_rg);
 void get_min_value(map <int, float> & m, float & min_val, int & min_key);
 void log10P_to_P(float *log_gp, float *gp, int max_logp_dif);

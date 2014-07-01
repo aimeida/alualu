@@ -73,4 +73,7 @@ config.decode: used by Yu in Iceland, where the old files sitting
      exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
 
    opt = "fixed_delete0_pn":
-     write *tmp1 and *tmp2 files for alu_deletion methods, with a fixed alu consensus sequence, instead of inferred length
+     write *tmp0 and *tmp2 files for alu_deletion methods, with a fixed alu consensus sequence, instead of inferred length
+
+   opt = "fixed_vcf_pns":  	 
+     combine results and write big vcf 

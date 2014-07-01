@@ -1,6 +1,5 @@
 file_pn /home/qianyuxx/faststorage/AluDK/inputs/PN_all
 file_bam_prefix /home/qianyuxx/faststorage/AluDK/inputs/bamFile/
-file_test_bam_prefix /home/qianyuxx/faststorage/AluDK/inputs/test_bamFile/
 file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/alu_
 file_fa_prefix /home/qianyuxx/faststorage/AluDK/inputs/fa_hg19/
 ## insert_length_dist

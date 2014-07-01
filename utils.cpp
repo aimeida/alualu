@@ -430,6 +430,12 @@ string phred_scaled(float p0, float p1, float p2) {
   return s0  + "," + s1 + "," + s2; 
 }
 
+string replace_chr0_chrn(string fn, string chrn, string chr0){
+  size_t found = fn.find(chr0);
+  assert (found != string::npos);
+  return fn.replace(found, chr0.size(), chrn);
+}
+
 void read_pdf_pn( string prefix, string pn, string pdf_param,  map <int, EmpiricalPdf *> & pdf_rg) {
   ifstream fin( get_name_rg(prefix, pn).c_str() );
   int idx = 0; 
