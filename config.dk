@@ -10,6 +10,8 @@ pdf_param 100_1000_5
 minLen_alu_del 200
 file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/	
 coverage_max 90	   
+pn_del_vcf /home/qianyuxx/faststorage/AluDK/inputs/PN1
+## pn_del_vcf /home/qianyuxx/faststorage/AluDK/inputs/PN_all  ## if all pn finished running
 ## alu_insert
 file_repeatMask /home/qianyuxx/faststorage/AluDK/inputs/raw_data/rmsk.hg19
 file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/		  

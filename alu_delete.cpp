@@ -227,7 +227,7 @@ int main( int argc, char* argv[] )
     
   } else if (opt == "write_vcf_pns") {   // write vcf for all pn
     vector <string> pns;
-    read_file_pn_used(cf_fh.get_conf("file_pn"), pns);
+    read_file_pn_used(cf_fh.get_conf("pn_del_vcf"), pns);  // select some pns for writing vcf files 
     string path_input = path0 + "tmp2s/";
     string fn_pos, fn_vcf;
     fn_pos = path0 + int_to_string( pns.size()) + ".pos";
