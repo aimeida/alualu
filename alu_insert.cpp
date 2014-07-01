@@ -792,46 +792,69 @@ void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int>
   }
 }
 
-void alumate_reads(BamFileHandler *bam_fh, string file_db, ofstream & fout, int query_rid, vector<ALUREAD_INFO> & aluinfos, AluconsHandler *alucons_fh, map < string, bool > & align_alucons_pass) {
+
+void alumate_reads1(BamFileHandler *bam_fh, string file_db, ofstream & fout, int query_rid, vector<ALUREAD_INFO> & aluinfos, AluconsHandler *alucons_fh) {
   const float ALUCONS_SIMILARITY = 0.8; 
-  std::set <string> qnames;
+  map <string, string> qnames;
   if (!file_db.empty()) {
     ifstream fin(file_db.c_str());
     assert(fin);
     stringstream ss;
-    string line, qname;
+    string line, qname, tmpv, alu_type;
     getline(fin,line);
     while (getline(fin, line)) {
       ss.clear(); ss.str(line); 
-      ss >> qname;
-      qnames.insert(qname);
-    }
+      ss >> qname ;
+      for ( int i = 0; i < 8; i++) ss >> tmpv;
+      ss >> alu_type;
+      qnames[qname] = alu_type;
+    }    
     fin.close();
   }
-
+  
   for ( vector<ALUREAD_INFO>::iterator ai = aluinfos.begin(); ai != aluinfos.end(); ai++ ) {
     if ( !bam_fh->jump_to_region( query_rid, (*ai).pos - 20, (*ai).pos + 20) ) continue;
-    bool mapped_db, aligned_alu;
-    mapped_db = qnames.find( toCString( (*ai).qName) ) != qnames.end() ;
+    string mapped_db = "na";
+    map <string, string>::iterator qi = qnames.find( toCString( (*ai).qName) );  
+    if ( qi != qnames.end() ) mapped_db = qi->second;
     seqan::BamAlignmentRecord record;
     while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
       if (record.qName == (*ai).qName) {
 	string record_seq = toCString(record.seq);
 	if ((*ai).sameRC)  seqan::reverseComplement(record_seq); 	
-	map < string, bool >::iterator api = align_alucons_pass.find(record_seq);
-	if ( api != align_alucons_pass.end() ) {
-	  aligned_alu = api->second;
-	} else {
-	  float sim_rate;
-	  aligned_alu = align_alu_cons_call( record_seq, alucons_fh, sim_rate, ALUCONS_SIMILARITY);
-	  align_alucons_pass[record_seq] = aligned_alu;
-	}
-	if ( mapped_db or aligned_alu)
+	float sim_rate;
+	bool aligned_alu = align_alu_cons_call( record_seq, alucons_fh, sim_rate, ALUCONS_SIMILARITY);
+	if ( mapped_db!="na" or aligned_alu)
 	  fout << (*ai).clipLeft << " " << record_seq << " " << (*ai).sameRC << " " << mapped_db << " " << aligned_alu << endl;
 	break;
       }
     }
   }
+}
+
+
+int alumate_reads2(string file_db, ofstream & fout, vector<ALUREAD_INFO> & aluinfos) {
+  map <string, string> qnames;
+  if (file_db.empty()) return 0;
+  ifstream fin(file_db.c_str());
+  assert(fin);
+  stringstream ss;
+  string line, qname, tmpv, alu_type;
+  getline(fin,line);
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line); 
+    ss >> qname ;
+    for ( int i = 0; i < 8; i++) ss >> tmpv;
+    ss >> alu_type;
+    qnames[qname] = alu_type;
+  }
+  fin.close();
+  for ( vector<ALUREAD_INFO>::iterator ai = aluinfos.begin(); ai != aluinfos.end(); ai++ )  {
+    map <string, string>::iterator qi = qnames.find( toCString( (*ai).qName) );
+    if ( qi != qnames.end() )
+      fout << (*ai).clipLeft << " " << (*ai).qName << " " << qi->second << endl;
+  }
+  return 0;
 }
 
 void write_tmp1(string chrn, vector< pair<int, int> > & insert_pos, ofstream & fout, map < int, vector< string> > & insertBegin_unknowreads, map < int, int > & insertBegin_skipreads,  map < int, int > & insertBegin_midreads,  int alucons_len) {
@@ -1045,7 +1068,7 @@ int main( int argc, char* argv[] )
     }
     delete bam_fh;
     cout << "output to " << pathClip << "chr*/" << pn  << endl;
-    
+
   } else if ( opt == "clipReads_pos_pns" ) { 
     std::set <string> pns_used;
     read_file_pn_used( file_pn_used, pns_used); // some pn is ignored, due to too many reads
@@ -1092,25 +1115,28 @@ int main( int argc, char* argv[] )
       string file_clip2 = pathCons + *ci + "/" + pn + ".clip";
       map < int, vector<ALUREAD_INFO>  > rid_alureads;       // info of alu reads 
       clip_skip_unknow_reads(*ci, fout1, insert_pos, bam_fh, file_clip2, rid_alureads, rg_to_idx, alucons_fh->seq_len);            
-      string file_alu = pathCons + *ci + "/" + pn + ".alumate";
-      ofstream falu ( file_alu.c_str());
-      falu << "clipPos seq RCcorrected map_database align_" <<  cf_fh.get_conf("type_alu_cons") << endl;         
-      map < string, bool > align_alucons_pass; // same sequence no need to align twice
+      //string file_alu1 = pathCons + *ci + "/" + pn + ".alumate";
+      //ofstream falu1 ( file_alu1.c_str());
+      //falu << "clipPos seq RCcorrected map_database align_" <<  cf_fh.get_conf("type_alu_cons") << endl;         
+
+      string file_alu2 = pathCons + *ci + "/" + pn + ".aludb";
+      ofstream falu ( file_alu2.c_str());  // use database, faster, also discard half of the reads
+      falu << "clipPos qName alu_type\n";
       for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
 	string chrn, file_db;
 	if ( bam_fh->get_chrn(ri->first, chrn) ) file_db =  path0 + chrn +"/" + pn + ".tmp1";	    
 	else file_db = "";
-	cout << "start " << chrn << " " << (ri->second).size() <<  endl;
-	alumate_reads(bam_fh, file_db, falu, ri->first, ri->second, alucons_fh, align_alucons_pass);
+	/////cout << "start " << chrn << " " << (ri->second).size() <<  endl;
+	//alumate_reads1(bam_fh, file_db, falu, ri->first, ri->second, alucons_fh);
+	alumate_reads2(file_db, falu, ri->second);
       }
       falu.close();
-      cout << "align_alucons_pass size " << align_alucons_pass.size() << endl;
-      sort_file_by_col<int> (file_alu, 1, true);  // sort by clip pos      
+      sort_file_by_col<int> (file_alu2, 1, true);  // sort by clip pos      
     }   
     fout1.close();
 
-      ////// string file_clip1 = pathClip + *ci + "/" + pn;
-      ////// get_clipReads(file_clip1, file_clip2, insert_pos);
+    ////// string file_clip1 = pathClip + *ci + "/" + pn;
+    ////// get_clipReads(file_clip1, file_clip2, insert_pos);
     //       write_tmp1(*ci, insert_pos, fout1 );
     /*
     map <int, EmpiricalPdf *> pdf_rg;    
@@ -1121,8 +1147,8 @@ int main( int argc, char* argv[] )
     write_tmp2(file_tmp1, file_tmp2, pdf_rg);
     EmpiricalPdf::delete_map(pdf_rg);
 
-    move_files(pathDel0 + "tmp1s/", file_tmp1);
     move_files(pathDel0 + "tmp2s/", file_tmp2);
+    move_files(pathDel0 + "tmp1s/", file_tmp1);
     */
 
   } else if (opt == "fixed_vcf_pns") {
