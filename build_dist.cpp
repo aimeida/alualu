@@ -1,7 +1,6 @@
 // build distribution file based on flow cells (reading group)
 #define SEQAN_HAS_ZLIB 1
 #include <seqan/bam_io.h>
-#include "common.h"
 #include "utils.h"
 
 void write_counts(map <seqan::CharString, map<int, int> > &rg_lenCounts, string &rg_lenCnt_file){
@@ -79,9 +78,13 @@ int main( int argc, char* argv[] )
   string pn = ID_pn[idx_pn];
   string bamInput_file = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";  
   
-  if ( opt == "build_dist") {   
-    string path_count = cf_fh.get_conf("file_insertlen_count");
+  if ( opt == "build_dist") {
+    string path0 = cf_fh.get_conf("file_insertlen");
+    check_folder_exists(path0);
+    string path_count = path0 + "count/";
+    check_folder_exists(path_count);
     string path_prob = cf_fh.get_conf("file_dist_prefix");
+    check_folder_exists(path_prob);
     string rg_lenCnt_file = path_count + pn + ".count."; /* + RG*/
     map <seqan::CharString, map<int, int> > rg_lenCnt; // strata by reading group 
     //read_pn(rg_lenCnt, bamInput_file, 5e3, 5e7);  // use only 5% reads to estimate

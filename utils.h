@@ -41,6 +41,8 @@ inline bool QC_insert_read( seqan::BamAlignmentRecord &record){
   return QC_read(record) and (!hasFlagUnmapped(record)) and (!hasFlagNextUnmapped(record));
 };
 
+inline int qualToInt( char c ){ return (int) c -33; };
+
 inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
   unsigned i = length(record.cigar) - 1;
   return (record.cigar[i].operation == 'S') and (record.cigar[i].count >= min_bp) ;
@@ -166,7 +168,7 @@ class RepMaskPos
   ~RepMaskPos(void);
 };
 
-string replace_chr0_chrn(string fn, string chrn, string chr0="chr0");
+string replace_str0_str(string fn, string chrn, string chr0="chr0");
 void read_pdf_pn( string prefix, string pn, string pdf_param,  map <int, EmpiricalPdf *> & pdf_rg);
 void get_min_value(map <int, float> & m, float & min_val, int & min_key);
 void log10P_to_P(float *log_gp, float *gp, int max_logp_dif);
@@ -178,8 +180,13 @@ void parse_cigar(string cigar, list <char> & opts, list <int> & cnts);
 string get_cigar(seqan::BamAlignmentRecord &record);
 void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os = cout);
 bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region);
+
+void get_trim_length( seqan::BamAlignmentRecord & record, int & trimb, int & trime, int bpQclip);
+bool trim_clip_soft_first( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip);  
+bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip);
+
 int numOfBestHits(seqan::BamAlignmentRecord &record);
 void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int min_pn);
-
+void get_chrn(string fn, map<int, string> & rid_chrn);
 
 #endif /*UTILS_H*/

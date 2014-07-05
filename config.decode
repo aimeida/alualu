@@ -9,7 +9,8 @@ pdf_param 100_1000_5
 ## delete_search
 minLen_alu_del 200
 file_alu_delete0 /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/delete_alu0/	
-coverage_max 90	   
+coverage_max 90	  
+pn_del_vcf /home/qianyuxx/faststorage/AluDK/inputs/PN1  ## pn that completed previous alu deletion call  
 ## alu_insert
 file_repeatMask /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/raw_data/rmsk.hg18
 file_alu_insert0 /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu0/	

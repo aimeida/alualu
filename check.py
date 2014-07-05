@@ -76,6 +76,36 @@ def filter_chisq(f_llh, f_input, f_output, offset=1):
     fin2.close()
     fout.close()
 
+def combine_line(line1, line2):
+    tmp1 = line1.strip().split()
+    tmp2 = line2.strip().split()
+    assert(tmp1[0] == tmp2[0])
+    new_pos = (int(tmp1[1]) + int(tmp2[1]))/2 
+    tmps = tmp1[0] + ' ' + str( new_pos) 
+    for i, j in zip(tmp1[2:], tmp2[2:]):
+        tmps += ' %d'%(max(int(i), int(j))) 
+    return tmps
+
+def combine_rows(f_in, f_out, pos_dif = 10):
+    fout = file(f_out, 'w')
+    output_lines = []
+    pre_pos = 0
+    with open(f_in) as fin:
+        print >>fout, fin.readline().strip()
+        for line in fin:
+            tmp = line.split()
+            pos = int(tmp[1])
+            if abs(pos - pre_pos) <= pos_dif:
+                pre_line = output_lines[-1]
+                output_lines[-1] = combine_line(pre_line, line)
+                pre_pos = (pre_pos + pos) / 2
+            else:
+                pre_pos = pos
+                output_lines.append(line.strip())
+    for i in output_lines:
+        print >>fout, i
+    fout.close()
+
 def read_vcftxt(f_vcftxt):
     chr_pos = []
     seqs = {}
@@ -127,11 +157,16 @@ if __name__ == "__main__":
     
     opt = sys.argv[1]
     
-    allow_denovo = True 
-#    allow_denovo = False
+#    allow_denovo = True 
+    allow_denovo = False
     verbose = False
 
-    if opt == 'i0':
+    if opt == 'i':
+        file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
+        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.pos'
+        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.vcf'
+
+    elif opt == 'i0':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_0/29.pos'
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_0/29.vcf'
@@ -161,8 +196,11 @@ if __name__ == "__main__":
 
     idx = get_idx(f_vcf, pn_used)
     vcf_to_text(pn_used, idx, f_vcf, f_vcftxt)        
-    filter_chisq(f_llh, f_vcftxt, f_vcftxt2) 
-    
+    filter_chisq(f_llh, f_vcftxt, f_vcftxt2 + ".tmp") 
+    combine_rows(f_vcftxt2 + '.tmp', f_vcftxt2)    
+
+    sys.exit()
+
     npos = len(file(f_vcftxt2).readlines()) - 1
     print npos, 'positions considered'
 

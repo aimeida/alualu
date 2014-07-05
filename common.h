@@ -39,6 +39,7 @@ using namespace std;
 #define ALIGN_END_CUT 10 // cut the last 10 bp while realign to reference
 #define CLIP_BP_LEFT 5
 #define CLIP_BP_RIGHT 30
+#define CLIP_Q 30 
 
 inline int ceil_by_resolution(int x, int r) {
   return r * ceil ( (float) x / (float) r );

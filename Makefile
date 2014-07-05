@@ -26,6 +26,9 @@ ALU_HG18_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_HG18_FILES_CPP))
 BUILD_DIST_FILES_CPP = build_dist.cpp common.cpp utils.cpp
 BUILD_DIST_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_FILES_CPP))
 
+BUILD_DIST_SIM_FILES_CPP = build_dist_sim.cpp common.cpp utils.cpp
+BUILD_DIST_SIM_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_SIM_FILES_CPP))
+
 FILES_CPP = *cpp *h 
 FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(FILES_CPP))
 
@@ -54,6 +57,9 @@ $(OD)/alu_hg18: $(OD) $(ALU_HG18_FILES_O)
 
 $(OD)/build_dist: $(OD) $(BUILD_DIST_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(BUILD_DIST_FILES_O)
+
+$(OD)/build_dist_sim: $(OD) $(BUILD_DIST_SIM_FILES_O) 
+	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(BUILD_DIST_SIM_FILES_O)
 
 test.dep:
 	$(CC) -c -MM $(INCLUDE) $(TEST_FILES_CPP) > test.dep	

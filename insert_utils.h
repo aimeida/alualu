@@ -1,4 +1,3 @@
-//#define DEBUG_MODE  // test only chr1 for now
 #define SEQAN_HAS_ZLIB 1
 #include "utils.h"
 #ifndef INSERT_UTILS_H
@@ -35,9 +34,9 @@ class READ_INFO {
 class ALUREAD_INFO {
 public:
   seqan::CharString qName;
-  int clipLeft, pos;
+  int clipLeft, pos, readLen;
   bool sameRC;
-  ALUREAD_INFO(seqan::CharString & qn, int cl, int p, bool t) : qName(qn), clipLeft(cl), pos(p), sameRC(t) {}
+ ALUREAD_INFO(seqan::CharString & qn, int cl, int p, int rlen, bool t) : qName(qn), clipLeft(cl), pos(p), readLen(rlen), sameRC(t) {}
 };
 
 

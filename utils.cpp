@@ -217,7 +217,8 @@ void parse_reading_group(string file_rg, map<string, int> & rg_to_idx){
 int get_rgIdx(map<string, int> & rg_to_idx, seqan::BamAlignmentRecord & record) {
   seqan::BamTagsDict tags(record.tags);
   unsigned idx_rg1;  // idx in bam file
-  assert (findTagKey(idx_rg1, tags, "RG"));
+  if (!findTagKey(idx_rg1, tags, "RG"))
+    return 0;
   string rg_name = seqan::toCString(getTagValue(tags, idx_rg1));
   int idx_rg2 = 0; // idx in my file 
   map <string, int>::iterator rgi = rg_to_idx.find(rg_name);
@@ -293,6 +294,47 @@ bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_
 	return true;
       }
     }
+  }
+  return false;
+}
+
+void get_trim_length( seqan::BamAlignmentRecord & record, int & trimb, int & trime, int bpQclip){  
+  int beg, end;
+  for( beg = 0; (beg < (int)length( record.seq )) && ( qualToInt( record.qual[beg] ) < bpQclip ); beg++ ){}
+  for( end = length( record.seq )-1; (end > 0) && ( qualToInt( record.qual[end] ) < bpQclip ) ; end-- ) {}
+  trimb = beg;
+  trime = length( record.seq) - end - 1;  
+}
+
+bool trim_clip_soft_first( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip){  
+  assert(record.cigar[0].operation == 'S');
+  int beg, end;
+  for( beg = 0; (beg < (int)length( record.seq )) && ( qualToInt( record.qual[beg] ) < bpQclip ); beg++ ){}
+  for( end = length( record.seq )-1; (end > 0) && ( qualToInt( record.qual[end] ) < bpQclip ) ; end-- ) {}
+  if ( end - beg < CLIP_BP) return false;
+  int cut_beg = beg;
+  int cut_end = length( record.seq) - end - 1;
+  clipLen = record.cigar[0].count - cut_beg; // positive, right clip 
+  if ( end - beg >= CLIP_BP and abs(clipLen) >= CLIP_BP and length(record) - record.cigar[0].count - cut_end >= CLIP_BP ) {
+    clipSeq = infix( record.seq, beg, end+1 );
+    return true;
+  }
+  return false;
+}
+
+bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip){  
+  int idx = length(record.cigar) - 1;
+  assert(record.cigar[idx].operation == 'S');
+  int beg, end;
+  for( beg = 0; (beg < (int)length( record.seq )) && ( qualToInt( record.qual[beg] ) < bpQclip ); beg++ ){}
+  for( end = length( record.seq )-1; (end > 0) && ( qualToInt( record.qual[end] ) < bpQclip ) ; end-- ) {}
+  if ( end - beg < CLIP_BP) return false;
+  int cut_beg = beg;
+  int cut_end = length( record.seq) - end - 1;
+  clipLen = - (record.cigar[idx].count - cut_end ); // negative, left clip
+  if ( end - beg >= CLIP_BP and abs(clipLen) >=CLIP_BP and length(record) - record.cigar[idx].count - cut_beg >= CLIP_BP) {
+    clipSeq = infix( record.seq, beg, end+1 );
+    return true;
   }
   return false;
 }
@@ -430,7 +472,7 @@ string phred_scaled(float p0, float p1, float p2) {
   return s0  + "," + s1 + "," + s2; 
 }
 
-string replace_chr0_chrn(string fn, string chrn, string chr0){
+string replace_str0_str(string fn, string chrn, string chr0){
   size_t found = fn.find(chr0);
   assert (found != string::npos);
   return fn.replace(found, chr0.size(), chrn);
@@ -512,5 +554,14 @@ void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
     if ( tmpn >= min_pn )
       insert_pos.push_back( make_pair(beginPos, endPos) );
   }
+  fin.close();
+}
+
+void get_chrn(string fn, map<int, string> & rid_chrn) {
+  ifstream fin(fn.c_str());
+  int rid;
+  string chrn;
+  while ( fin >> rid >> chrn ) 
+    rid_chrn[rid] = chrn;
   fin.close();
 }
