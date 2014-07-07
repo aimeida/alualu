@@ -318,34 +318,9 @@ int main( int argc, char* argv[] )
       string read_status = bam_fh->fetch_a_read(chrn, aluBegin - ALU_FLANK, aluEnd + ALU_FLANK, record);
       if (read_status == "stop" ) break;
       if (read_status == "skip" or !QC_delete_read(record)) continue;
-
-      /*
-	T_READ one_read = useless_read;
-      get_mapVal(qName_info, record.qName, one_read);
-      if (one_read != useless_read) {
-      cout << debug_print_tread(one_read) << " ";
-      debug_print_read(record, cout);
-      }
-      */
-      
-      /*
-      map <seqan::CharString, int>::iterator ui = unknow_reads.find(record.qName);
-      if ( ui != unknow_reads.end() and ui -> second == 1) {
-	debug_print_read(record, cout);
-	ui -> second = 0;
-      }
-      */
     }
     
-    map < T_READ, int > readCnt;
-    count_reads(qName_info, readCnt); 
-    for (map < T_READ, int >::iterator ri = readCnt.begin(); ri != readCnt.end(); ri++ ) {
-      cout << debug_print_tread(ri->first) << " " << ri->second << endl;
-    }
-    cout << chrn << " " << aluBegin << " " << aluEnd << " " << qName_info.size() << endl;
-
-    delete bam_fh;
-    
+    delete bam_fh;    
     // genotype call /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/jon_chr0/pn1.check
   } else {
     cout << "unknown options !\n";

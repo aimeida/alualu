@@ -14,10 +14,11 @@ coverage_max 90
 pn_del_vcf /home/qianyuxx/faststorage/AluDK/inputs/PN_all  ## if all pn finished running
 ## alu_insert
 minLen_alu_ins 150 
+cut_bp_aluread 10          ## cut at both ends to build consensus
 file_repeatMask /home/qianyuxx/faststorage/AluDK/inputs/raw_data/rmsk.hg19
 file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/		  
 file_alu_insert1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/
 file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used  ### manually create, otherwise use each pn.
 file_alu_cons /home/qianyuxx/faststorage/AluDK/inputs/alu_cons.fa	
 type_alu_cons AluY
-
+consensus_freq 0.7  ## at least so many clip_read or alu_reads are used in building the consensus

@@ -70,31 +70,53 @@ bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qNam
   return  abs(clipPos - clipLeft ) <= match_offset;
 }
 
-bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header) {
-  const int ref_plus_bp = 10; // allow small indels
-  int score;
-  seqan::CharString ref_fa;
-  seqan::CharString read_clip_fa;
-  int read_len = length(record.seq);
-  if (left_right == 'R') {
-    fasta_fh->fetch_fasta_upper(adj_clipPos, adj_clipPos + align_len + ref_plus_bp, ref_fa);    
-    read_clip_fa = infix(record.seq, read_len - align_len, read_len);
-  } else if (left_right == 'L') {
-    fasta_fh->fetch_fasta_upper(adj_clipPos - align_len - ref_plus_bp, adj_clipPos, ref_fa);
-    read_clip_fa = infix(record.seq, 0, align_len);
+bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int cnt_alumate, int insertLenPlus){
+  float *log10_gp = new float[3];
+  stringstream ss, ss_out;
+  string chrn;
+  int clipLeft, clipRight, estimatedAluLen, midCnt, clipCnt, unknowCnt;
+  ss.clear(); ss.str(line); 
+  ss >> chrn >> clipLeft >> clipRight >> estimatedAluLen >> midCnt >> clipCnt >> unknowCnt ;
+  midCnt += cnt_alumate;  // add alumate count
+  estimatedAluLen += insertLenPlus;
+  //if ( cnt_alumate) cout << "debug " << cnt_alumate << " " << line << endl;
+  float prob_ub = pow(10, -LOG10_RATIO_UB);
+  float prob_known = (midCnt+clipCnt)/(float)(midCnt + clipCnt + unknowCnt);
+  for (int i = 0; i < 3; i++) log10_gp[i] = 0;
+  if (prob_known) {
+    log10_gp[0] = clipCnt * log10 ( prob_known * prob_ub ) + midCnt * log10 ( prob_known * (1 - prob_ub) );
+    log10_gp[1] = (midCnt + clipCnt) * log10 (prob_known * 0.5) ; 
+    log10_gp[2] = midCnt * log10 ( prob_known * prob_ub ) + clipCnt * log10 ( prob_known * (1 - prob_ub) );
   }
-//      debug_print_read(record, cout);
-//      cout << "#R " << get_cigar(record) << " " << adj_clipPos << " " << adj_clipPos + align_len << endl;
-//      cout << record.seq << endl;
-//      fasta_fh->fetch_fasta_upper(adj_clipPos - 10, adj_clipPos + align_len + 10, ref_fa);    
-//      cout << infix(ref_fa, 0, 10) << " " <<  infix(ref_fa, 10, 10 + align_len) << " " << infix(ref_fa, 10 + align_len, align_len + 20) << endl;
-//      global_align_insert( hasFlagRC(record), infix(record.seq, read_len - align_len, read_len), ref_fa, score, ALIGN_END_CUT, 0.7, true);
-
-  if (global_align_insert( hasFlagRC(record), read_clip_fa, ref_fa, score, ALIGN_END_CUT, 0.7) ) {
-    fout << header << left_right << " " << adj_clipPos << " " << record.qName << " " << clipPos << " " <<  get_cigar(record) << endl;
-    return true;
+  if (unknowCnt) { 
+    int insert_len, idx;
+    string token;
+    for (int i = 0; i < unknowCnt; i++) {
+      getline(ss, token, ':');
+      seqan::lexicalCast2(idx, token);
+      getline(ss, token, ' ');
+      seqan::lexicalCast2(insert_len, token);      
+      float p_y = pdf_rg[idx]->pdf_obs(insert_len);
+      float p_z = pdf_rg[idx]->pdf_obs(insert_len - estimatedAluLen);
+      //float freq0 = 0.67;  // high FP ratio      
+      float freq0 = ( midCnt + 1 )/(float)(midCnt + clipCnt + 2); // 1 and 2 are psudo count
+      log10_gp[0] += log10 (p_y * (1 - prob_known));
+      log10_gp[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z) * (1 - prob_known) ) ;
+      log10_gp[2] += log10 (p_z * (1 - prob_known));
+    }
   }
-  return false;
+  bool use_this_line = false;
+  if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
+    ss_out << chrn << " " << clipLeft << " " << estimatedAluLen << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
+    float *gp = new float[3];
+    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+    ss_out << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0];  // NB: switch 00 and 11, unlike alu_delete
+    delete gp;    
+    output_line = ss_out.str();
+    use_this_line = true;
+  }
+  delete log10_gp;
+  return use_this_line;
 }
 
 bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose){
@@ -128,77 +150,113 @@ bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqa
   return score >= round(th_score * (align_len - cutEnd)) ;
 }
 
-bool align_alu_cons(string &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th){
-  TAlign align;
-  seqan::Score<int> scoringScheme(0, -1, -1, -2); 
-  resize(rows(align), 2);
-  assignSource(row(align,0), ref_fa);  // 2,3
-  assignSource(row(align,1), alucons);   // 1,4, free gap at end
-  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
-  int align_start = max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
-  int align_end = min(toViewPosition(row(align, 0), ref_fa.size()), toViewPosition(row(align, 1), length(alucons)));
-  sim_rate = 0;
-  int align_len = align_end - align_start;
-  if ( align_len <= CLIP_BP or align_len <= sim_th * ref_fa.size() )
-    return false;
-  TRow &row0 = row(align,0);
-  TRowIterator it0 = begin(row0);
-  TRow &row1 = row(align,1);
-  TRowIterator it1 = begin(row1);
-  int i = 0, dif = 0;
-  while ( i++ < align_start ) {  it0++; it1++; }
-  while ( i++ <= align_end) {
-    if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
-    it0++; it1++;
+bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header) {
+  const int ref_plus_bp = 10; // allow small indels
+  int score;
+  seqan::CharString ref_fa;
+  seqan::CharString read_clip_fa;
+  int read_len = length(record.seq);
+  if (left_right == 'R') {
+    fasta_fh->fetch_fasta_upper(adj_clipPos, adj_clipPos + align_len + ref_plus_bp, ref_fa);    
+    read_clip_fa = infix(record.seq, read_len - align_len, read_len);
+  } else if (left_right == 'L') {
+    fasta_fh->fetch_fasta_upper(adj_clipPos - align_len - ref_plus_bp, adj_clipPos, ref_fa);
+    read_clip_fa = infix(record.seq, 0, align_len);
   }
-  sim_rate = 1 - dif / (float) align_len;
-  return  sim_rate >= sim_th;
+  if (global_align_insert( hasFlagRC(record), read_clip_fa, ref_fa, score, ALIGN_END_CUT, 0.7) ) {
+    fout << header << left_right << " " << adj_clipPos << " " << record.qName << " " << clipPos << " " <<  get_cigar(record) << endl;
+    return true;
+  }
+  return false;
 }
 
-int align_alu_cons_call(string & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th){
-  for (int k = 1; k <= 4; k++) {
-    if (align_alu_cons(ref_fa, alucons_fh->fetch_alucons(k), sim_rate, sim_th))
-      return k;
-  }
-  return 0;
-}
-
-int align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
+int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
   const int max_diff_cnt = 6;
   refBegin = 0, refEnd = 0; // initial 
   int shortLen = shortSeq.size();
   TAlign align;
-  seqan::Score<int> scoringScheme(0, -2, -2, -4); 
+  seqan::Score<int> scoringScheme(1, -1, -2, -3); 
   resize(rows(align), 2);
   assignSource(row(align,0), shortSeq);  // 2,3
   assignSource(row(align,1), longSeq);   // 1,4, free gap at end
   globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
-  int long0 = toViewPosition(row(align, 1), 0);
-  int long1 = toViewPosition(row(align, 1), longSeq.size());
-  int short0 = toViewPosition(row(align, 0), 0);
-  int short1 = toViewPosition(row(align, 0), shortLen);
-  if ( (short0 < long0) or (short1 > long1) or ( short1 - short0 - shortLen >= max_diff_cnt ) )
+  int l0 = toViewPosition(row(align, 1), 0);
+  int l1 = toViewPosition(row(align, 1), longSeq.size());
+  int s0 = toViewPosition(row(align, 0), 0);
+  int s1 = toViewPosition(row(align, 0), shortLen);
+  if ( (s0 < l0) or (s1 > l1) or ( s1 - s0 - shortLen >= max_diff_cnt ) )
     return 0;
-
   TRow &row0 = row(align,0);
   TRowIterator it0 = begin(row0);
   TRow &row1 = row(align,1);
   TRowIterator it1 = begin(row1);
   int i = 0, dif = 0;
-  while ( i++ < short0 ) {  it0++; it1++; }
-  while ( i++ <= short1 ) {
+  while ( i++ < s0 ) {  it0++; it1++; }
+  while ( i++ <= s1 ) {
     if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
     it0++; it1++;
   }
   if ( dif <= max_diff_cnt) {
-    if ( clipLen > 0 )  
-      refEnd = short0 + clipLen;
-    if ( clipLen < 0 )  
-      refBegin = short1 + clipLen;
-    ///cout << refBegin << " " << refEnd << " " << clipLen << " " << short0 << " " << short1 << endl;
+    if ( clipLen > 0 )  refEnd = s0 + clipLen;
+    else if ( clipLen < 0 )  refBegin = s1 + clipLen;
   }    
   return 0;
 }
+
+void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
+  const float dif_th = 0.2;
+  int shortLen = shortSeq.size();
+  TAlign align;
+  seqan::Score<int> scoringScheme(1, -1, -2, -3); 
+  resize(rows(align), 2);
+  assignSource(row(align,0), shortSeq);  // 2,3
+  assignSource(row(align,1), longSeq);   // 1,4, free gap at end
+  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>());
+  int l0 = toViewPosition(row(align, 1), 0);
+  int l1 = toViewPosition(row(align, 1), longSeq.size());
+  int s0 = toViewPosition(row(align, 0), 0);
+  int s1 = toViewPosition(row(align, 0), shortLen);
+  int align_len = min(s1, l1) - max(s0, l0);
+  int align_len_shortSeq = shortSeq.size();
+
+  if ( abs(align_len_shortSeq - align_len) <= dif_th * align_len_shortSeq 
+       and align_len >= CLIP_BP ){
+    if ( clipLen > 0 ) 
+      refEnd = s0 + clipLen;  // might > longSeq.size() 
+    else if ( clipLen < 0 ) 
+      refBegin = s1 + clipLen;  // might be negative
+  }
+}
+
+bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float dif_th, const string & atype) {
+  TAlign align;
+  seqan::Score<int> scoringScheme(1, -1, -2, -3); 
+  resize(rows(align), 2);
+  assignSource(row(align,0), shortSeq);  // 2,3
+  assignSource(row(align,1), longSeq);   // 1,4, free gap at end
+  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>());
+  int s0 = toViewPosition(row(align, 0), 0);
+  int s1 = toViewPosition(row(align, 0), shortSeq.size());
+  int l0 = toViewPosition(row(align, 1), 0); 
+  int l1 = toViewPosition(row(align, 1), longSeq.size());  
+  int align_len = min(s1, l1) - max(s0, l0);
+  int align_len_shortSeq = shortSeq.size();
+  if ( l0 > s0 )
+    align_len_shortSeq -= (l0 - s0);
+  else if ( s1 > l1 )
+    align_len_shortSeq -= (s1 - l1);
+  bool align_pass =  align_len_shortSeq >= CLIP_BP and abs(align_len_shortSeq - align_len) <= dif_th * align_len_shortSeq ;
+
+//  if ( !align_pass )  {
+//    cout << atype << " align_len " << align_len << endl;
+//    cout << shortSeq << endl;
+//    cout << longSeq << endl;
+//    cout << align << endl;
+//  }
+    
+  return align_pass;
+}
+
 
 void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID_pn, string chrn, string file_pn_used_output, float percentage_pn_used) {
   string line;
