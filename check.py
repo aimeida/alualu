@@ -157,8 +157,8 @@ if __name__ == "__main__":
     
     opt = sys.argv[1]
     
-#    allow_denovo = True 
-    allow_denovo = False
+    allow_denovo = True 
+#    allow_denovo = False
     verbose = False
 
     if opt == 'i':
@@ -175,6 +175,11 @@ if __name__ == "__main__":
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.pos'
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.vcf'
+
+    elif opt == 'c':
+        file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
+        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons_delete0/29.pos'
+        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons_delete0/29.vcf'
         
     elif opt == 'd1':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
@@ -199,7 +204,7 @@ if __name__ == "__main__":
     filter_chisq(f_llh, f_vcftxt, f_vcftxt2 + ".tmp") 
     combine_rows(f_vcftxt2 + '.tmp', f_vcftxt2)    
 
-    sys.exit()
+    #sys.exit()
 
     npos = len(file(f_vcftxt2).readlines()) - 1
     print npos, 'positions considered'

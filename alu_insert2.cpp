@@ -1,5 +1,6 @@
 #define SEQAN_HAS_ZLIB 1
 #include "insert_utils.h"
+#include "delete_utils.h"
 #include "consensus.h"
 
 typedef seqan::Dna5String TSeq;
@@ -26,21 +27,26 @@ void parse_line_aludb(string line, string &pn, int &beginPos, int & sameRC, int 
   ss >> pn >> alu_type >> rid >> beginPos >> sameRC >> read_len >> qName;
 }
 
-void read_alumate(ifstream & fin, seqan::StringSet <TSeq> & seqs, map < int, string > & rid_chrn, string file_fa, string fn_output, int cut_bp) {
+void read_alumate(ifstream & fin, seqan::StringSet <TSeq> & seqs, map < int, string > & rid_chrn, string file_fa, string fn_output, int cut_bp, bool use_clip_build = false) {
   string line, pn, alu_type;
   int rid;
   stringstream ss;
   map <int, vector<string> > rid_aludbs;
   ofstream fout;
+  bool write_tmp_out = !fn_output.empty();
+  if (write_tmp_out) fout.open(fn_output.c_str());
   while ( getline(fin, line) ) {
     ss.clear(); ss.str( line );
     ss >> pn >> alu_type;
-    if ( alu_type.substr(0,3) != "Alu" ) continue;
-    ss >> rid;
-    rid_aludbs[rid].push_back(line);
+    if ( alu_type.substr(0,3) != "Alu" ) {
+      if (use_clip_build) 
+	fout << pn << " " << alu_type << " clipreads\n";
+    }  else {
+      ss >> rid;
+      rid_aludbs[rid].push_back(line);
+    }
   }
-  bool write_tmp_out = !fn_output.empty();
-  if (write_tmp_out) fout.open(fn_output.c_str());
+
   for (map <int, vector<string> >::iterator ri = rid_aludbs.begin(); ri != rid_aludbs.end(); ri++) {
     string chrn = "";
     get_mapVal(rid_chrn, ri->first, chrn);
@@ -55,7 +61,7 @@ void read_alumate(ifstream & fin, seqan::StringSet <TSeq> & seqs, map < int, str
       if ( sameRC ) reverseComplement(seq);
       appendValue(seqs, (TSeq) seq );           
       if (write_tmp_out) {
-	int seqlen = length(seq) - cut_bp ; 
+	int seqlen = length(seq) ; 
 	fout << pn << " " << infix(seq, cut_bp, seqlen - cut_bp) << " " << qName << endl;
       }
     }
@@ -141,11 +147,11 @@ int get_cons_seqlen(string file_input,  string file_alu, const string & cons_seq
     align_clip_to_consRef( (si->first).first, cons_seq, refBegin, refEnd, si->second );    
     if (refBegin > -200) {
       pn_refPos.push_back( make_pair(pn, refBegin) );
-      addKey(refBegin_cnt, ceil_by_resolution(refBegin, CLIP_BP_LEFT), 1);
+      addKey(refBegin_cnt, round_by_resolution(refBegin, CLIP_BP_LEFT), 1);
     } 
     else if (refEnd > -200 ) {
       pn_refPos.push_back( make_pair(pn, refEnd) );
-      addKey(refEnd_cnt, ceil_by_resolution(refEnd, CLIP_BP_LEFT), 1);
+      addKey(refEnd_cnt, round_by_resolution(refEnd, CLIP_BP_LEFT), 1);
     }
   }
   if (refBegin_cnt.empty() or refEnd_cnt.empty()) 
@@ -291,6 +297,7 @@ int main( int argc, char* argv[] )
    string pathDel0 = path1 + "fixed_delete0/";
    string pathDel1 = path1 + "cons_delete0/";
    check_folder_exists(pathDel1);
+   check_folder_exists(pathDel1+"tmp2s/");
    string pathClip = path1 + "clip/";
    string pathCons = path1 + "cons/";
    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) 
@@ -356,7 +363,8 @@ int main( int argc, char* argv[] )
       string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
       seqan::StringSet <TSeq>  pos_seqs;    
       int cut_bp = seqan::lexicalCast<int> (cf_fh.get_conf("cut_bp_aluread"));
-      read_alumate(fin, pos_seqs, rid_chrn, file_fa, file_output0, cut_bp); // cut 10 bp in the end to build consensus
+      //read_alumate(fin, pos_seqs, rid_chrn, file_fa, file_output0, cut_bp); // cut 10 bp in the end to build consensus
+      read_alumate(fin, pos_seqs, rid_chrn, file_fa, file_output0, cut_bp, true); 
       fin.close();
       
       ofstream fout(file_output.c_str());
@@ -417,18 +425,29 @@ int main( int argc, char* argv[] )
     
    } else if (opt == "delete0_pn" ) {  // only use loci that have consensus sequence
 
-     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
-     if ( pns_used.find(pn) == pns_used.end() ){
-       cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
-       return 0;
+     map <int, EmpiricalPdf *> pdf_rg;    
+     vector <string> pns;
+     read_file_pn_used(cf_fh.get_conf( "file_pn_used"), pns);
+     for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi ++ ) {
+       string pn = *pi;
+       read_pdf_pn(cf_fh.get_conf("file_dist_prefix"), pn, cf_fh.get_conf("pdf_param"), pdf_rg);
+       string f1_tmp0 = pathDel0 + "tmp0s/" + pn + ".tmp0";
+       string f2_tmp2 = pathDel1 + pn + ".tmp2";
+       string fn_alu0 = pathCons + "chr0_cons_seqlen";
+       write_tmp2( pn, f1_tmp0, f2_tmp2, pdf_rg, fn_alu0, consensus_freq);	    	 
+       move_files(pathDel1 + "tmp2s/", f2_tmp2);
+       pdf_rg.clear();
      }
      
-     map <int, EmpiricalPdf *> pdf_rg;    
-     read_pdf_pn(cf_fh.get_conf("file_dist_prefix"), pn, cf_fh.get_conf("pdf_param"), pdf_rg);
-     string f1_tmp0 = pathDel0 + "tmp0s/" + pn + ".tmp0";
-     string f2_tmp2 = pathDel1 + pn + ".tmp2";
-     string fn_alu0 = pathCons + "chr0_cons_seqlen";
-     write_tmp2( pn, f1_tmp0, f2_tmp2, pdf_rg, fn_alu0, consensus_freq);	    	 
+     // write vcf file
+     string path_input = pathDel1 + "tmp2s/";
+     string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";
+     int col_idx =  get_col_idx(tmp_file_pn, "00");
+     assert (col_idx == 7 );
+     string fn_pos = pathDel1 + int_to_string( pns.size()) + ".pos";
+     filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, col_idx);
+     string fn_vcf = pathDel1 + int_to_string( pns.size()) + ".vcf";  
+     combine_pns_vcf_noPrivate(path_input, ".tmp2", fn_vcf, pns, chrns, col_idx);  
      
    } else if (opt == "debug" ) {  // only use loci that have consensus sequence
      

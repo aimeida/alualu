@@ -41,8 +41,8 @@ using namespace std;
 #define CLIP_BP_RIGHT 30
 #define CLIP_Q 30 
 
-inline int ceil_by_resolution(int x, int r) {
-  return r * ceil ( (float) x / (float) r );
+inline int round_by_resolution(int x, int r) {
+  return r * roundf ( (float) x / (float) r );
 }
 
 typedef pair<int, string > IntString;
@@ -116,6 +116,14 @@ bool key_exists(map <K,V> &m, K key)
 };
 
 template <class K, class V> 
+void keyOfMap_to_vec(map <K,V> &m, vector <K> & vec)
+{
+  typename map <K,V>::iterator it;
+  for ( it = m.begin(); it != m.end(); it++)
+    vec.push_back( it ->first );
+};
+
+template <class K, class V> 
 void get_mapVal(map <K,V> &m, K key, V & default_val)
 {
   typename map <K,V>::iterator it;
@@ -183,5 +191,7 @@ void get_pn(string pn_file, map<int, string> &ID_pn);
 void read_file_pn_used(string fn, std::set <string> & pns_used);
 void read_file_pn_used(string fn, vector <string> & pns_used);
 int check_file_size(string fn);
+
+float major_pos_freq (vector <int> & ps, int & major_p, int bin_width ); 
 
 #endif /*COMMON_H*/

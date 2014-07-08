@@ -36,7 +36,6 @@ def print2(pn_all, fn_path, path1, bin_path, fast_queue = True):
             ##print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_by_pn %(pi)d'%locals()
             ###print >>fout, '%(bin_path)salu_insert ../config.dk clipreads_pos_pns'%locals()
             #print >>fout, '%(bin_path)salu_insert ../config.dk fixed_delete0_pn %(pi)d'%locals()
-            print >>fout, '%(bin_path)salu_insert2 ../config.dk delete0_pn %(pi)d'%locals()
         pi += 1
 
 
