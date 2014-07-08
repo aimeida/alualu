@@ -34,7 +34,6 @@ def print2(pn_all, fn_path, path1, bin_path, fast_queue = True):
             print >>fout, "#SBATCH -o %d_%s.o" % (pi, pn)
             print >>fout, "#SBATCH -e %d_%s.e" % (pi, pn)
             ##print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_by_pn %(pi)d'%locals()
-            ###print >>fout, '%(bin_path)salu_insert ../config.dk clipreads_pos_pns'%locals()
             #print >>fout, '%(bin_path)salu_insert ../config.dk fixed_delete0_pn %(pi)d'%locals()
         pi += 1
 
@@ -53,8 +52,9 @@ def print3(fn_path, path1, bin_path):
             print >>fout, "#PBS -l walltime=0:59:0"
             print >>fout, "#PBS -N", chrn
             print >>fout, "cd %s" % path1
+            print >>fout, '%(bin_path)salu_insert config.dk clipReads_pos_pns %(chrn)s'%locals()
             #print >>fout, '%(bin_path)salu_insert2 config.dk consReads_build %(chrn)s'%locals()
-            print >>fout, '%(bin_path)salu_insert2 config.dk consReads_chr %(chrn)s'%locals()
+            #print >>fout, '%(bin_path)salu_insert2 config.dk consReads_chr %(chrn)s'%locals()
         pi += 1
 
 if __name__ == '__main__':
@@ -66,8 +66,8 @@ if __name__ == '__main__':
 
     pn_all = map(lambda x:x.strip(), file('/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used').readlines())
     #print2(pn_all, path1+"q_ai2/", path1, path1 + 'debug/', True)
-    print2(pn_all, path1+"q_ai/", path1, path1 + 'opt3/', True)
+    #print2(pn_all, path1+"q_ai/", path1, path1 + 'opt3/', True)
     
     ## run by chr
-    #print3(path1+"q_ai/", path1, path1 + 'opt3/')
+    print3(path1+"q_ai/", path1, path1 + 'opt3/')
     

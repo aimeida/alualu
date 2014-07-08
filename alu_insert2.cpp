@@ -300,8 +300,10 @@ int main( int argc, char* argv[] )
    check_folder_exists(pathDel1+"tmp2s/");
    string pathClip = path1 + "clip/";
    string pathCons = path1 + "cons/";
-   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) 
+   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ )  {
      check_folder_exists( pathCons + *ci + "_pos/") ;
+     check_folder_exists( pathCons + *ci + "_cons/") ; // write results of new built consensus seq
+   }
    int minLen_alu_ins = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_ins"));
    float consensus_freq = seqan::lexicalCast <float> (cf_fh.get_conf("consensus_freq"));
    

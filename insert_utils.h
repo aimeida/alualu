@@ -44,7 +44,6 @@ bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_f
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 
 bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName);
-bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName, string & cigar, string & seq); 
 
 bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int cnt_alumate, int insertLenPlus = 0);
 bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose = false);

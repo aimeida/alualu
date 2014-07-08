@@ -22,3 +22,4 @@ file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used  ### m
 file_alu_cons /home/qianyuxx/faststorage/AluDK/inputs/alu_cons.fa	
 type_alu_cons AluY
 consensus_freq 0.7  ## at least so many clip_read or alu_reads are used in building the consensus
+CLIP_Q 30  ## cut reads on both ends 

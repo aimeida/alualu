@@ -315,7 +315,7 @@ bool trim_clip_soft_first( seqan::BamAlignmentRecord & record, int & clipLen, se
   int cut_beg = beg;
   int cut_end = length( record.seq) - end - 1;
   clipLen = record.cigar[0].count - cut_beg; // positive, right clip 
-  if ( end - beg >= CLIP_BP and abs(clipLen) >= CLIP_BP and length(record) - record.cigar[0].count - cut_end >= CLIP_BP ) {
+  if ( end - beg >= CLIP_BP and clipLen >= CLIP_BP and length(record) - record.cigar[0].count - cut_end >= CLIP_BP ) {
     clipSeq = infix( record.seq, beg, end+1 );
     return true;
   }
@@ -331,9 +331,10 @@ bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seq
   if ( end - beg < CLIP_BP) return false;
   int cut_beg = beg;
   int cut_end = length( record.seq) - end - 1;
-  clipLen = - (record.cigar[idx].count - cut_end ); // negative, left clip
-  if ( end - beg >= CLIP_BP and abs(clipLen) >=CLIP_BP and length(record) - record.cigar[idx].count - cut_beg >= CLIP_BP) {
+  clipLen = record.cigar[idx].count - cut_end; 
+  if ( end - beg >= CLIP_BP and clipLen >= CLIP_BP and length(record) - record.cigar[idx].count - cut_beg >= CLIP_BP) {
     clipSeq = infix( record.seq, beg, end+1 );
+    clipLen = - clipLen;  // negative, left clip
     return true;
   }
   return false;

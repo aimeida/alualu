@@ -2,6 +2,10 @@
 #include "insert_utils.h"
 #include "delete_utils.h"
 
+struct PAR_DELETE0 {
+  int alucons_len, CLIP_Q, offset_left, offset_right;
+};
+
 void alu_mate_flag( BamFileHandler * bam_fh, string fn_output, string &header, map <string, int> & rg_to_idx){
   ofstream fout (fn_output.c_str() );  
   fout << header ;
@@ -587,7 +591,7 @@ int region_pos_vote( string fn, int & clipLeft1, int & clipLeft2 ) {
   return 0;
 }
 
-void regions_pos_vote( string path1, string fn_output, std::set < pair<int, int> > & regionPos_set) {
+void regions_pos_vote( string path1, std::set < pair<int, int> > & regionPos_set, string fn_output) {
   ofstream fout(fn_output.c_str());
   fout << "region_begin region_end clipLeft\n";
   for (std::set < pair <int, int> >::iterator ri = regionPos_set.begin(); ri != regionPos_set.end(); ri++ ) {
@@ -615,38 +619,61 @@ void neighbor_pos_filename(std::set < pair<int,int> > & regionPos_set, std::set 
     fns.insert( *ri++ );
 }
 
-void exactpos_pns(string fn_input, string path1, string fn_output, std::set < pair<int,int> > & regionPos_set){
+void approximate_pos_pns(string fn_input, string path1, string fn_output, std::set < pair<int,int> > & regionPos_set){
   ifstream fin;
   fin.open(fn_input.c_str());
   assert(fin);
-  map< int, std::set <pair<int, int> > > clipLeft_fn;
+  map< int, std::set <pair<int, int> > > clipLeft_fn0;
   stringstream ss;
   string line;
-  int clipLeft, region_begin, region_end;
+  int region_begin, region_end, pos2, pos1;
   getline(fin,line);
   while (getline(fin,line)) {
     ss.clear(); ss.str( line );
     ss >> region_begin >> region_end;
-    while ( ss >> clipLeft) 
-      clipLeft_fn[clipLeft].insert( make_pair(region_begin, region_end)) ;
+    while ( ss >> pos2) 
+      clipLeft_fn0[pos2].insert( make_pair(region_begin, region_end)) ;
   }
   fin.close();
+  
+  map< int, std::set <pair<int, int> > >::iterator ci = clipLeft_fn0.begin();  
+  int pos0 = ci->first;
+  map< int, std::set <pair<int, int> > > clipLeft_fn;
+  clipLeft_fn[pos0].swap(ci->second);
+  ci ++;
+  for (; ci != clipLeft_fn0.end(); ci++) {
+    pos2 = ci->first;
+    if ( pos2 - pos0 <= CLIP_BP_RIGHT ) {
+      pos1 = (pos2 + pos0) / 2;
+      clipLeft_fn[pos1].swap(clipLeft_fn[pos0]);
+      clipLeft_fn.erase(pos0);
+      pos2 = pos1;
+      for ( std::set <pair<int, int> >::iterator fi = (ci->second).begin(); fi != (ci->second).end(); fi++ ) 
+	clipLeft_fn[pos2].insert(*fi);
+    } else {
+      clipLeft_fn[pos2].swap(ci->second);
+    }
+    pos0 = pos2;
+  }
+  //cout << "size " << clipLeft_fn0.size() << " " << clipLeft_fn.size() << endl;
+  clipLeft_fn0.clear();
+
   ofstream fout(fn_output.c_str());
   fout << "clipLeft clipRight pn(count)\n";
   for (map< int, std::set < pair<int, int> > >::iterator pi = clipLeft_fn.begin(); pi != clipLeft_fn.end(); pi++ ) {
     int clipLeft = pi->first;
     map <string, std::set<string> > pn_qName;
     std::set < pair<int, int> > fns;
-    size_t fns_size = (pi->second).size() ;
-    fns.swap(pi->second);
-    neighbor_pos_filename(regionPos_set, fns, clipLeft);
+    size_t fns_size = (pi->second).size() ;  // num of regions voted for this clip pos
+    fns.swap(pi->second);  
+    neighbor_pos_filename(regionPos_set, fns, clipLeft);  // add more regions to fns
     assert ( fns.size() >= fns_size );
-    for ( std::set < pair<int, int> >::iterator fi = fns.begin(); fi != fns.end(); fi++ ) {
+    for ( std::set < pair<int, int> >::iterator fi = fns.begin(); fi != fns.end(); fi++ ) { 
       fin.open( (path1 + pos_to_fn(*fi) ).c_str());
       string line, pn, qName;
       while (getline(fin, line)) {
 	if (read_match_clipLeft(line, clipLeft, pn , qName))
-	  pn_qName[pn].insert(qName);  // some reads are appear more than once 
+	  pn_qName[pn].insert(qName);  // some reads appear more than once 
       }
       fin.close();
     }
@@ -659,20 +686,20 @@ void exactpos_pns(string fn_input, string path1, string fn_output, std::set < pa
 }
 
 
-bool is_clipread(int & clipLen, seqan::CharString & clipSeq, seqan::BamAlignmentRecord & record, int thisEnd, int clipLeft, int clipRight, int offset_left, int offset_right ) {  
-  if ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - clipRight) <=  offset_right 
-       and trim_clip_soft_first(record, clipLen, clipSeq, CLIP_Q) )
+bool is_clipread(int & clipLen, seqan::CharString & clipSeq, seqan::BamAlignmentRecord & record, int thisEnd, int clipLeft, int clipRight, PAR_DELETE0 & pars) {
+  if ( has_soft_first(record, CLIP_BP) and abs( record.beginPos - clipRight) <=  pars.offset_right 
+       and trim_clip_soft_first(record, clipLen, clipSeq, pars.CLIP_Q) )
     return true;
-  if ( has_soft_last(record, CLIP_BP) and abs( thisEnd - clipLeft ) <= offset_left 
-       and trim_clip_soft_last(record, clipLeft, clipSeq, CLIP_Q) )
+  if ( has_soft_last(record, CLIP_BP) and abs( thisEnd - clipLeft ) <= pars.offset_left 
+       and trim_clip_soft_last(record, clipLeft, clipSeq, pars.CLIP_Q) )
     return true;
   return false;
 }
 
-string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clipRight, int offset_left, int offset_right ,int & clipLen, seqan::CharString & clipSeq) {
+string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clipRight, PAR_DELETE0 & pars, int & clipLen, seqan::CharString & clipSeq) {
   int thisEnd = record.beginPos + (int)getAlignmentLengthInRef(record);   
   if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) {
-    if ( is_clipread(clipLen, clipSeq, record, thisEnd, clipLeft, clipRight, offset_left, offset_right) ) 
+    if ( is_clipread(clipLen, clipSeq, record, thisEnd, clipLeft, clipRight, pars) ) 
       return "clip_read";  // prefer to use it as clip_read, if it's also alu_read
     if ( ( thisEnd < clipLeft + 5 and !hasFlagRC(record) ) or ( record.beginPos > clipRight - 5 and hasFlagRC(record) ) ) 
       return "alu_read";
@@ -682,10 +709,10 @@ string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clip
   // otherwise only look at proper mapped reads 
   if ( hasFlagRC(record) == hasFlagNextRC(record) or read_is_left == hasFlagRC(record) ) 
     return "useless";  
-  if ( is_clipread(clipLen, clipSeq, record, thisEnd, clipLeft, clipRight, offset_left, offset_right) ) 
+  if ( is_clipread(clipLen, clipSeq, record, thisEnd, clipLeft, clipRight, pars) ) 
     return "clip_read";
   int trimb, trime;
-  get_trim_length(record, trimb, trime, CLIP_Q);
+  get_trim_length(record, trimb, trime, pars.CLIP_Q);
   if (trimb + trime < (int) length(record) - CLIP_BP and count_non_match(record) <= 5 and
       record.beginPos + trimb <= clipLeft - CLIP_BP and thisEnd - trime >= clipLeft + CLIP_BP ) 
     return "skip_read";  // after trimming, fewer reads are considered as skip_read, thus less skip_clip conflict, more clip read
@@ -699,7 +726,7 @@ string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clip
   return "useless";
 }
 
-void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_clipreads,  map < int, vector<ALUREAD_INFO> > & rid_alureads, map<string, int> & rg_to_idx, int alucons_len) {
+void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, string file_clipreads,  map < int, vector<ALUREAD_INFO> > & rid_alureads, map<string, int> & rg_to_idx, PAR_DELETE0 & pars) {
   ofstream fout(file_clipreads.c_str());    
   fout << "clipPos seq clipLen clipPos_by_cigar cigar rgIdx tLen\n";   // seq is after correction 
   seqan::BamAlignmentRecord record;
@@ -707,9 +734,6 @@ void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int>
   for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
     int clipLeft = (*pi).first;
     int clipRight = (*pi).second;
-    if (clipRight < clipLeft) clipRight = clipLeft;    
-    int offset_left = CLIP_BP_LEFT;
-    int offset_right = ( (*pi).second < 0 ) ? CLIP_BP_RIGHT : CLIP_BP_LEFT;    
     int region_begin = clipLeft - ALU_FLANK; // no need for larger flank region, if i only want to build consensus
     int region_end = clipRight + ALU_FLANK;	
     if (! bam_fh->jump_to_region(chrn, region_begin, region_end)) 
@@ -728,7 +752,7 @@ void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int>
 
       int clipLen;
       seqan::CharString clipSeq;
-      string iread = classify_read(record, clipLeft, clipRight, offset_left, offset_right, clipLen, clipSeq);            
+      string iread = classify_read(record, clipLeft, clipRight, pars, clipLen, clipSeq);            
       
       if ( iread == "alu_read") {
 	ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, clipLeft, record.pNext, length(record.seq), hasFlagRC(record)==hasFlagNextRC(record) );
@@ -743,8 +767,10 @@ void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int>
 	  qname_iread[record.qName] = iread;
 	  stringstream ssf;
 	  ssf << clipLeft << " " << clipSeq  << " " << clipLen << " ";
+	  // clipPos by cigar
 	  if (record.cigar[0].operation == 'S') ssf << record.beginPos; 	    
 	  else ssf << record.beginPos + (int)getAlignmentLengthInRef(record);	    
+	  // add adjust clipPos ??
 	  int rgIdx = get_rgIdx(rg_to_idx, record);
 	  ssf << " " << get_cigar(record) << " " << rgIdx << " " << record.tLen << endl;
 	  qname_foutStr[record.qName] = ssf.str();
@@ -755,19 +781,19 @@ void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int>
 	  qname_iread[record.qName] = "unknow_read";
 	  int rgIdx = get_rgIdx(rg_to_idx, record);
 	  stringstream rg_ss;
-	  rg_ss << " " << rgIdx << ":" << abs(record.tLen) + alucons_len;
+	  rg_ss << " " << rgIdx << ":" << abs(record.tLen) + pars.alucons_len;
 	  rg_str[record.qName] = rg_ss.str();
 	}
       }
     }   
     vector<string>  str_unknowreads;   
     int cnt_skipreads = 0;   
-    int cnt_midreads = 0;   // midreads (inserting a alu seq) = clip + alu reads     
+    int cnt_midreads = 0;
     for (map < seqan::CharString, string >::iterator qi = qname_iread.begin(); qi != qname_iread.end(); qi++ ) {
       if ( qi->second == "skip_read") {
 	cnt_skipreads++;
       } else if ( qi->second == "clip_read") {
-	cnt_midreads++;
+	cnt_midreads++; // midreads = clip + alu reads     
 	fout << qname_foutStr[ qi->first ];
       } else if ( qi->second == "unknow_read") {
 	str_unknowreads.push_back( rg_str[qi->first] );	
@@ -775,14 +801,14 @@ void clip_skip_unknow_reads(string chrn, ofstream &ftmp1, vector< pair<int, int>
     }    
     if (str_unknowreads.empty() and !cnt_midreads)
       continue;
-    ftmp1 <<  chrn << " " << clipLeft << " " << clipRight << " " << alucons_len  << " " << cnt_midreads << " " <<  cnt_skipreads << " " << str_unknowreads.size() ;
+    ftmp1 <<  chrn << " " << clipLeft << " -1 " << pars.alucons_len  << " " << cnt_midreads << " " <<  cnt_skipreads << " " << str_unknowreads.size() ;
     for  ( vector< string > ::iterator si = str_unknowreads.begin(); si != str_unknowreads.end(); si++ )
       ftmp1 << " " << *si ;
     ftmp1 << endl;
-    
   }
 }
 
+// too slow, not used any more
 void alumate_reads1(BamFileHandler *bam_fh, string file_db, ofstream & fout, int query_rid, vector<ALUREAD_INFO> & aluinfos) {
   map <string, string> qnames;
   if (!file_db.empty()) {
@@ -803,15 +829,15 @@ void alumate_reads1(BamFileHandler *bam_fh, string file_db, ofstream & fout, int
   for ( vector<ALUREAD_INFO>::iterator ai = aluinfos.begin(); ai != aluinfos.end(); ai++ ) {
     if ( !bam_fh->jump_to_region( query_rid, (*ai).pos - 20, (*ai).pos + 20) ) continue;
     string mapped_db = "na";
-    map <string, string>::iterator qi = qnames.find( toCString( (*ai).qName) );  
-    if ( qi != qnames.end() ) mapped_db = qi->second;
+    string _qn =  toCString( (*ai).qName);
+    get_mapVal(qnames, _qn, mapped_db);
+    if ( mapped_db == "na") continue;
     seqan::BamAlignmentRecord record;
     while (bam_fh->fetch_a_read(record) and record.beginPos <= (*ai).pos + 3) {
       if (record.qName == (*ai).qName) {
 	string record_seq = toCString(record.seq);
 	if ((*ai).sameRC)  seqan::reverseComplement(record_seq); 	
-	if ( mapped_db!="na")
-	  fout << (*ai).clipLeft << " " << record_seq << " " << (*ai).sameRC << " " << mapped_db << endl;
+	fout << (*ai).clipLeft << " " << record_seq << " " << (*ai).sameRC << " " << mapped_db << endl;
 	break;
       }
     }
@@ -1044,26 +1070,28 @@ int main( int argc, char* argv[] )
       string fin_pos = path1 + "insert_pos." + *ci; // eg: 10181 positions for chr1      
       string fout_reads = pathClip + *ci + "/" + pn;
       FastaFileHandler * fasta_fh = new FastaFileHandler(file_fa + *ci + ".fa", *ci);
-      clipreads_at_insertPos(pn, *ci, bam_fh, fasta_fh, fin_pos, fout_reads);
+      clipreads_at_insertPos(pn, *ci, bam_fh, fasta_fh, fin_pos, fout_reads);  // move clip pos such that matched length is maximized 
       delete fasta_fh;
     }
     delete bam_fh;
     cout << "output to " << pathClip << "chr*/" << pn  << endl;
 
   } else if ( opt == "clipReads_pos_pns" ) { 
+
+    assert (argc == 4);
+    string chrn = argv[3];
+
     std::set <string> pns_used;
     read_file_pn_used( file_pn_used, pns_used); // some pn is ignored, due to too many reads
-    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      string tmp_path0 = pathClip + *ci + "/";
-      string tmp_path1 = pathClip + *ci + "_pos/";
-      combine_clipreads_by_pos(pns_used, tmp_path0, tmp_path1);
-      string file_clipRegion = pathClip + *ci + ".clip_region";
-      string file_clipPos = pathClip + *ci + ".clip_pn";
-      std::set < pair<int, int> > regionPos_set;
-      assert( nonempty_files_sorted( tmp_path1, regionPos_set) );
-      regions_pos_vote(tmp_path1, file_clipRegion, regionPos_set);
-      exactpos_pns(file_clipRegion, tmp_path1, file_clipPos, regionPos_set);
-    }
+    string tmp_path0 = pathClip + chrn + "/";
+    string tmp_path1 = pathClip + chrn + "_pos/";
+    combine_clipreads_by_pos(pns_used, tmp_path0, tmp_path1);
+    std::set < pair<int, int> > regionPos_set;
+    //assert( nonempty_files_sorted( tmp_path1, regionPos_set) );
+    string file_clipRegion = pathClip + chrn + ".clip_region";
+    //regions_pos_vote(tmp_path1, regionPos_set, file_clipRegion);
+    string file_clipPos = pathClip + chrn + ".clip_pn";
+    approximate_pos_pns(file_clipRegion, tmp_path1, file_clipPos, regionPos_set);
 
   } else if ( opt == "fixed_delete0_pn" ) {   // write fasta reads for consensus, use clip reads first 
 
@@ -1087,6 +1115,10 @@ int main( int argc, char* argv[] )
     }
      
     AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"), cf_fh.get_conf("type_alu_cons"));    
+    int alucons_len = alucons_fh->seq_len;
+    delete alucons_fh;
+    PAR_DELETE0 pars = { alucons_len, seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q")), CLIP_BP_LEFT, CLIP_BP_RIGHT};
+
     map<string, int> rg_to_idx;
     string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
@@ -1104,18 +1136,17 @@ int main( int argc, char* argv[] )
       read_first2col( file_clipPos , insert_pos, true, min_pn);    
       string file_clip2 = pathCons + *ci + "/" + pn + ".clip";
       map < int, vector<ALUREAD_INFO>  > rid_alureads;       // info of alu reads 
-      clip_skip_unknow_reads(*ci, fout0, insert_pos, bam_fh, file_clip2, rid_alureads, rg_to_idx, alucons_fh->seq_len);            
+      clip_skip_unknow_reads(*ci, fout0, insert_pos, bam_fh, file_clip2, rid_alureads, rg_to_idx, pars);            
 
       string file_alu2 = pathCons + *ci + "/" + pn + ".aludb";
       ofstream falu ( file_alu2.c_str());  // use database, faster, also discard half of the reads
       falu << "clipPos alu_type rid beginPos sameRC read_len qName\n";
-      string alu_type_default = "na";
       for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
 	string chrn, file_db;
 	if ( bam_fh->get_chrn(ri->first, chrn) ) file_db =  path0 + chrn +"/" + pn + ".tmp1";	    
 	else file_db = "";
-	/* too slow: alumate_reads1(bam_fh, file_db, falu, ri->first, ri->second); */
-	alumate_reads2(file_db, falu, ri->first,  ri->second, alu_type_default);
+	/* reading bam file too slow: alumate_reads1(bam_fh, file_db, falu, ri->first, ri->second); */
+	alumate_reads2(file_db, falu, ri->first,  ri->second, "na");
       }
       falu.close();
       sort_file_by_col<int> (file_alu2, 1, true);  // sort by clip pos      

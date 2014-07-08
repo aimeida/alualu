@@ -49,23 +49,12 @@ bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_f
   return true;
 }
 
-
 bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName) {
   stringstream ss;
   string tmp1, tmp2, sleft_right;
   int clipPos;
   ss.str( line );
   ss >> pn >> tmp1 >> tmp2 >> sleft_right >> clipPos >> qName;
-  int match_offset =  ( sleft_right[0] == 'L') ? CLIP_BP_LEFT : CLIP_BP_RIGHT ;
-  return  abs(clipPos - clipLeft ) <= match_offset;
-}
-
-bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName, string & cigar, string & seq) {
-  stringstream ss;
-  string tmp1, tmp2, tmp3, sleft_right, tLen;
-  int clipPos;
-  ss.str( line );
-  ss >> pn >> tmp1 >> tmp2 >> sleft_right >> clipPos >> qName >> tmp3 >> cigar >> tLen >> seq;
   int match_offset =  ( sleft_right[0] == 'L') ? CLIP_BP_LEFT : CLIP_BP_RIGHT ;
   return  abs(clipPos - clipLeft ) <= match_offset;
 }
@@ -221,7 +210,7 @@ void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int 
 
   if ( abs(align_len_shortSeq - align_len) <= dif_th * align_len_shortSeq 
        and align_len >= CLIP_BP ){
-    if ( clipLen > 0 ) 
+    if ( clipLen > 0 ) // ??? 
       refEnd = s0 + clipLen;  // might > longSeq.size() 
     else if ( clipLen < 0 ) 
       refBegin = s1 + clipLen;  // might be negative
