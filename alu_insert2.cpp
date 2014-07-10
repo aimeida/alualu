@@ -175,21 +175,12 @@ int get_cons_seqlen(string file_input,  string file_alu, const string & cons_seq
   return 0;
 }
 
-void parse_pnCnt(string str, string & pn, int & cnt) {
-  stringstream ss;
-  ss.str(str);
-  getline(ss, pn, ':');
-  string token; 
-  getline(ss, token, ':');
-  seqan::lexicalCast2(cnt, token);
-}
-
 void read_consensus (string fn_input, float consensus_freq, map<int, int> & pos_consLen, string pn, map<int, int > & pos_aluCnt) {
   pos_consLen.clear(); 
   pos_aluCnt.clear();
   ifstream fin( fn_input.c_str() );
   assert (fin);
-  string line, tmpv, _pn;
+  string line, tmpv, _pn, _cnt;
   int pos, consLen, n1, n2, cnt;
   stringstream ss;
   getline(fin, line);
@@ -201,7 +192,8 @@ void read_consensus (string fn_input, float consensus_freq, map<int, int> & pos_
       if ( n2/(float)n1 < consensus_freq) continue;
       pos_consLen[pos] = consLen;
       while (ss >> tmpv) {
-	parse_pnCnt(tmpv, _pn, cnt);
+	split_by_sep(tmpv, _pn, _cnt, ':');
+	seqan::lexicalCast2(cnt, _cnt);
 	if ( _pn == pn ) {
 	  pos_aluCnt[pos] = cnt;
 	  break;
@@ -339,12 +331,9 @@ int main( int argc, char* argv[] )
     int clipPos = (argc == 5) ? seqan::lexicalCast<int> (argv[4]) : 0;
     
     vector < pair<int, int> > insert_pos;
-    if (clipPos)
+    if (clipPos) {
       insert_pos.push_back( make_pair ( clipPos, clipPos) );
-    else
-      read_first2col( pathClip + chrn + ".clip_pn", insert_pos, true, 2);   
-
-    if (insert_pos.empty() ) {
+    } else if (!read_first2col( pathClip + chrn + ".clip_pn", insert_pos, true) ) {
       cerr << "ERROR, file not exists: " << pathClip + chrn + ".clip_pn" << endl;
       return 1;
     }
@@ -401,7 +390,9 @@ int main( int argc, char* argv[] )
 
     string chrn = argv[3] ;
     vector < pair<int, int> > insert_pos;
-    read_first2col( pathClip + chrn + ".clip_pn", insert_pos, true, 2);   
+    if (!read_first2col( pathClip + chrn + ".clip_pn", insert_pos, true)) 
+      return 0;
+    
     ofstream fout( (pathCons + chrn + "_cons_seqlen").c_str() );
     fout << "clipLeft len_insertion others\n";   // default 0 if failed 
     for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {

@@ -186,7 +186,6 @@ bool trim_clip_soft_first( seqan::BamAlignmentRecord & record, int & clipLen, se
 bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip);
 
 int numOfBestHits(seqan::BamAlignmentRecord &record);
-void read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header, int min_pn);
 void get_chrn(string fn, map<int, string> & rid_chrn);
 
 #endif /*UTILS_H*/

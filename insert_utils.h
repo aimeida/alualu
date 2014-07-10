@@ -12,6 +12,18 @@ inline void close_fhs(MapFO & fileMap, map<int, string> & rID_chrn) {
     delete fileMap[rc->first];
 }
 
+inline int get_min_pair( int pa, int pb ){
+  if (pa <= 0) return pb;
+  if (pb <= 0) return pa;
+  return min(pa, pb);
+}
+
+inline pair<int, int> get_valid_pair(int pa, int pb) {
+  if ( pa<=0 ) return make_pair(pb, pb);
+  if ( pb<=0 ) return make_pair(pa, pa);
+  return  make_pair(pa, pb);
+}
+
 class AlumateINFO {
  public:
   string qname;
@@ -34,17 +46,16 @@ class READ_INFO {
 class ALUREAD_INFO {
 public:
   seqan::CharString qName;
-  int clipLeft, pos, readLen;
+  int this_pos, clipLeft, pos, readLen;
   bool sameRC;
- ALUREAD_INFO(seqan::CharString & qn, int cl, int p, int rlen, bool t) : qName(qn), clipLeft(cl), pos(p), readLen(rlen), sameRC(t) {}
+ ALUREAD_INFO(seqan::CharString & qn, int tp, int cl, int p, int rlen, bool t) : qName(qn), this_pos(tp), clipLeft(cl), pos(p), readLen(rlen), sameRC(t){ }
 };
 
 
 bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 
-bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName);
-
+bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header);
 bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int cnt_alumate, int insertLenPlus = 0);
 bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose = false);
 bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header);

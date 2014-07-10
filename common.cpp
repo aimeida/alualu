@@ -88,23 +88,101 @@ int check_file_size(string fn){
   }
 }
 
-float major_pos_freq (vector <int> & ps, int & major_p, int bin_width ) {
+void split_by_sep(string &str, string &m, string &n, char sep ){
+  stringstream ss;
+  ss.str(str);
+  getline(ss, m, sep);
+  getline(ss, n, ' ');
+}
+
+int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th ) {
+  k1 = 0;
   if (ps.empty() ) 
     return 0;
   map <int, int> pos_cnt;  
+   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
+    addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
+  multimap<int, int> cnt_pos = flip_map(pos_cnt);  
+  multimap<int, int>::reverse_iterator it = cnt_pos.rbegin();
+  pos_cnt.clear();  
+  int _k1, _k2;
+  _k1 = it->second; 
+  if (cnt_pos.size() > 1 ) {
+    it ++;
+    _k2 =  it->second;
+    if ( abs(_k1 - _k2 ) == bin_width ) {
+      _k1 = (_k1 + _k2) / 2;
+    }
+  }  
+
+  for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
+    if ( abs( *pi - _k1) <= (int) bin_width * 1.1) 
+      addKey(pos_cnt, *pi , 1);
+  
+  //cout << "size " << pos_cnt.size() << " " <<  ps.size() << endl;
+  cnt_pos = flip_map(pos_cnt);
+  it = cnt_pos.rbegin();
+  if ( it->first / (float) ps.size() >= freq_th )
+    k1 = (flip_map(pos_cnt).rbegin())->second;    
+  
+  return 0;
+}
+
+int major_two_keys (vector <int> & ps, int & k1, int & k2, int bin_width, float freq_th, bool debugprint ) {
+  k1 = k2 = 0;
+  if (ps.empty() ) 
+    return 0;
+  if (ps.size() == 1) {
+    k1 = *(ps.begin());
+    return 0;
+  }
+  map <int, int> pos_cnt, pos_cnt2;  
+  float f1, f2;
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
     addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
-  int _major_p = (flip_map(pos_cnt).rbegin())->second;  //multimap<int, int> cnt_pos;
-  //cout << "major_p " << _major_p << endl;
+  multimap<int, int> cnt_pos;
+  multimap<int, int>::reverse_iterator it;
+  cnt_pos = flip_map(pos_cnt);
+  it = cnt_pos.rbegin();
   pos_cnt.clear();
-  int cnt = 0;
-  for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
-    if ( abs( *pi - _major_p) <= 2 * bin_width ) {
-      addKey(pos_cnt, *pi , 1);
-      cnt ++;
-    }
 
-  major_p = (flip_map(pos_cnt).rbegin())->second;
-  float freq_ub = cnt / (float) ps.size() ;  // freq upper bound
-  return freq_ub;
+  int _k1 = 0, _k2 = 0;
+  _k1 =  it->second;
+  f1 = it->first / float( ps.size() );
+  if ( cnt_pos.size() > 1 ) {
+    it++;
+    _k2 =  it->second;    
+    f2 = it->first / float( ps.size() );
+    if ( abs(_k1 - _k2 ) == bin_width ) {
+      _k1 = (_k1 + _k2) / 2;
+      f1 += f2;
+      f2 = 0;
+    } 
+    if ( f2 < freq_th )
+      _k2 = 0;
+  }
+
+  if (f1 < freq_th)  return 0;
+
+  if ( debugprint ) {
+    cout << "round " << _k1 << " " << _k2 << endl;
+    //debugprint_vec(ps); 
+  }
+  
+  for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) {
+    if ( abs( *pi - _k1) <= (int) bin_width * 1.3) {
+      addKey( pos_cnt, *pi, 1);      
+    } else if ( _k2 and abs( *pi - _k2) <= (int) bin_width * 1.3 ) {
+      addKey( pos_cnt2, *pi, 1);      
+    }
+  }
+  
+  if ( !pos_cnt.empty())  k1 = (flip_map(pos_cnt).rbegin())->second;
+  else k1 = 0;
+
+  if ( _k2 and !pos_cnt2.empty() ) 
+    k2 = (flip_map(pos_cnt2).rbegin())->second;
+  else k2 = 0;
+
+  return 0;
 }

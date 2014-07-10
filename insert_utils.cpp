@@ -49,14 +49,48 @@ bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_f
   return true;
 }
 
-bool read_match_clipLeft(string & line, int clipLeft, string & pn, string & qName) {
+// get inferred split positions, also filter out potential error 
+bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header) {
+  insert_pos.clear();
+  ifstream fin(fn.c_str());
+  if (!fin) return false;
   stringstream ss;
-  string tmp1, tmp2, sleft_right;
-  int clipPos;
-  ss.str( line );
-  ss >> pn >> tmp1 >> tmp2 >> sleft_right >> clipPos >> qName;
-  int match_offset =  ( sleft_right[0] == 'L') ? CLIP_BP_LEFT : CLIP_BP_RIGHT ;
-  return  abs(clipPos - clipLeft ) <= match_offset;
+  string line, tmpv;
+  if (has_header)  getline(fin, line); 
+  int beginPos, endPos, beginPre = 0, endPre = 0;
+  int ni = 0;
+  while (getline(fin, line)) {
+    ni ++;
+    ss.clear(); ss.str( line );  
+    ss >> beginPos >> endPos;
+    if (beginPre <=0 and endPre <=0) {
+      beginPre = (beginPos <= 0) ? endPos : beginPos;
+      endPre = (endPos <= 0) ? beginPos : endPos ;
+      continue;
+    }
+    if ( abs(get_min_pair( beginPos, endPos) - max(beginPre, endPre) ) > CLIP_BP_MID ) {
+      insert_pos.push_back( get_valid_pair(beginPre, endPre) );
+      beginPre = beginPos;
+      endPre = endPos;
+    } else if (beginPre == beginPos) {
+      endPre = max( endPre, endPos);
+    } else if (endPre == endPos ) {
+      beginPre = max( beginPre, beginPos);
+    }  else {
+      ///cout << "err2 " << line << endl;
+      insert_pos.push_back( get_valid_pair(beginPre, endPre) );
+      beginPre = beginPos;
+      endPre = endPos;      
+    }    
+  }
+  fin.close();
+  if ( insert_pos.empty() ) 
+    insert_pos.push_back( get_valid_pair(beginPre, endPre) );
+  else if ( abs ( max(beginPre, endPre) - max( (*insert_pos.rbegin()).first, (*insert_pos.rbegin()).second) ) > MAX_POS_DIF )
+    insert_pos.push_back( get_valid_pair(beginPre, endPre) );  
+//  for (vector < pair<int, int> >::iterator it = insert_pos.begin(); it != insert_pos.end(); it++ )
+//    cout << (*it).first << " " << (*it).second << endl;
+  return !insert_pos.empty(); 
 }
 
 bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int cnt_alumate, int insertLenPlus){

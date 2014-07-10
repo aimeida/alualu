@@ -1,5 +1,5 @@
 
-make OD=opt3 opt3/alu_insert2
+# make OD=opt3 opt3/alu_insert2
 #opt3/alu_insert2 config.dk cons_reads_build chr1 ## running now 
 
 

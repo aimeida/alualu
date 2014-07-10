@@ -37,8 +37,8 @@ using namespace std;
 #define MAX_LEN_REGION 100 // max length of insert region
 #define MAX_POS_DIF 50  // combine scanned insertion loci 
 #define ALIGN_END_CUT 10 // cut the last 10 bp while realign to reference
-#define CLIP_BP_LEFT 5
-#define CLIP_BP_RIGHT 30
+#define CLIP_BP_LEFT 10
+#define CLIP_BP_MID 30  // include when using the mean of clipLeft and clipRight 
 
 inline int round_by_resolution(int x, int r) {
   return r * roundf ( (float) x / (float) r );
@@ -76,6 +76,7 @@ inline int get_col_idx(string fn, string col_name) {
   fin.close();
   return 0;
 }
+
 
 template < typename K >
 bool compare_first(const K & a, const K & b) {
@@ -168,12 +169,14 @@ void sort_file_by_col(string fn, int coln, bool has_header){
     rows.push_back( make_pair(valn, line) );
   }
   fin.close();
-  rows.sort(compare_first < pair<VT, string> >);
   ofstream fout( fn.c_str());
   if (has_header) fout << header << endl;  
-  // tell it it's typename !!!!
-  for (typename std::list< pair<VT, std::string> >::iterator ri = rows.begin(); ri != rows.end(); ri++)
-    fout << (*ri).second << endl;
+  if (!rows.empty()) {
+    rows.sort(compare_first < pair<VT, string> >);
+    // tell it it's typename !!!!
+    for (typename std::list< pair<VT, std::string> >::iterator ri = rows.begin(); ri != rows.end(); ri++)
+      fout << (*ri).second << endl;
+  }
   fout.close();
 };
 
@@ -190,7 +193,8 @@ void get_pn(string pn_file, map<int, string> &ID_pn);
 void read_file_pn_used(string fn, std::set <string> & pns_used);
 void read_file_pn_used(string fn, vector <string> & pns_used);
 int check_file_size(string fn);
-
-float major_pos_freq (vector <int> & ps, int & major_p, int bin_width ); 
+void split_by_sep(string &str, string &m, string &n, char sep );
+int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th ); 
+int major_two_keys (vector <int> & ps, int & k1, int & k2, int bin_width, float freq_th, bool debugprint = false );
 
 #endif /*COMMON_H*/
