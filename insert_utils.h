@@ -56,12 +56,12 @@ bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_f
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 
 bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header);
-bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int cnt_alumate, int insertLenPlus = 0);
+bool parseline_del_tmp0(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int cnt_alumate, int estimatedAluLen, int extra_unknowCnt = 0, string extra_unknowInfo = "");
 bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose = false);
 bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header);
 int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);  // consensus sequence is quite long 
 void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);
-bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float dif_th, const string & atype) ;
+bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float dif_th, string loginfo) ;
 
 
 // following, depreciated

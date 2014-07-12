@@ -95,10 +95,9 @@ void split_by_sep(string &str, string &m, string &n, char sep ){
   getline(ss, n, ' ');
 }
 
-int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th ) {
-  k1 = 0;
-  if (ps.empty() ) 
-    return 0;
+int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int initv) {
+  k1 = initv;
+  if (ps.empty() ) return 0;
   map <int, int> pos_cnt;  
    for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
     addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
@@ -113,19 +112,22 @@ int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th ) 
     if ( abs(_k1 - _k2 ) == bin_width ) {
       _k1 = (_k1 + _k2) / 2;
     }
-  }  
-
+  }   
+  // find most common position;
+  int match_cnt = 0;
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
-    if ( abs( *pi - _k1) <= (int) bin_width * 1.1) 
+    if ( abs( *pi - _k1) <= (int) bin_width * 1.1) {
       addKey(pos_cnt, *pi , 1);
+      match_cnt++;
+    }
+
+  it = flip_map(pos_cnt).rbegin();
   
   //cout << "size " << pos_cnt.size() << " " <<  ps.size() << endl;
-  cnt_pos = flip_map(pos_cnt);
-  it = cnt_pos.rbegin();
-  if ( it->first / (float) ps.size() >= freq_th )
-    k1 = (flip_map(pos_cnt).rbegin())->second;    
+  if ( match_cnt / (float) ps.size() >= freq_th ) 
+    k1 = it->second;    
   
-  return 0;
+  return it->second; // return the value anyway 
 }
 
 int major_two_keys (vector <int> & ps, int & k1, int & k2, int bin_width, float freq_th, bool debugprint ) {

@@ -93,16 +93,15 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int cnt_alumate, int insertLenPlus){
+bool parseline_del_tmp0(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int midCnt, int estimatedAluLen, int extra_unknowCnt, string extra_unknowInfo){
   float *log10_gp = new float[3];
   stringstream ss, ss_out;
   string chrn;
-  int clipLeft, clipRight, estimatedAluLen, midCnt, clipCnt, unknowCnt;
-  ss.clear(); ss.str(line); 
-  ss >> chrn >> clipLeft >> clipRight >> estimatedAluLen >> midCnt >> clipCnt >> unknowCnt ;
-  midCnt += cnt_alumate;  // add alumate count
-  estimatedAluLen += insertLenPlus;
-  //if ( cnt_alumate) cout << "debug " << cnt_alumate << " " << line << endl;
+  int clipLeft, clipRight, clipCnt, unknowCnt;
+  ss.clear(); ss.str(line + " " + extra_unknowInfo); // some clip reads are classified as unknown reads 
+  ss >> chrn >> clipLeft >> clipRight >> clipCnt >> unknowCnt ;
+  unknowCnt += extra_unknowCnt;
+
   float prob_ub = pow(10, -LOG10_RATIO_UB);
   float prob_known = (midCnt+clipCnt)/(float)(midCnt + clipCnt + unknowCnt);
   for (int i = 0; i < 3; i++) log10_gp[i] = 0;
@@ -251,7 +250,7 @@ void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int 
   }
 }
 
-bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float dif_th, const string & atype) {
+bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float dif_th, string loginfo) {
   TAlign align;
   seqan::Score<int> scoringScheme(1, -1, -2, -3); 
   resize(rows(align), 2);
@@ -270,12 +269,12 @@ bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float
     align_len_shortSeq -= (s1 - l1);
   bool align_pass =  align_len_shortSeq >= CLIP_BP and abs(align_len_shortSeq - align_len) <= dif_th * align_len_shortSeq ;
 
-//  if ( !align_pass )  {
-//    cout << atype << " align_len " << align_len << endl;
-//    cout << shortSeq << endl;
-//    cout << longSeq << endl;
-//    cout << align << endl;
-//  }
+  if ( !align_pass and !loginfo.empty())  {
+    cout << loginfo << ": align_len " << align_len << endl;
+    cout << shortSeq << endl;
+    cout << longSeq << endl;
+    cout << align << endl;
+  }
     
   return align_pass;
 }

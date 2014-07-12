@@ -5,21 +5,6 @@
 
 typedef seqan::Dna5String TSeq;
 
-void read_seq(string pn, string fn, map <string, vector<string> > & pos_seqs, string skip_mk = ""){
-  ifstream fin( fn.c_str() );
-  assert (fin);
-  string line, pos, tmpv;
-  stringstream ss;
-  getline(fin, line);
-  while ( getline(fin, line) ) {
-    ss.clear(); ss.str( line );
-    ss >> pos >> tmpv;
-    if (tmpv == skip_mk) continue;
-    pos_seqs[pos].push_back( replace_str0_str(line, pn, pos));
-  }
-  fin.close();
-}
-
 void parse_line_aludb(string line, string &pn, int &beginPos, int & sameRC, int & read_len, string & qName){
   stringstream ss;
   string alu_type, rid;
@@ -27,26 +12,25 @@ void parse_line_aludb(string line, string &pn, int &beginPos, int & sameRC, int 
   ss >> pn >> alu_type >> rid >> beginPos >> sameRC >> read_len >> qName;
 }
 
-void read_alumate(ifstream & fin, seqan::StringSet <TSeq> & seqs, map < int, string > & rid_chrn, string file_fa, string fn_output, int cut_bp, bool use_clip_build = false) {
-  string line, pn, alu_type;
+bool write_cons_input(string fn_input, map < int, string > & rid_chrn, string file_fa, string fn_output, int cut_bp) {
+  ifstream fin( fn_input.c_str() );
+  if ( !fin ) return false;
+  ofstream fout(fn_output.c_str());;
+  string line, pn, tmpv;
   int rid;
   stringstream ss;
   map <int, vector<string> > rid_aludbs;
-  ofstream fout;
-  bool write_tmp_out = !fn_output.empty();
-  if (write_tmp_out) fout.open(fn_output.c_str());
   while ( getline(fin, line) ) {
     ss.clear(); ss.str( line );
-    ss >> pn >> alu_type;
-    if ( alu_type.substr(0,3) != "Alu" ) {
-      if (use_clip_build) 
-	fout << pn << " " << alu_type << " clipreads\n";
+    ss >> pn >> tmpv;
+    if ( tmpv.substr(0,3) != "Alu" ) {
+      fout << pn << " " << tmpv << " clipreads\n";
     }  else {
       ss >> rid;
       rid_aludbs[rid].push_back(line);
     }
   }
-
+  fin.close();
   for (map <int, vector<string> >::iterator ri = rid_aludbs.begin(); ri != rid_aludbs.end(); ri++) {
     string chrn = "";
     get_mapVal(rid_chrn, ri->first, chrn);
@@ -56,18 +40,68 @@ void read_alumate(ifstream & fin, seqan::StringSet <TSeq> & seqs, map < int, str
       string pn, qName;
       int beginPos, sameRC, read_len;
       parse_line_aludb( *bi, pn, beginPos, sameRC, read_len, qName);
-      seqan::CharString seq;
-      fasta_fh->fetch_fasta_upper(beginPos, beginPos + read_len , seq);          
-      if ( sameRC ) reverseComplement(seq);
-      appendValue(seqs, (TSeq) seq );           
-      if (write_tmp_out) {
-	int seqlen = length(seq) ; 
-	fout << pn << " " << infix(seq, cut_bp, seqlen - cut_bp) << " " << qName << endl;
-      }
+      seqan::CharString seq0;
+      fasta_fh->fetch_fasta_upper(beginPos, beginPos + read_len , seq0);          
+      if ( sameRC ) reverseComplement(seq0);
+      int seqlen = length(seq0) ; 
+      fout << pn << " " << infix( seq0, cut_bp, seqlen - cut_bp) << " " << qName << endl;
     }
     delete fasta_fh;
   }
-  if (write_tmp_out) fout.close();
+  fout.close();
+  return true;
+}
+
+bool read_cons_input(string fn_input,  seqan::StringSet <TSeq> & pos_Tseqs) {
+  clear(pos_Tseqs);
+  ifstream fin( fn_input.c_str() );
+  if ( !fin ) return false;
+  std::set<string> pos_seqs;
+  string line, pn, tmpv;
+  stringstream ss;
+  while ( getline(fin, line) ) {
+    ss.clear(); ss.str( line );
+    ss >> pn >> tmpv;
+    pos_seqs.insert(tmpv);
+  }
+  for (std::set<string>::iterator pi = pos_seqs.begin(); pi != pos_seqs.end(); pi++ ) 
+    appendValue(pos_Tseqs, (TSeq) *pi);
+  return (!pos_seqs.empty());
+}
+
+bool read_cons_input2(string fn_input,  seqan::StringSet <TSeq> & pos_Tseqs) {
+  clear(pos_Tseqs);
+  ifstream fin( fn_input.c_str() );
+  if ( !fin ) return false;
+  std::set<string> pos_seqs;
+  string line, pn, tmpv;
+  stringstream ss;
+  while ( getline(fin, line) ) {
+    ss.clear(); ss.str( line );
+    ss >> pn >> tmpv;
+    pos_seqs.insert(tmpv);
+  }
+  for (std::set<string>::iterator pi = pos_seqs.begin(); pi != pos_seqs.end(); pi++ ) 
+    appendValue(pos_Tseqs, (TSeq) *pi);
+  return (!pos_seqs.empty());
+}
+
+void write_cons_output(int clipLeft, seqan::StringSet <TSeq> & pos_Tseqs, ofstream &fout1) {
+  seqan::StringSet<TSeq> consensus;
+  int multi_align_fail = compute_consensus(consensus, pos_Tseqs);	
+  if ( multi_align_fail )
+    cout << clipLeft << " multiple read alignment failed ? \n";
+  size_t max_len = length(consensus[0]);
+  int max_id = 0;
+  for ( size_t i = 1; i < length(consensus); ++i) 
+    if (length(consensus[i]) > max_len) {
+      max_len = length(consensus[i]);
+      max_id = i;
+    }
+  fout1 << consensus[max_id] << "\n";  
+  for ( size_t i = 0; i < length(consensus); ++i)  
+    fout1 << ">" << clipLeft << "_" << i << "\n"<< consensus[i] << "\n";  // ok, i might want to debug, why so many contigs ?	
+  
 }
 
 void get_aluType( string file_alu, map<string, string> & qname_aluType) {
@@ -98,7 +132,7 @@ bool get_cons_seq (string &cons_seq, string file_input, string seq_name, int min
   return  (int)length(seq) >= minLen_alu_ins;
 }
 
-int get_cons_seqlen(string file_input,  string file_alu, const string & cons_seq, int minLen_alu_ins, float consensus_freq, map<string, int> & pn_newAluCnt, int & cnt0, int & cnt1) {
+int get_cons_insertLen(string file_clip,  string file_alu, const string & cons_seq, int minLen_alu_ins, float consensus_freq, map<string, int> & pn_newAluCnt, int & cnt0, int & cnt1) {
   map < pair<string, string>, int >  seqPn_clipLen;
   ifstream fin;
   string line, pn, seq, qname;
@@ -108,9 +142,8 @@ int get_cons_seqlen(string file_input,  string file_alu, const string & cons_seq
   fin.open( file_alu.c_str() );
   cnt0 = 0; cnt1 = 0;
   map<string, string> qname_aluType;
-  get_aluType(file_input, qname_aluType);
-  map<string, int> aluType_cnt;
-  map<string, int> aluType_cnt2; // failed align
+  get_aluType(file_clip, qname_aluType);
+  //map<string, int> aluType_cnt;
   while ( getline(fin, line) ) {
     cnt0++;
     ss.clear(); ss.str( line );
@@ -118,15 +151,16 @@ int get_cons_seqlen(string file_input,  string file_alu, const string & cons_seq
     string alu_type = qname_aluType[qname];
     if ( align_alu_to_consRef(seq, cons_seq, 0.15, alu_type))  {
       addKey(pn_newAluCnt, pn, 1); 
-      addKey(aluType_cnt, alu_type, 1);
+      //addKey(aluType_cnt, alu_type, 1);
       cnt1++;
     } else 
-      addKey(aluType_cnt2, alu_type, 1);    
+      align_alu_to_consRef(seq, cons_seq, 0.15, "print");
   }
   fin.close();
+  cout << "align alu " << cnt0 << ", with success of " << cnt1 << endl;
 
   // pns with clip reads
-  fin.open( file_input.c_str() );
+  fin.open( file_clip.c_str() );
   if (!fin) return 0;
   while ( getline(fin, line) ) {
     ss.clear(); ss.str( line );
@@ -144,7 +178,10 @@ int get_cons_seqlen(string file_input,  string file_alu, const string & cons_seq
   int refBegin, refEnd;
   for (map < pair<string, string>, int >::iterator si = seqPn_clipLen.begin(); si != seqPn_clipLen.end(); si++) {
     refBegin = -200; refEnd = -200;
-    align_clip_to_consRef( (si->first).first, cons_seq, refBegin, refEnd, si->second );    
+    align_clip_to_LongConsRef( (si->first).first, cons_seq, refBegin, refEnd, si->second );    
+
+    cout <<  "align " << (si->first).second << " " << refBegin << " " << refEnd << endl;
+
     if (refBegin > -200) {
       pn_refPos.push_back( make_pair(pn, refBegin) );
       addKey(refBegin_cnt, round_by_resolution(refBegin, CLIP_BP_LEFT), 1);
@@ -209,7 +246,7 @@ void empty_alumates_only(map <int, EmpiricalPdf *> & pdf_rg, string chrn, map <i
     ss << chrn << " " << bi->first << " " << bi->first << " " << pos_consLen[bi->first] << " 0 0 0";
     string line0 = ss.str();
     string output_line;
-    if (parseline_del_tmp1(line0, output_line, pdf_rg, bi->second ))
+    if (parseline_del_tmp0(line0, output_line, pdf_rg, bi->second, 299 ))
       rows_list.push_back( make_pair(bi->first, output_line) );
   }	
   pos_aluCnt.clear();
@@ -256,7 +293,7 @@ void write_tmp2(string pn, string f1_tmp0, string f2_tmp2, map <int, EmpiricalPd
       continue;   // failed to build consensus
     
     pos_aluCnt.erase( pos );
-    if (parseline_del_tmp1(line, output_line, pdf_rg, cnt_alumate, pos_consLen[pos] - len_alucon))
+    if (parseline_del_tmp0(line, output_line, pdf_rg, cnt_alumate, pos_consLen[pos]))
       rows_list.push_back( make_pair(pos, output_line) );
   } 
   empty_alumates_only(pdf_rg, chrn, pos_aluCnt, rows_list, pos_consLen);
@@ -292,129 +329,87 @@ int main( int argc, char* argv[] )
    check_folder_exists(pathDel1+"tmp2s/");
    string pathClip = path1 + "clip/";
    string pathCons = path1 + "cons/";
-   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ )  {
+   for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ )  
      check_folder_exists( pathCons + *ci + "_pos/") ;
-     check_folder_exists( pathCons + *ci + "_cons/") ; // write results of new built consensus seq
-   }
    int minLen_alu_ins = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_ins"));
    float consensus_freq = seqan::lexicalCast <float> (cf_fh.get_conf("consensus_freq"));
    
-   if (opt == "consReads_pns" ) {  // rewrite reads to another folder      
-     for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
-       string pathCons1 = pathCons + *ci + "/" ;
-       string pathCons2 = pathCons + *ci + "_pos/" ;
-       system( ("rm "+ pathCons2 + "*").c_str() );      
-       map <string, vector<string> > pos_seqs;
-       for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
-	 read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs);
-	 read_seq(*pi, pathCons1 + *pi + ".aludb", pos_seqs, "na");
-       }
-       if (pos_seqs.empty()) continue;      
-       for (map <string,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-	 string file_cons1 = pathCons2 + pi->first;
-	 ofstream fout1(file_cons1.c_str());
-	 for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
-	   fout1 << *si << endl;
-	 sort_file_by_col<string> (file_cons1, 1, true); // sort by pn
-	 fout1.close();		
-       }
+   if (opt == "consReads_build" ) {  // eg: /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons/chr1_pos/159408
+     
+     if (argc < 4 ) {
+       cerr << "usage: alu_insert2 config.dk " << opt << " chr1 \n";
+       cerr << "usage: alu_insert2 config.dk " << opt << " chr1 pos \n";
+       return 1;
+     }     
+     string chrn = argv[3] ;
+     int clipPos = (argc == 5) ? seqan::lexicalCast<int> (argv[4]) : 0;
+     
+     vector < pair<int, int> > insert_pos;
+     if (clipPos) {
+       insert_pos.push_back( make_pair ( clipPos, clipPos) );
+     } else if (!read_first2col( pathClip + chrn + ".clip_pn", insert_pos, true) ) {
+       cerr << "ERROR, file not exists: " << pathClip + chrn + ".clip_pn" << endl;
+       return 1;
      }
      
-  } else if (opt == "consReads_build" ) {  // eg: /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons/chr1_pos/159408
+     const int BUILD_CONS_MAX_INPUT = 1000;
+     for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
+       int clipLeft = (*pi).first;
+       string file_input = pathCons + chrn + "_pos/" + int_to_string(clipLeft);
+       string file_output0 = file_input + ".cons_input";
+       string file_output1 = file_input + ".cons_output";
+       
+       map < int, string > rid_chrn;
+       get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
+       string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
+       int cut_bp = seqan::lexicalCast<int> (cf_fh.get_conf("cut_bp_aluread"));
+       
+       if (!write_cons_input(file_input, rid_chrn, file_fa, file_output0, cut_bp))
+	continue;
 
-    if (argc < 4 ) {
-      cerr << "usage: alu_insert2 config.dk " << opt << " chr1 \n";
-      cerr << "usage: alu_insert2 config.dk " << opt << " chr1 pos \n";
-      return 1;
-    }     
-    string chrn = argv[3] ;
-    int clipPos = (argc == 5) ? seqan::lexicalCast<int> (argv[4]) : 0;
-    
-    vector < pair<int, int> > insert_pos;
-    if (clipPos) {
-      insert_pos.push_back( make_pair ( clipPos, clipPos) );
-    } else if (!read_first2col( pathClip + chrn + ".clip_pn", insert_pos, true) ) {
-      cerr << "ERROR, file not exists: " << pathClip + chrn + ".clip_pn" << endl;
-      return 1;
-    }
-
-    for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
-      int clipLeft = (*pi).first;
-      string file_input = pathCons + chrn + "_pos/" + int_to_string(clipLeft);
-      string file_output0 = file_input + ".cons_input";
-      string file_output = file_input + ".cons_output";
-      if ( check_file_size(file_output) > 0) {
-	cout << "file " << file_output << " has been built, skipping. \n";
+      if ( check_file_size(file_output1) > 0) {
+	cout << "file " << file_output1 << " has been built, skipping. \n";
+	cout << "remove "<< file_output1 << " to rerun. \n";
 	continue;
       }
-      ifstream fin( file_input.c_str() );
-      if ( !fin ) continue; 
-      map < int, string > rid_chrn;
-      get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
-      string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
-      seqan::StringSet <TSeq>  pos_seqs;    
-      int cut_bp = seqan::lexicalCast<int> (cf_fh.get_conf("cut_bp_aluread"));
-      //read_alumate(fin, pos_seqs, rid_chrn, file_fa, file_output0, cut_bp); // cut 10 bp in the end to build consensus
-      read_alumate(fin, pos_seqs, rid_chrn, file_fa, file_output0, cut_bp, true); 
-      fin.close();
-      
-      ofstream fout(file_output.c_str());
-      if ( length(pos_seqs) < 2 ) {
-	fout << ">" << clipLeft << "\nAAAAAAA\n";   // too few reads for building consensus
-      } else if ( length(pos_seqs) > 999 ) {
-	fout << ">" << clipLeft << "\nTTTTTTT\n";   // too many reads, need to check again !!
+      seqan::StringSet <TSeq>  pos_Tseqs;    
+      if (!read_cons_input(file_output0, pos_Tseqs))
+	continue;
+      cout << "read first, cnt: " << length(pos_Tseqs) << endl;
+
+      ofstream fout1(file_output1.c_str());
+      fout1 << ">" << clipLeft << "\n";
+      if ( length(pos_Tseqs) < 2 ) {   // check 34776066
+	fout1 << "AAAAAAA\n";   // too few reads for building consensus
+      } else if ( (int)length(pos_Tseqs) > BUILD_CONS_MAX_INPUT ) {
+	read_cons_input2(file_output0, pos_Tseqs); // select reads while reading 
+	cout << "read again, cnt: " << length(pos_Tseqs) << endl;
+	if ( (int)length(pos_Tseqs) < BUILD_CONS_MAX_INPUT ) 
+	  write_cons_output(clipLeft, pos_Tseqs, fout1); 
+	else 
+	  fout1 << "TTTTTTT\n";   // too many reads, need to check again !!
       }	else {
-          seqan::StringSet<TSeq> consensus;
-          int multi_align_fail = compute_consensus(consensus, pos_seqs);	
-          cout <<  chrn << " " << clipLeft << ", multiple read alignment failed ? "<< multi_align_fail << endl;
-          size_t max_len = length(consensus[0]);
-          int max_id = 0;
-          for ( size_t i = 1; i < length(consensus); ++i) 
-	    if (length(consensus[i]) > max_len) {
-	      max_len = length(consensus[i]);
-	      max_id = i;
-	    }
-          fout << ">" << clipLeft << "\n"<< consensus[max_id] << "\n";  
-          for ( size_t i = 0; i < length(consensus); ++i)  
-	    fout << ">" << clipLeft << "_" << i << "\n"<< consensus[i] << "\n";  // ok, i might want to debug, why so many contigs ?	
+	write_cons_output(clipLeft, pos_Tseqs, fout1);
       }
-      fout.close();     
-    }   
-    
-   } else if (opt == "consReads_chr" ) {  
+      fout1.close();   
 
-    if (argc < 4 ) {
-      cerr << "usage: alu_insert2 config.dk " << opt << " chr1 \n";
-      return 1;
-    }     
-
-    string chrn = argv[3] ;
-    vector < pair<int, int> > insert_pos;
-    if (!read_first2col( pathClip + chrn + ".clip_pn", insert_pos, true)) 
-      return 0;
-    
-    ofstream fout( (pathCons + chrn + "_cons_seqlen").c_str() );
-    fout << "clipLeft len_insertion others\n";   // default 0 if failed 
-    for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
-      int clipLeft = (*pi).first;
-      string file1 = pathCons + chrn + "_pos/" + int_to_string(clipLeft);
-      string file2 = file1 + ".cons_output";
+      // get sequence length
+      string file_output2 = file_input + ".cons_seqlen";
+      ofstream fout2( file_output2.c_str() );
       string cons_seq;
-      if ( !get_cons_seq ( cons_seq, file2, int_to_string(clipLeft), minLen_alu_ins ) ) {
-	fout << clipLeft << " 0 " << cons_seq << endl;
+      if ( !get_cons_seq ( cons_seq, file_output1, int_to_string(clipLeft), minLen_alu_ins ) ) {
+	fout2 << clipLeft << " 0 " << cons_seq << endl;  // failed to build consensus
       } else {  // use clipreads to find insertion length 
 	map<string, int> pn_newAluCnt;   // count of clip and alu counts for each pn 
-	string file3 = file1 + ".cons_input";
 	int cnt_alu_db, cnt_alu_aligned;
-	int seqlen = get_cons_seqlen ( file1, file3, cons_seq, minLen_alu_ins, consensus_freq, pn_newAluCnt, cnt_alu_db, cnt_alu_aligned );
-	fout << clipLeft << " " << seqlen <<  " " << length(cons_seq) << " " << cnt_alu_db << " " << cnt_alu_aligned  ;
+	int insertLen = get_cons_insertLen ( file_input, file_output0, cons_seq, minLen_alu_ins, consensus_freq, pn_newAluCnt, cnt_alu_db, cnt_alu_aligned );
+	fout2 << clipLeft << " " << insertLen <<  " " << length(cons_seq) << " " << cnt_alu_db << " " << cnt_alu_aligned  ;
 	for (map<string,int>::iterator ci = pn_newAluCnt.begin(); ci != pn_newAluCnt.end(); ci++ )
-	  fout << " " <<  ci->first << ":" << ci->second;
-	fout << endl;
+	  fout2 << " " <<  ci->first << ":" << ci->second;
+	fout2 << endl;
       }
-    }
-    fout.close();
-    cout << "output to " << pathCons + chrn + "_cons_seqlen\n" ;
+      fout2.close();
+    }   
     
    } else if (opt == "delete0_pn" ) {  // only use loci that have consensus sequence
 
@@ -452,7 +447,7 @@ int main( int argc, char* argv[] )
      get_cons_seq ( cons_seq, file2, int_to_string(clipLeft), minLen_alu_ins );
      map<string, int> pn_newAluCnt;   
      string file3 = file1 + ".cons_input";
-     int cnt_alu_db, cnt_alu_aligned;
+     //int cnt_alu_db, cnt_alu_aligned;
      //int cons_seqlen = get_cons_seqlen ( file1, file3, cons_seq, minLen_alu_ins, pn_newAluCnt, cnt_alu_db, cnt_alu_aligned, consensus_freq ); 
      //cout << clipLeft << " " << cons_seqlen <<  " " << length(cons_seq) << " " << cnt_alu_db << " " << cnt_alu_aligned << endl ;
      

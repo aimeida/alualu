@@ -194,7 +194,7 @@ void read_file_pn_used(string fn, std::set <string> & pns_used);
 void read_file_pn_used(string fn, vector <string> & pns_used);
 int check_file_size(string fn);
 void split_by_sep(string &str, string &m, string &n, char sep );
-int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th ); 
+int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int initv = 0 ); 
 int major_two_keys (vector <int> & ps, int & k1, int & k2, int bin_width, float freq_th, bool debugprint = false );
 
 #endif /*COMMON_H*/
