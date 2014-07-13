@@ -116,6 +116,7 @@ bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalP
     ss.clear(); ss.str(line1);
     ss >> chrn >> pos >> _aluCnt >> _clipCnt >> _ukCnt;
     midCnt = _aluCnt + _clipCnt;
+    unknowCnt += _ukCnt;
     for (int i = 0; i < _ukCnt; i++) {
       getline(ss, token, ':');
       seqan::lexicalCast2(idx, token);

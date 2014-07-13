@@ -1116,25 +1116,26 @@ void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, Empiri
 	  for (map<int, string>::iterator ti = tmp1_info[chrn].begin(); ti != tmp1_info[chrn].end(); ti ++ )
 	    if (parseline_del_tmp0("", output_line, pdf_rg, fixed_len, ti->second))
 	      rows_list.push_back( make_pair(ti->first, output_line) );
+	  tmp1_info[chrn].clear();
 	}
 	write_tmp2_chrn(rows_list, fout);
       }
       pre_chrn = chrn;      
     }    
     string line1 = "";
-    if ( tmp1_info.find(chrn) != tmp1_info.end() and tmp1_info[chrn].find(pos) != tmp1_info[chrn].find(pos)) {
+    if ( tmp1_info.find(chrn) != tmp1_info.end() and tmp1_info[chrn].find(pos) != tmp1_info[chrn].end()) {
       line1 = tmp1_info[chrn][pos];
       tmp1_info[chrn].erase(pos);
     }
-    if (parseline_del_tmp0(line, output_line, pdf_rg, fixed_len, line1))
+    if (parseline_del_tmp0(line, output_line, pdf_rg, fixed_len, line1)) 
       rows_list.push_back( make_pair(pos, output_line) );
   } 
-
-  if ( tmp1_info.find(chrn) != tmp1_info.end() ) {
+  
+  if ( tmp1_info.find(chrn) != tmp1_info.end() ) 
     for (map<int, string>::iterator ti = tmp1_info[chrn].begin(); ti != tmp1_info[chrn].end(); ti ++ )
-      if (parseline_del_tmp0("", output_line, pdf_rg, fixed_len, ti->second))
+      if (parseline_del_tmp0("", output_line, pdf_rg, fixed_len, ti->second)) 
 	rows_list.push_back( make_pair(ti->first, output_line) );
-  }
+  
   write_tmp2_chrn(rows_list, fout);
   fin.close();  
 }
