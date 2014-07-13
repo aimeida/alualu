@@ -93,14 +93,37 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-bool parseline_del_tmp0(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int midCnt, int estimatedAluLen, int extra_unknowCnt, string extra_unknowInfo){
+bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int estimatedAluLen, string line1){
   float *log10_gp = new float[3];
   stringstream ss, ss_out;
-  string chrn;
-  int clipLeft, clipRight, clipCnt, unknowCnt;
-  ss.clear(); ss.str(line + " " + extra_unknowInfo); // some clip reads are classified as unknown reads 
-  ss >> chrn >> clipLeft >> clipRight >> clipCnt >> unknowCnt ;
-  unknowCnt += extra_unknowCnt;
+  string chrn, tmpv, token;
+  int idx, pos, insert_len;
+  int clipCnt = 0, unknowCnt = 0, midCnt = 0;  
+  vector < pair <int, int> > unknowInfo;
+  if ( !line0.empty() ) { 
+    ss.str(line0);
+    ss >> chrn >> pos >> tmpv >> clipCnt >> unknowCnt ;
+    for (int i = 0; i < unknowCnt; i++) {
+      getline(ss, token, ':');
+      seqan::lexicalCast2(idx, token);
+      getline(ss, token, ' ');
+      seqan::lexicalCast2(insert_len, token);      
+      unknowInfo.push_back( make_pair(idx, insert_len) );
+    }
+  }
+  int _aluCnt, _clipCnt, _ukCnt;
+  if ( !line1.empty() ) { 
+    ss.clear(); ss.str(line1);
+    ss >> chrn >> pos >> _aluCnt >> _clipCnt >> _ukCnt;
+    midCnt = _aluCnt + _clipCnt;
+    for (int i = 0; i < _ukCnt; i++) {
+      getline(ss, token, ':');
+      seqan::lexicalCast2(idx, token);
+      getline(ss, token, ' ');
+      seqan::lexicalCast2(insert_len, token);
+      unknowInfo.push_back( make_pair(idx, insert_len) );
+    }   
+  }
 
   float prob_ub = pow(10, -LOG10_RATIO_UB);
   float prob_known = (midCnt+clipCnt)/(float)(midCnt + clipCnt + unknowCnt);
@@ -110,26 +133,22 @@ bool parseline_del_tmp0(string &line, string & output_line, map <int, EmpiricalP
     log10_gp[1] = (midCnt + clipCnt) * log10 (prob_known * 0.5) ; 
     log10_gp[2] = midCnt * log10 ( prob_known * prob_ub ) + clipCnt * log10 ( prob_known * (1 - prob_ub) );
   }
-  if (unknowCnt) { 
-    int insert_len, idx;
-    string token;
-    for (int i = 0; i < unknowCnt; i++) {
-      getline(ss, token, ':');
-      seqan::lexicalCast2(idx, token);
-      getline(ss, token, ' ');
-      seqan::lexicalCast2(insert_len, token);      
-      float p_y = pdf_rg[idx]->pdf_obs(insert_len);
-      float p_z = pdf_rg[idx]->pdf_obs(insert_len - estimatedAluLen);
-      //float freq0 = 0.67;  // high FP ratio      
-      float freq0 = ( midCnt + 1 )/(float)(midCnt + clipCnt + 2); // 1 and 2 are psudo count
-      log10_gp[0] += log10 (p_y * (1 - prob_known));
-      log10_gp[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z) * (1 - prob_known) ) ;
-      log10_gp[2] += log10 (p_z * (1 - prob_known));
-    }
+
+  for (vector < pair <int, int> >::iterator ui = unknowInfo.begin(); ui != unknowInfo.end(); ui++ ) {
+    int idx = (*ui).first;
+    int insert_len = (*ui).second;
+    float p_y = pdf_rg[idx]->pdf_obs(insert_len + estimatedAluLen);
+    float p_z = pdf_rg[idx]->pdf_obs(insert_len);
+    //float freq0 = 0.67;  // high FP ratio      
+    float freq0 = ( midCnt + 1 )/(float)(midCnt + clipCnt + 2); // 1 and 2 are psudo count
+    log10_gp[0] += log10 (p_y * (1 - prob_known));
+    log10_gp[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z) * (1 - prob_known) ) ;
+    log10_gp[2] += log10 (p_z * (1 - prob_known));
   }
+  
   bool use_this_line = false;
   if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
-    ss_out << chrn << " " << clipLeft << " " << estimatedAluLen << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
+    ss_out << chrn << " " << pos << " " << estimatedAluLen << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
     float *gp = new float[3];
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
     ss_out << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0];  // NB: switch 00 and 11, unlike alu_delete
