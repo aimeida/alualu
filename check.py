@@ -158,7 +158,7 @@ if __name__ == "__main__":
     opt = sys.argv[1]
     
     allow_denovo = True 
-#    allow_denovo = False
+    #allow_denovo = False
     verbose = False
 
     if opt == 'i':

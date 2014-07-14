@@ -997,13 +997,6 @@ void count_clipread(string fn_clip, map < int, pair <int, int> > & exact_pos, ma
   }
 }
 
-void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout) {
-  rows_list.sort(compare_IntString);
-  for (list< IntString>::iterator ri = rows_list.begin(); ri!=rows_list.end(); ri++) 
-    fout << (*ri).second << endl;
-  rows_list.clear();
-}
-
 void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, string skip_mk = ""){
   ifstream fin( fn.c_str() );
   assert (fin);
@@ -1020,26 +1013,31 @@ void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, strin
   fin.close();
 }
 
+void read_clip_pass(string fn_clip_pass, map < int, pair <int, int> > & exact_pos) {
+  string line;
+  stringstream ss;
+  int pos, clipl, clipr;
+  ifstream fin ( fn_clip_pass.c_str()) ;
+  assert(fin);
+  getline(fin, line); // read header
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line); 
+    ss >> pos >> clipl >> clipr;
+    exact_pos[pos] = make_pair(clipl, clipr);
+  }
+  fin.close();
+}
 
 void write_tmp1(vector <string> & chrns, string fn_tmp1, string fn_clip_pass0, string fn_clip0, string fn_alu0) {
   ofstream fout(fn_tmp1.c_str());
   fout << "chr insertBegin aluRead clipRead unknow unknowStr\n";  
   string line;
-  int clipl, clipr, pos;
   stringstream ss;  
   for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
     string chrn = *ci;
     string fn_clip_pass = replace_str0_str(fn_clip_pass0, chrn, "chr0");
-    ifstream fin ( fn_clip_pass.c_str()) ;
-    assert(fin);
     map < int, pair <int, int> > exact_pos;
-    getline(fin, line); // read header
-    while (getline(fin, line)) {
-      ss.clear(); ss.str(line); 
-      ss >> pos >> clipl >> clipr;
-      exact_pos[pos] = make_pair(clipl, clipr);
-    }
-    fin.close();
+    read_clip_pass(fn_clip_pass, exact_pos);
     string fn_alu = replace_str0_str(fn_alu0, chrn, "chr0");
     map <int, int > alu_cnt;
     count_alumate(fn_alu, alu_cnt);
@@ -1088,15 +1086,27 @@ void write_tmp1(vector <string> & chrns, string fn_tmp1, string fn_clip_pass0, s
     
     for ( map <int, string>::iterator ti = tmp1_info.begin(); ti != tmp1_info.end(); ti++ ) 
       fout << chrn << " " << ti->first << " " << ti->second << endl;
-    
   }
   fout.close();
 }
 
-void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int fixed_len){
+void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout, const string & fn_clip_pass) {
+  map < int, pair <int, int> > exact_pos;
+  read_clip_pass(fn_clip_pass, exact_pos);
+  rows_list.sort(compare_IntString);
+  for (list< IntString>::iterator ri = rows_list.begin(); ri!=rows_list.end(); ri++) {
+    map < int, pair <int, int> >::iterator ei = exact_pos.find( (*ri).first);
+    if ( ei == exact_pos.end() ) continue;  // extra filter ??
+    string old_pos = int_to_string(ei->first) ;
+    string new_pos = int_to_string( (ei->second).first ) + " " + int_to_string( (ei->second).second ) ;
+    fout << replace_str0_str( (*ri).second , new_pos, old_pos )  << endl;
+  }
+  rows_list.clear();
+}
+
+void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int fixed_len, string fn_clip_pass0){
   ofstream fout(fn_tmp2.c_str());
-  //fout << "chr pos insertBegin insertEnd insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
-  fout << "chr insertBegin insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
+  fout << "chr insertBegin insertEnd insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
   stringstream ss;
   string line, chrn, output_line;
   int pos;
@@ -1113,6 +1123,7 @@ void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, Empiri
   ifstream fin(fn_tmp0.c_str());
   assert(fin);
   string pre_chrn = "";
+  string fn_clip_pass;
   list< IntString> rows_list;
   getline(fin, line); // read header
   while (getline(fin, line)) {
@@ -1126,7 +1137,8 @@ void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, Empiri
 	      rows_list.push_back( make_pair(ti->first, output_line) );
 	  tmp1_info[pre_chrn].clear();
 	}
-	write_tmp2_chrn(rows_list, fout);
+	fn_clip_pass = replace_str0_str(fn_clip_pass0, pre_chrn, "chr0");
+	write_tmp2_chrn(rows_list, fout, fn_clip_pass);
       }
       pre_chrn = chrn;      
     }    
@@ -1144,7 +1156,8 @@ void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, Empiri
       if (parseline_del_tmp0("", output_line, pdf_rg, fixed_len, ti->second)) 
 	rows_list.push_back( make_pair(ti->first, output_line) );
   
-  write_tmp2_chrn(rows_list, fout);
+  fn_clip_pass = replace_str0_str(fn_clip_pass0, chrn, "chr0");
+  write_tmp2_chrn(rows_list, fout, fn_clip_pass);
   fin.close();  
 }
 
@@ -1399,17 +1412,14 @@ int main( int argc, char* argv[] )
     // add cnts summary for each pn 
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
       int posl = pi->first;
-
       //if (posl != 153503267) continue;
       //cout << "## debug1 ## " << posl << " " << pos_seqs.size() << endl;
-
       vector <int> clipls, cliprs;
       for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
 	parse_line1(*si, posl, CLIP_BP_MID, clipls, cliprs);
       int clipl, clipr;
       int _clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq);   
       int _clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq);
-
       if (!clipl and !clipr ) continue;
       if ( !clipl ) {
 	if ( abs(_clipl - clipr) <= CLIP_BP_MID) clipl = _clipl;
@@ -1442,7 +1452,7 @@ int main( int argc, char* argv[] )
      read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
      string file_tmp0 = pathDel0 + "tmp0s/" + pn + ".tmp0";
      string file_tmp2 = pathDel0 + pn + ".tmp2";
-     write_tmp2(file_tmp0, file_tmp1, file_tmp2, pdf_rg, alucons_len);
+     write_tmp2(file_tmp0, file_tmp1, file_tmp2, pdf_rg, alucons_len, file_clip_pass);
      
      EmpiricalPdf::delete_map(pdf_rg);
      move_files(pathDel0 + "tmp1s/", file_tmp1);
@@ -1454,7 +1464,7 @@ int main( int argc, char* argv[] )
     string path_input = pathDel0 + "tmp2s/";
     string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";
     int col_idx =  get_col_idx(tmp_file_pn, "00");
-    assert (col_idx == 7 );
+    ///assert (col_idx == 7 );
     string fn_pos = pathDel0 + int_to_string( pns.size()) + ".pos";
     filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, col_idx);
     string fn_vcf = pathDel0 + int_to_string( pns.size()) + ".vcf";  
