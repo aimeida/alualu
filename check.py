@@ -181,15 +181,10 @@ if __name__ == "__main__":
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons_delete0/29.pos'
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons_delete0/29.vcf'
         
-    elif opt == 'd1':
+    elif opt == 'd':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.pos' 
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.vcf' 
-
-    elif opt == 'd0':
-        file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/30.pos' 
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/_Maj_delete_alu0/30.vcf' 
 
         
     print 'checking vcf file of', f_vcf

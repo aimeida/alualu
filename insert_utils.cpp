@@ -49,7 +49,7 @@ bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_f
   return true;
 }
 
-// get inferred split positions, also filter out potential error 
+// get inferred split positions
 bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header) {
   insert_pos.clear();
   ifstream fin(fn.c_str());
@@ -57,39 +57,39 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   stringstream ss;
   string line, tmpv;
   if (has_header)  getline(fin, line); 
-  int beginPos, endPos, beginPre = 0, endPre = 0;
+  int beginPos, endPos;
   int ni = 0;
+  std::set < pair <int, int> > lefts_rights;
   while (getline(fin, line)) {
     ni ++;
     ss.clear(); ss.str( line );  
     ss >> beginPos >> endPos;
-    if (beginPre <=0 and endPre <=0) {
-      beginPre = (beginPos <= 0) ? endPos : beginPos;
-      endPre = (endPos <= 0) ? beginPos : endPos ;
-      continue;
-    }
-    if ( abs(get_min_pair( beginPos, endPos) - max(beginPre, endPre) ) > CLIP_BP_MID ) {
-      insert_pos.push_back( get_valid_pair(beginPre, endPre) );
+    if ( abs (beginPos - endPos ) < MAX_POS_DIF ) {
+      lefts_rights.insert( get_valid_pair(beginPos, endPos) ); 
+    } else if (beginPos and endPos) {
+      lefts_rights.insert( make_pair(beginPos, beginPos) ); 
+      lefts_rights.insert( make_pair(endPos, endPos) ); 
+    }   
+  } 
+  fin.close();
+  if (lefts_rights.empty()) return false;
+  std::set < pair <int, int> >::iterator si = lefts_rights.begin();
+  int beginPre = (*si).first;
+  int endPre =  (*si).second;
+  si++;
+  for ( ; si != lefts_rights.end(); si++) {
+    beginPos = (*si).first;
+    endPos = (*si).second;
+    if ( abs(beginPre - beginPos) < MAX_POS_DIF ) {
+      beginPre = (beginPre + beginPos) / 2 ;
+      endPre = (endPre + endPos) / 2 ;
+    } else {
+      insert_pos.push_back( make_pair(beginPre, endPre) );
       beginPre = beginPos;
       endPre = endPos;
-    } else if (beginPre == beginPos) {
-      endPre = max( endPre, endPos);
-    } else if (endPre == endPos ) {
-      beginPre = max( beginPre, beginPos);
-    }  else {
-      ///cout << "err2 " << line << endl;
-      insert_pos.push_back( get_valid_pair(beginPre, endPre) );
-      beginPre = beginPos;
-      endPre = endPos;      
-    }    
+    }
   }
-  fin.close();
-  if ( insert_pos.empty() ) 
-    insert_pos.push_back( get_valid_pair(beginPre, endPre) );
-  else if ( abs ( max(beginPre, endPre) - max( (*insert_pos.rbegin()).first, (*insert_pos.rbegin()).second) ) > MAX_POS_DIF )
-    insert_pos.push_back( get_valid_pair(beginPre, endPre) );  
-//  for (vector < pair<int, int> >::iterator it = insert_pos.begin(); it != insert_pos.end(); it++ )
-//    cout << (*it).first << " " << (*it).second << endl;
+  insert_pos.push_back(make_pair(beginPre, endPre) );
   return !insert_pos.empty(); 
 }
 

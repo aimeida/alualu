@@ -785,10 +785,10 @@ bool is_clipread(int & clipLen, seqan::CharString & clipSeq, seqan::BamAlignment
 string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clipRight, PAR_DELETE0 & pars, int & clipLen, seqan::CharString & clipSeq) {
   int thisEnd = record.beginPos + (int)getAlignmentLengthInRef(record);   
   if (record.rID != record.rNextId or abs(record.tLen) >= DISCORDANT_LEN) {
-    if ( is_clipread(clipLen, clipSeq, record, thisEnd, clipLeft, clipRight, pars) ) 
-      return "clip_read";  // prefer to use it as clip_read, if it's also alu_read
     if ( ( thisEnd < clipLeft + 5 and !hasFlagRC(record) ) or ( record.beginPos > clipRight - 5 and hasFlagRC(record) ) ) 
-      return "alu_read";
+      return "alu_read";  // prefer to use it as alu_read, if it's also alu_read
+    if ( is_clipread(clipLen, clipSeq, record, thisEnd, clipLeft, clipRight, pars) ) 
+      return "clip_read";  
     return "useless";    
   }  
   bool read_is_left = left_read(record);
@@ -799,8 +799,10 @@ string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clip
     return "clip_read";
   int trimb, trime;
   get_trim_length(record, trimb, trime, pars.CLIP_Q);
-  if (trimb + trime < (int) length(record) - CLIP_BP and count_non_match(record) <= 5 and
-      record.beginPos + trimb <= clipLeft - CLIP_BP and thisEnd - trime >= clipLeft + CLIP_BP ) 
+//  cout << "###trim " << trimb << " " << trime << " " << record.beginPos << " "  << thisEnd << endl;
+//  debug_print_read(record);
+  if (trimb + trime < (int) length(record.seq) - CLIP_BP and count_non_match(record) <= 5 and
+      record.beginPos + trimb <= min(clipLeft, clipRight) - CLIP_BP and thisEnd - trime >= max(clipLeft, clipRight) + CLIP_BP ) 
     return "skip_read";  // after trimming, fewer reads are considered as skip_read, thus less skip_clip conflict, more clip read
   int pair_begin = read_is_left ? record.beginPos : record.pNext;
   int pair_end = pair_begin + abs(record.tLen);
@@ -986,7 +988,8 @@ void count_clipread(string fn_clip, map < int, pair <int, int> > & exact_pos, ma
     if ( (clipLen < 0 and abs(clipc - (ei->second).first) <= CLIP_BP_MID ) or 
 	 (clipLen > 0 and abs(clipc - (ei->second).second) <= CLIP_BP_MID )) {
       addKey( clip_cnt, pos, 1);
-    } else if ( min(p1, p2) < min( (ei->second).first,  (ei->second).second ) - CLIP_BP and 
+    } else if ( abs(p2 - p1) < DISCORDANT_LEN  and    // check why it happens !!!!
+		min(p1, p2) < min( (ei->second).first,  (ei->second).second ) - CLIP_BP and 
 		max(p1, p2) > max( (ei->second).first,  (ei->second).second ) + CLIP_BP ) {
       string tmps = rgIdx + ":" + int_to_string( abs(p2 - p1) );
       unknow_info[pos].push_back( tmps );
@@ -1092,6 +1095,7 @@ void write_tmp1(vector <string> & chrns, string fn_tmp1, string fn_clip_pass0, s
 
 void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int fixed_len){
   ofstream fout(fn_tmp2.c_str());
+  //fout << "chr pos insertBegin insertEnd insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
   fout << "chr insertBegin insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
   stringstream ss;
   string line, chrn, output_line;
@@ -1116,11 +1120,11 @@ void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, Empiri
     ss >> chrn >> pos;
     if ( chrn != pre_chrn) {
       if ( pre_chrn != "") {
-	if ( tmp1_info.find(chrn) != tmp1_info.end() ) {
-	  for (map<int, string>::iterator ti = tmp1_info[chrn].begin(); ti != tmp1_info[chrn].end(); ti ++ )
+	if ( tmp1_info.find(pre_chrn) != tmp1_info.end() ) {
+	  for (map<int, string>::iterator ti = tmp1_info[pre_chrn].begin(); ti != tmp1_info[pre_chrn].end(); ti ++ )
 	    if (parseline_del_tmp0("", output_line, pdf_rg, fixed_len, ti->second))
 	      rows_list.push_back( make_pair(ti->first, output_line) );
-	  tmp1_info[chrn].clear();
+	  tmp1_info[pre_chrn].clear();
 	}
 	write_tmp2_chrn(rows_list, fout);
       }
@@ -1185,7 +1189,7 @@ int main( int argc, char* argv[] )
     check_folder_exists(pathCons + *ci + "_pos/");
   }
   
-  if (opt == "write_tmps_pn") {     
+  if (opt == "write_tmps_pn") {     // write tmp0 files 
     assert (argc == 4);
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
@@ -1322,7 +1326,6 @@ int main( int argc, char* argv[] )
     
     string file_tmp0 = pathDel0 + pn + ".tmp0";
     ofstream fout0 ( file_tmp0.c_str());
-    /////fout0 << "chr insertBegin insertEnd estimatedAluLen clipCnt unknowCnt unknowStr\n"; 
     fout0 << "chr insertBegin insertEnd clipCnt unknowCnt unknowStr\n"; 
     PAR_DELETE0 pars = { seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q")), CLIP_BP_MID};
     for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
@@ -1459,33 +1462,33 @@ int main( int argc, char* argv[] )
   
   } else if (opt == "debug1") { 
     
-    cout << "test 279 " << round_by_resolution(279, 10 ) << endl;
-    cout << "test 153503280 " << round_by_resolution(153503280, 10 ) << endl;
-    cout << "test 153503285 " << round_by_resolution(153503285, 10 ) << endl;
-    cout << "test 153503286 " << round_by_resolution(153503286, 10 ) << endl;
-    cout << "test 153503287 " << round_by_resolution(153503287, 10 ) << endl;
-
     string pn = ID_pn[0];
-    /*
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
-    bam_fh->jump_to_region("chr1", 120000, 120010);    
+    bam_fh->jump_to_region("chr1", 159250, 159364);    // 159334 
     int ni = 0;
     seqan::BamAlignmentRecord record;
-    while ( ni ++ < 10 ) {
+    PAR_DELETE0 pars = { seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q")), CLIP_BP_MID};
+    while ( true ) {
       bam_fh -> fetch_a_read(record);
+      if ( record.beginPos < 159250 ) continue;
+      if ( ni++ > 100) break;
+      int clipLen;
+      seqan::CharString clipSeq;
+      string iread = classify_read(record, 159334, 159360, pars, clipLen, clipSeq);             
+      cout << iread << " 159334, 159360\n";
     }
     delete bam_fh;
-    */
-
-   map <int, EmpiricalPdf *> pdf_rg;    
-   string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-   string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
-   read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
-   string line0, output_line;
-
-   line0 = "chr1 3 3 299 0 0 4  0:830  0:802  0:831  3:1072";
+        
+    return 0;
+    map <int, EmpiricalPdf *> pdf_rg;    
+    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
+    string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
+    read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
+    string line0, output_line;
+    
+    line0 = "chr1 3 3 299 0 0 4  0:830  0:802  0:831  3:1072";
    if (parseline_del_tmp0(line0, output_line, pdf_rg, 299 ))
      cout << output_line << endl;
 
