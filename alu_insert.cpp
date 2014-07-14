@@ -420,31 +420,34 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
       seqan::CharString ref_fa;
       list <char> cigar_opts;
       list <int> cigar_cnts;
-
+      
       int _cliplen;
       seqan::CharString _clipSeq;      
       if (has_soft_last(record, CLIP_BP) and endPos >= region_begin - FLANK_REGION_LEN and endPos < region_end + FLANK_REGION_LEN) {
 	adj_clipPos = endPos;
 	if (length(ref_fa) == 0) {
-	  fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
-	  parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
-	}
+          fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
+          parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
+        }
 	if (clipLeft_move_right( record.seq, ref_fa, cigar_cnts, refBegin, adj_clipPos, align_len) and 
-	    trim_clip_soft_last(record, _cliplen, _clipSeq, CLIP_Q) and 
-	    align_clip_to_ref('L', adj_clipPos, endPos, align_len, record, fasta_fh, fout, ss_header.str()) )
+	    trim_clip_soft_last(record, _cliplen, _clipSeq, CLIP_Q) ) {
+	  /////align_clip_to_ref('L', adj_clipPos, endPos, align_len, record, fasta_fh, fout, ss_header.str()) ), too slow, ignore !	  
+	  fout << ss_header.str() << "L " << adj_clipPos << " " << record.qName << " " << endPos << " " <<  get_cigar(record) << endl;  
 	  continue;
+	}
       }
       
       if ( has_soft_first(record, CLIP_BP) and beginPos >= region_begin - FLANK_REGION_LEN and beginPos < region_end + FLANK_REGION_LEN) {
 	adj_clipPos = beginPos;
 	if (length(ref_fa) == 0) {
-	  fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
-	  parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
-	}
+          fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
+          parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
+        }
 	if (clipRight_move_left( record.seq, ref_fa, cigar_cnts, refBegin, adj_clipPos, align_len) and 
-	    trim_clip_soft_first(record, _cliplen, _clipSeq, CLIP_Q) and 
-	    align_clip_to_ref('R', adj_clipPos, beginPos, align_len, record, fasta_fh, fout, ss_header.str()) )
+	    trim_clip_soft_first(record, _cliplen, _clipSeq, CLIP_Q) ) {
+	  fout << ss_header.str() << "R " << adj_clipPos << " " << record.qName << " " << beginPos << " " <<  get_cigar(record) << endl;  
 	  continue;
+	}
       }
     }
   }
@@ -998,17 +1001,18 @@ void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout) {
   rows_list.clear();
 }
 
-void read_seq(string pn, string fn, map <string, vector<string> > & pos_seqs, string skip_mk = ""){
+void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, string skip_mk = ""){
   ifstream fin( fn.c_str() );
   assert (fin);
-  string line, pos, tmpv;
+  string line,tmpv;
+  int pos;
   stringstream ss;
   getline(fin, line);
   while ( getline(fin, line) ) {
     ss.clear(); ss.str( line );
     ss >> pos >> tmpv;
     if (tmpv == skip_mk) continue;
-    pos_seqs[pos].push_back( replace_str0_str(line, pn, pos));
+    pos_seqs[pos].push_back( replace_str0_str(line, pn, int_to_string(pos) ));
   }
   fin.close();
 }
@@ -1178,6 +1182,7 @@ int main( int argc, char* argv[] )
     check_folder_exists(pathClip + *ci +  "/");
     check_folder_exists(pathClip + *ci + "_pos/");
     check_folder_exists(pathCons + *ci);
+    check_folder_exists(pathCons + *ci + "_pos/");
   }
   
   if (opt == "write_tmps_pn") {     
@@ -1275,8 +1280,7 @@ int main( int argc, char* argv[] )
   } else if ( opt == "clipReads_pns" ) { 
 
     assert (argc == 4);
-    string chrn = argv[3];
-    
+    string chrn = argv[3];    
     int min_pn = 2;
     if (min_pn != 1)
       cout << "NB: private insertions are ignored!\n";
@@ -1288,7 +1292,6 @@ int main( int argc, char* argv[] )
     assert( nonempty_files_sorted( tmp_path1, regionPos_set) );
     if (regionPos_set.empty()) return 0;
       
-
     string file_clipRegion = pathClip + chrn + ".clip_region";
     regions_pos_vote(tmp_path1, regionPos_set, file_clipRegion);
     string file_clipPos = pathClip + chrn + ".clip_pn";
@@ -1359,14 +1362,14 @@ int main( int argc, char* argv[] )
     move_files(pathDel0 + "tmp0s/", file_tmp0);
 
   } else if (opt == "clipPos_pns" ) {  
-    
+
     assert (argc == 4);
     string chrn = argv[3];
 
     string pathCons1 = pathCons + chrn + "/" ;
     string pathCons2 = pathCons + chrn + "_pos/" ;
     system( ("rm "+ pathCons2 + "*").c_str() );      
-    map <string, vector<string> > pos_seqs;
+    map <int, vector<string> > pos_seqs;
     for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
       read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs);
       read_seq(*pi, pathCons1 + *pi + ".aludb", pos_seqs, "na");
@@ -1379,25 +1382,31 @@ int main( int argc, char* argv[] )
       fout2.close(); 
       return 0;
     }
-    
+
     //// rewrite reads to another folder      
-    for (map <string,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-      string file_cons1 = pathCons2 + pi->first;
+    for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
+      string file_cons1 = pathCons2 + int_to_string(pi->first);
       ofstream fout1(file_cons1.c_str());
       for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
 	fout1 << *si << endl;
       sort_file_by_col<string> (file_cons1, 1, true); // sort by pn
       fout1.close();		
-   }    
+   } 
+    
     // add cnts summary for each pn 
-    for (map <string,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-      int posl = seqan::lexicalCast<int> (pi->first);
+    for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
+      int posl = pi->first;
+
+      //if (posl != 153503267) continue;
+      //cout << "## debug1 ## " << posl << " " << pos_seqs.size() << endl;
+
       vector <int> clipls, cliprs;
       for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
 	parse_line1(*si, posl, CLIP_BP_MID, clipls, cliprs);
       int clipl, clipr;
       int _clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq);   
       int _clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq);
+
       if (!clipl and !clipr ) continue;
       if ( !clipl ) {
 	if ( abs(_clipl - clipr) <= CLIP_BP_MID) clipl = _clipl;
@@ -1450,6 +1459,12 @@ int main( int argc, char* argv[] )
   
   } else if (opt == "debug1") { 
     
+    cout << "test 279 " << round_by_resolution(279, 10 ) << endl;
+    cout << "test 153503280 " << round_by_resolution(153503280, 10 ) << endl;
+    cout << "test 153503285 " << round_by_resolution(153503285, 10 ) << endl;
+    cout << "test 153503286 " << round_by_resolution(153503286, 10 ) << endl;
+    cout << "test 153503287 " << round_by_resolution(153503287, 10 ) << endl;
+
     string pn = ID_pn[0];
     /*
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";

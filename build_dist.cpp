@@ -120,6 +120,12 @@ int main( int argc, char* argv[] )
     fin.close();
   } else if ( opt == "debug" ) {
     
+    string s1 = "apple is apple\n";
+    string s2 = replace_str0_str(s1, "banan", "apple");
+    cout << s1;
+    cout << s2;
+    return 0;
+
     string chrn = "chr1";
     ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
     string file_fa = cf_fh.get_conf("file_fa_prefix");

@@ -99,13 +99,14 @@ int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, i
   k1 = initv;
   if (ps.empty() ) return 0;
   map <int, int> pos_cnt;  
-   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
+  for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ )  
     addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
   multimap<int, int> cnt_pos = flip_map(pos_cnt);  
   multimap<int, int>::reverse_iterator it = cnt_pos.rbegin();
   pos_cnt.clear();  
   int _k1, _k2;
   _k1 = it->second; 
+
   if (cnt_pos.size() > 1 ) {
     it ++;
     _k2 =  it->second;
@@ -113,6 +114,8 @@ int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, i
       _k1 = (_k1 + _k2) / 2;
     }
   }   
+  ///cout << "_k1 " << _k1 << endl;
+
   // find most common position;
   int match_cnt = 0;
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) 
@@ -120,13 +123,13 @@ int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, i
       addKey(pos_cnt, *pi , 1);
       match_cnt++;
     }
-
-  it = flip_map(pos_cnt).rbegin();
-  
+ 
+  assert( !pos_cnt.empty() );
+  cnt_pos = flip_map(pos_cnt);
+  it = cnt_pos.rbegin();
   //cout << "size " << pos_cnt.size() << " " <<  ps.size() << endl;
   if ( match_cnt / (float) ps.size() >= freq_th ) 
-    k1 = it->second;    
-  
+    k1 = it->second;      
   return it->second; // return the value anyway 
 }
 

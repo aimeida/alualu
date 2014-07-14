@@ -41,7 +41,8 @@ using namespace std;
 #define CLIP_BP_MID 30  // include when using the mean of clipLeft and clipRight 
 
 inline int round_by_resolution(int x, int r) {
-  return r * roundf ( (float) x / (float) r );
+  double x1 = (double) x / r;
+  return r * (int) floor ( 0.4999 + x1);
 }
 
 typedef pair<int, string > IntString;
