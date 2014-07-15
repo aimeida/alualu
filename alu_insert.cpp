@@ -430,11 +430,9 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
           parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
         }
 	if (clipLeft_move_right( record.seq, ref_fa, cigar_cnts, refBegin, adj_clipPos, align_len) and 
-	    trim_clip_soft_last(record, _cliplen, _clipSeq, CLIP_Q) ) {
-	  /////align_clip_to_ref('L', adj_clipPos, endPos, align_len, record, fasta_fh, fout, ss_header.str()) ), too slow, ignore !	  
-	  fout << ss_header.str() << "L " << adj_clipPos << " " << record.qName << " " << endPos << " " <<  get_cigar(record) << endl;  
+	    trim_clip_soft_last(record, _cliplen, _clipSeq, CLIP_Q) and 
+	    align_clip_to_ref('L', adj_clipPos, endPos, align_len, record, fasta_fh, fout, ss_header.str()) ) 
 	  continue;
-	}
       }
       
       if ( has_soft_first(record, CLIP_BP) and beginPos >= region_begin - FLANK_REGION_LEN and beginPos < region_end + FLANK_REGION_LEN) {
@@ -444,10 +442,9 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
           parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
         }
 	if (clipRight_move_left( record.seq, ref_fa, cigar_cnts, refBegin, adj_clipPos, align_len) and 
-	    trim_clip_soft_first(record, _cliplen, _clipSeq, CLIP_Q) ) {
-	  fout << ss_header.str() << "R " << adj_clipPos << " " << record.qName << " " << beginPos << " " <<  get_cigar(record) << endl;  
+	    trim_clip_soft_first(record, _cliplen, _clipSeq, CLIP_Q) and 
+	    align_clip_to_ref('R', adj_clipPos, beginPos, align_len, record, fasta_fh, fout, ss_header.str()) )   
 	  continue;
-	}
       }
     }
   }
@@ -734,9 +731,8 @@ void vote_clipPos(int clip0, int & clipl, int & clipr, string path0, vector <str
     fin.close(); 
   }
   //cout << "vote " << clip0 << " "  <<  pns.size() << " " << clipls.size() << " " << cliprs.size() << endl;
-  //debugprint_vec(clipls);  // 16229710 16229708 16229716 16229729 16229726
-  major_key_freq(clipls, clipl, bin_width, freq_th);
-  major_key_freq(cliprs, clipr, bin_width, freq_th);  
+  major_key_freq(clipls, clipl, bin_width, freq_th, 0, 3);
+  major_key_freq(cliprs, clipr, bin_width, freq_th, 0, 3);  
 }
 
 void exact_pos_pns(string path0, string fn_input, string fn_output, int min_pn, float freq_th ) {
@@ -855,9 +851,10 @@ void tmp0_reads(string chrn, ofstream &ftmp1, vector< pair<int, int> > & insert_
 	  ssf << clipLeft << " " << clipSeq  << " " << clipLen << " ";
 	  if (record.cigar[0].operation == 'S') ssf << record.beginPos; 	    
 	  else ssf << record.beginPos + (int)getAlignmentLengthInRef(record);	    
-	  // add adjust clipPos ??
 	  int rgIdx = get_rgIdx(rg_to_idx, record);
-	  ssf << " " << get_cigar(record) << " " << rgIdx << " " << record.beginPos << " " << record.beginPos + record.tLen << endl;
+	  ssf << " " << get_cigar(record) << " " << rgIdx << " " << record.beginPos << " " ;
+	  if ( record.rID == record.rNextId )  ssf << record.beginPos + record.tLen << endl;
+	  else  ssf << "-1\n";
 	  qname_foutStr[record.qName] = ssf.str();
 	}		
 	if (iread == "skip_read" and !conflict)
@@ -988,7 +985,7 @@ void count_clipread(string fn_clip, map < int, pair <int, int> > & exact_pos, ma
     if ( (clipLen < 0 and abs(clipc - (ei->second).first) <= CLIP_BP_MID ) or 
 	 (clipLen > 0 and abs(clipc - (ei->second).second) <= CLIP_BP_MID )) {
       addKey( clip_cnt, pos, 1);
-    } else if ( abs(p2 - p1) < DISCORDANT_LEN  and    // check why it happens !!!!
+    } else if ( p2 > 0 and abs(p2 - p1) < DISCORDANT_LEN  and    // check why it happens !!!!
 		min(p1, p2) < min( (ei->second).first,  (ei->second).second ) - CLIP_BP and 
 		max(p1, p2) > max( (ei->second).first,  (ei->second).second ) + CLIP_BP ) {
       string tmps = rgIdx + ":" + int_to_string( abs(p2 - p1) );
@@ -1098,7 +1095,7 @@ void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout, const strin
     map < int, pair <int, int> >::iterator ei = exact_pos.find( (*ri).first);
     if ( ei == exact_pos.end() ) continue;  // extra filter ??
     string old_pos = int_to_string(ei->first) ;
-    string new_pos = int_to_string( (ei->second).first ) + " " + int_to_string( (ei->second).second ) ;
+    string new_pos = int_to_string( (ei->second).first ) + " " + int_to_string( (ei->second).second ) + " " + old_pos;
     fout << replace_str0_str( (*ri).second , new_pos, old_pos )  << endl;
   }
   rows_list.clear();
@@ -1106,7 +1103,7 @@ void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout, const strin
 
 void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int fixed_len, string fn_clip_pass0){
   ofstream fout(fn_tmp2.c_str());
-  fout << "chr insertBegin insertEnd insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
+  fout << "chr insertBegin insertEnd debugInfo insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
   stringstream ss;
   string line, chrn, output_line;
   int pos;
@@ -1313,7 +1310,7 @@ int main( int argc, char* argv[] )
     regions_pos_vote(tmp_path1, regionPos_set, file_clipRegion);
     string file_clipPos = pathClip + chrn + ".clip_pn";
     if (! approximate_pos_pns(tmp_path1, file_clipRegion, file_clipPos+".tmp", regionPos_set, MAX_POS_DIF)) return 0;        
-    exact_pos_pns(tmp_path0, file_clipPos+".tmp", file_clipPos, min_pn, 0.7);
+    exact_pos_pns(tmp_path0, file_clipPos+".tmp", file_clipPos, min_pn, consensus_freq);
     
   } else if ( opt == "write_tmp0_pn" ) {   // write alu and clip reads for each PN
 
@@ -1382,6 +1379,7 @@ int main( int argc, char* argv[] )
     assert (argc == 4);
     string chrn = argv[3];
 
+    const size_t minVoteCnt = 3;
     string pathCons1 = pathCons + chrn + "/" ;
     string pathCons2 = pathCons + chrn + "_pos/" ;
     system( ("rm "+ pathCons2 + "*").c_str() );      
@@ -1409,23 +1407,29 @@ int main( int argc, char* argv[] )
       fout1.close();		
    } 
     
-    // add cnts summary for each pn 
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
       int posl = pi->first;
-      //if (posl != 153503267) continue;
-      //cout << "## debug1 ## " << posl << " " << pos_seqs.size() << endl;
+
+      // if (posl != 124870) continue;
+      // cout << "## debug1 ## " << posl << " " << pos_seqs.size() << endl;
       vector <int> clipls, cliprs;
       for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
 	parse_line1(*si, posl, CLIP_BP_MID, clipls, cliprs);
+
+      //debugprint_vec(clipls);
+      //debugprint_vec(cliprs);
+      
       int clipl, clipr;
-      int _clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq);   
-      int _clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq);
+      int _clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq, 0, minVoteCnt);   
+      int _clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, 0, minVoteCnt);
       if (!clipl and !clipr ) continue;
+
+      ///cout << "clipl " << clipl << " " << _clipl <<  " clipr " << clipr << " " << _clipr << endl;
       if ( !clipl ) {
-	if ( abs(_clipl - clipr) <= CLIP_BP_MID) clipl = _clipl;
+	if ( abs(_clipl - clipr) <= CLIP_BP_MID and clipls.size() >= minVoteCnt) clipl = _clipl;
 	else clipl = clipr;
       } else if (!clipr) {
-	if ( abs(_clipr - clipl) <= CLIP_BP_MID) clipr = _clipr;
+	if ( abs(_clipr - clipl) <= CLIP_BP_MID and cliprs.size() >= minVoteCnt) clipr = _clipr;
 	else clipr = clipl;
       } 
       fout2 << pi->first << " " << clipl << " " << clipr << endl;

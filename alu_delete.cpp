@@ -222,8 +222,8 @@ int main( int argc, char* argv[] )
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg); 
     EmpiricalPdf::delete_map(pdf_rg);
-    move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
-    move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
+    //move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
+    //move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
     
   } else if (opt == "write_vcf_pns") {   // write vcf for all pn
     vector <string> pns;
