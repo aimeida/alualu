@@ -1,3 +1,4 @@
+#! /usr/bin/python
 import sys
 import math
 import itertools
@@ -36,32 +37,6 @@ def vcf_to_text(pns, idx, f_in, f_out):
         print >>fout, '#CHROM  POS', ' '.join([idx_pn[k] for k in check_idx])
         parse_lines(f_in, fout, check_idx)
 
-def read_pn(f_vcf):
-    with open(f_vcf) as fin:
-        for line in fin:
-            if line.startswith('#CHR'):
-                tmp = line.strip().split()
-                coln = tmp.index('FORMAT') + 1
-                return tmp[coln:]
-
-def family_member(gid):
-    if gid == "01":
-        return 'F'
-    elif gid == "02":
-        return 'M'
-    return 'C'
-        
-def parse_trio_group(f_vcf):
-    pns = read_pn(f_vcf)
-    trio_group = {}  
-    for pn in pns:
-        gname, gid = pn.split('-')
-        if gname not in trio_group:
-            trio_group[gname] = {}
-        trio_group[gname][family_member(gid)] = pn
-    return trio_group
-
-
 def filter_chisq(f_llh, f_input, f_output, offset=1):
     fin2 = file(f_input)
     fout = file(f_output,'w')
@@ -76,112 +51,14 @@ def filter_chisq(f_llh, f_input, f_output, offset=1):
     fin2.close()
     fout.close()
 
-def combine_line(line1, line2):
-    tmp1 = line1.strip().split()
-    tmp2 = line2.strip().split()
-    assert(tmp1[0] == tmp2[0])
-    new_pos = (int(tmp1[1]) + int(tmp2[1]))/2 
-    tmps = tmp1[0] + ' ' + str( new_pos) 
-    for i, j in zip(tmp1[2:], tmp2[2:]):
-        tmps += ' %d'%(max(int(i), int(j))) 
-    return tmps
-
-def combine_rows(f_in, f_out, pos_dif = 10):
-    fout = file(f_out, 'w')
-    output_lines = []
-    pre_pos = 0
-    with open(f_in) as fin:
-        print >>fout, fin.readline().strip()
-        for line in fin:
-            tmp = line.split()
-            pos = int(tmp[1])
-            if abs(pos - pre_pos) <= pos_dif:
-                pre_line = output_lines[-1]
-                output_lines[-1] = combine_line(pre_line, line)
-                pre_pos = (pre_pos + pos) / 2
-            else:
-                pre_pos = pos
-                output_lines.append(line.strip())
-    for i in output_lines:
-        print >>fout, i
-    fout.close()
-
-def read_vcftxt(f_vcftxt):
-    chr_pos = []
-    seqs = {}
-    with open(f_vcftxt) as fin:
-        pns = fin.readline().strip().split()[2:]
-        for pn in pns:
-            seqs[pn] = ''
-        for line in fin:
-            tmp = line.strip().split()
-            chr_pos.append( tmp[0]+'_'+tmp[1] )
-            for i,j in zip(pns, tmp[2:]):
-                seqs[i] += j
-    return chr_pos, seqs
-
-def one_family(pn1, pn2, pn3, pos, allow_denovo, verbose):
-    def p2c(parent):
-        if parent == '2':
-            return [1]
-        elif parent == '0':
-            return [0]
-        elif parent == '1':
-            return [0,1]
-        else:
-            print "ERROR!"
-    nlen = len(pn1)
-    npos = 0
-    conflict_pos = []
-    for i in range(nlen):
-        from1 = p2c(pn1[i])
-        from2 = p2c(pn2[i])
-        if (pn1[i] == '0' and pn2[i] == '0' and pn3[i] == '0'):
-            continue
-
-        npos += 1
-        if int(pn3[i]) not in [sum(x) for x in itertools.product(from1, from2)]:
-            if allow_denovo: 
-                if not (pn1[i] == '0' and pn2[i] == '0' and pn3[i] == '1'):
-                    conflict_pos.append(pos[i])
-            else:
-                conflict_pos.append(pos[i])
-
-    conflict_rate = len(conflict_pos) / float(npos)
-    print '%d positions OK, confliction rate: %.1f %% for %d positions' %(npos - len(conflict_pos), conflict_rate * 100, npos)
-    if verbose:
-        print '\n'.join(conflict_pos)
-
-
 if __name__ == "__main__":
     
     opt = sys.argv[1]
     
-    allow_denovo = True 
-    #allow_denovo = False
-    #verbose = False
-    verbose = True
-
-    if opt == 'i':
-        file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.pos'
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.vcf'
-
-    elif opt == 'i1':
-        file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.pos'
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.vcf'
-        
-    elif opt == 'c':
-        file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons_delete0/29.pos'
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons_delete0/29.vcf'
-        
-    elif opt == 'd':
-        file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.pos' 
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.vcf' 
-
+    if opt == 'decode':
+        file_pn_used = '/nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/PN_used_del'
+        f_llh = '/nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/delete_alu0/2649.pos'
+        f_vcf = '/nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/delete_alu0/2649.vcf'
         
     print 'checking vcf file of', f_vcf
     print 'allow denovo', allow_denovo
@@ -192,26 +69,5 @@ if __name__ == "__main__":
 
     idx = get_idx(f_vcf, pn_used)
     vcf_to_text(pn_used, idx, f_vcf, f_vcftxt)        
-    filter_chisq(f_llh, f_vcftxt, f_vcftxt2 + ".tmp") 
-    combine_rows(f_vcftxt2 + '.tmp', f_vcftxt2)    
-
-    npos = len(file(f_vcftxt2).readlines()) - 1
-    print npos, 'positions considered'
-
-    trio_group= parse_trio_group(f_vcf)
-    chr_pos, seqs = read_vcftxt(f_vcftxt2)
-    for gn, v1 in trio_group.items():
-        
-        ## debugging
-        verbose = True
-        if gn != '1006': 
-            continue
-        
-        if len(v1) != 3:
-            continue
-        pn_father = v1['F']
-        pn_mother = v1['M']
-        pn_child = v1['C']
-        print 'check family ', gn
-        one_family(seqs[pn_father], seqs[pn_mother], seqs[pn_child], chr_pos, allow_denovo, verbose)
-        
+    filter_chisq(f_llh, f_vcftxt, f_vcftxt2) 
+    

@@ -1,15 +1,26 @@
 #-*-makefile-*-
-##make OD=debug debug/alu_delete
-##make OD=opt3 opt3/alu_delete
+#OD=debug
+#make debug/alu_delete
+OD=opt3
 include Makefile.vars
+ARCH	= $(shell uname -i)
+BOOST   = /nfs_mount/bioinfo/apps-$(ARCH)/boost/1.48.0
+B_INC	= -I$(BOOST)/include
+B_LIB	= -L$(BOOST)/lib -Wl,-rpath,$(BOOST)/lib
 
-INCLUDE = -I/home/qianyuxx/local/include/
+HDF5=/nfs_mount/bioinfo/apps-x86_64/hdf5-dg/BUILD_3_51
+HDF5_include=$(HDF5)/include
+HDF5_lib=$(HDF5)/lib
+HDF5_link = -Wl,-rpath,$(HDF5_lib)
+
+INCLUDE = -I/home/qianyuxx/local/include/ -I/katla/groups/statistics/bjarnih/code/seqan-trunk/core/include -I/katla/groups/statistics/bjarnih/code/seqan-trunk/extras/include -I/home/stat/include -I/home/stat/lib64/R/include -Il/katla/groups/statistics/bjarnih/code/stat/libraries   -I/home/stat/include/cppunit -I$(HDF5_include) $(B_INC)
 WARN= -W -Wall
 
 CPPFLAGS = $(WARN) $(FLAG) $(INCLUDE) 
 CC = g++ -fno-merge-constants -fopenmp
 
-LIB = -lz -lbz2 $(B_LIB)
+#LIB = -lz -lbz2 $(B_LIB)
+LIB = -lz $(B_LIB)
 
 ALU_DELETE_FILES_CPP = utils.cpp alu_delete.cpp common.cpp delete_utils.cpp
 ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
@@ -20,17 +31,8 @@ ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 ALU_INSERT2_FILES_CPP = alu_insert2.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
 ALU_INSERT2_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT2_FILES_CPP))
 
-ALU_TMP_FILES_CPP = alu_tmp.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
-ALU_TMP_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_TMP_FILES_CPP))
-
-ALU_HG18_FILES_CPP = utils.cpp alu_hg18.cpp common.cpp 
-ALU_HG18_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_HG18_FILES_CPP))
-
 BUILD_DIST_FILES_CPP = build_dist.cpp common.cpp utils.cpp
 BUILD_DIST_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_FILES_CPP))
-
-BUILD_DIST_SIM_FILES_CPP = build_dist_sim.cpp common.cpp utils.cpp
-BUILD_DIST_SIM_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_SIM_FILES_CPP))
 
 FILES_CPP = *cpp *h 
 FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(FILES_CPP))
@@ -52,17 +54,11 @@ $(OD)/alu_delete: $(OD) $(ALU_DELETE_FILES_O)
 $(OD)/alu_insert: $(OD) $(ALU_INSERT_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSERT_FILES_O)
 
-$(OD)/alu_tmp: $(OD) $(ALU_TMP_FILES_O) 
-	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_TMP_FILES_O)
-
-$(OD)/alu_hg18: $(OD) $(ALU_HG18_FILES_O) 
-	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_HG18_FILES_O)
+$(OD)/alu_insert2: $(OD) $(ALU_INSERT2_FILES_O) 
+	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSERT2_FILES_O)
 
 $(OD)/build_dist: $(OD) $(BUILD_DIST_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(BUILD_DIST_FILES_O)
-
-$(OD)/build_dist_sim: $(OD) $(BUILD_DIST_SIM_FILES_O) 
-	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(BUILD_DIST_SIM_FILES_O)
 
 test.dep:
 	$(CC) -c -MM $(INCLUDE) $(TEST_FILES_CPP) > test.dep	

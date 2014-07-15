@@ -62,18 +62,24 @@ config.decode: used by Yu in Iceland, where the old files sitting
               I chose to ignore them. For each chromosome, about 15% individuals with extremely high potential insert positions are ignored. 
 
 	
-   opt = "clipreads_by_pn":
+   opt = "clipreads_pn":
      for each pn, write the broken reads at these insertion positions to files at (@C)file_clip_reads/chr1/pn_minfreq_maxfreq.
      a read is considered as broken reads only if cigar string shows soft clip, AND the score after realignment is high.
 
-   opt = "clipreads_pos_pns":
+   opt = "clipreads_pns":
      write files at  (@C)file_clip_reads/chr1_pos/regionBegin_regionEnd
      all broken reads with insertion between regionBegin and regionEnd are written into corresponding files. 
-     exact position is written at (@C)file_alu_insert1/chr1_0.02_1.tmp
-     exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
+     exact position is written at (@C)file_alu_insert1/chr1.clip_pn
 
-   opt = "fixed_delete0_pn":
-     write *tmp0 and *tmp2 files for alu_deletion methods, with a fixed alu consensus sequence, instead of inferred length
+
+   opt = "write_tmp0_pn":  	 
+       	 see eg.sh
+
+   opt = "clipPos_pns chr1":
+         eg.sh     
+
+   opt = "write_tmp2_pn":  	 
+         eg.sh
 
    opt = "fixed_vcf_pns":  	 
      combine results and write big vcf 

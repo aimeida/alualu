@@ -171,7 +171,8 @@ bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, v
   map<string, string>::iterator pp;
   vector <string>::iterator ci, pi;
   //seqan::VcfStream vcfout("-", seqan::VcfStream::WRITE);
-  seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE);
+  // seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE);
+  seqan::VcfStream vcfout(f_out.c_str(), seqan::VcfStream::WRITE); //BJARNI INS
   for ( ci = chrns.begin(); ci != chrns.end(); ci++)
     appendValue(vcfout.header.sequenceNames, *ci);
   for ( pi = pns.begin(); pi != pns.end(); pi++) 
