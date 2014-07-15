@@ -1330,10 +1330,8 @@ int main( int argc, char* argv[] )
 	fmap << bi->first << " " << bi->second << endl;
       fmap.close();
     }
-     
     map<string, int> rg_to_idx;
-    parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
-    
+    parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
     string file_tmp0 = pathDel0 + pn + ".tmp0";
     ofstream fout0 ( file_tmp0.c_str());
     fout0 << "chr insertBegin insertEnd clipCnt unknowCnt unknowStr\n"; 
@@ -1355,6 +1353,12 @@ int main( int argc, char* argv[] )
 	continue;
       }
 
+//      if ( *ci == "chr21") {
+//	for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) 
+//	  cout <<  (*pi).first <<" " << (*pi).second << endl;
+//	continue;
+//      }
+    
       tmp0_reads(*ci, fout0, insert_pos, bam_fh, fclip, rid_alureads, rg_to_idx, pars);            
       fclip.close();
       
@@ -1468,7 +1472,6 @@ int main( int argc, char* argv[] )
     string path_input = pathDel0 + "tmp2s/";
     string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";
     int col_idx =  get_col_idx(tmp_file_pn, "00");
-    ///assert (col_idx == 7 );
     string fn_pos = pathDel0 + int_to_string( pns.size()) + ".pos";
     filter_by_llh_noPrivate(path_input, ".tmp2", fn_pos, pns, chrns, col_idx);
     string fn_vcf = pathDel0 + int_to_string( pns.size()) + ".vcf";  
@@ -1480,35 +1483,21 @@ int main( int argc, char* argv[] )
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
-    bam_fh->jump_to_region("chr1", 159250, 159364);    // 159334 
+    bam_fh->jump_to_region("chr21",32861739, 32861939);    // 159334 
     int ni = 0;
     seqan::BamAlignmentRecord record;
     PAR_DELETE0 pars = { seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q")), CLIP_BP_MID};
     while ( true ) {
       bam_fh -> fetch_a_read(record);
-      if ( record.beginPos < 159250 ) continue;
-      if ( ni++ > 100) break;
+      if ( record.beginPos < 32861650 ) continue;
+      if ( record.beginPos > 32861950) break;
       int clipLen;
       seqan::CharString clipSeq;
-      string iread = classify_read(record, 159334, 159360, pars, clipLen, clipSeq);             
-      cout << iread << " 159334, 159360\n";
+      string iread = classify_read(record, 32861939, 32861939, pars, clipLen, clipSeq);             
+      cout << iread << " ";
+      debug_print_read(record);
     }
     delete bam_fh;
-        
-    return 0;
-    map <int, EmpiricalPdf *> pdf_rg;    
-    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-    string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
-    read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
-    string line0, output_line;
-    
-    line0 = "chr1 3 3 299 0 0 4  0:830  0:802  0:831  3:1072";
-   if (parseline_del_tmp0(line0, output_line, pdf_rg, 299 ))
-     cout << output_line << endl;
-
-   line0 = "chr1 3 3 299 1 0 4  0:830  0:802  0:831  3:1072";
-   if (parseline_del_tmp0(line0, output_line, pdf_rg, 299 ))
-     cout << output_line << endl;
 
   } else {
 

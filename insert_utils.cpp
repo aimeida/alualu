@@ -66,9 +66,9 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
     ss >> beginPos >> endPos;
     if ( abs (beginPos - endPos ) < MAX_POS_DIF ) {
       lefts_rights.insert( get_valid_pair(beginPos, endPos) ); 
-    } else if (beginPos and endPos) {
-      lefts_rights.insert( make_pair(beginPos, beginPos) ); 
-      lefts_rights.insert( make_pair(endPos, endPos) ); 
+    } else {
+      if (beginPos) lefts_rights.insert( make_pair(beginPos, beginPos) ); 
+      if (endPos) lefts_rights.insert( make_pair(endPos, endPos) ); 
     }   
   } 
   fin.close();

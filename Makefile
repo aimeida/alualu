@@ -20,6 +20,9 @@ ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 ALU_INSERT2_FILES_CPP = alu_insert2.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
 ALU_INSERT2_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT2_FILES_CPP))
 
+ALU_TMP_FILES_CPP = alu_tmp.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
+ALU_TMP_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_TMP_FILES_CPP))
+
 ALU_HG18_FILES_CPP = utils.cpp alu_hg18.cpp common.cpp 
 ALU_HG18_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_HG18_FILES_CPP))
 
@@ -49,8 +52,8 @@ $(OD)/alu_delete: $(OD) $(ALU_DELETE_FILES_O)
 $(OD)/alu_insert: $(OD) $(ALU_INSERT_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSERT_FILES_O)
 
-$(OD)/alu_insert2: $(OD) $(ALU_INSERT2_FILES_O) 
-	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSERT2_FILES_O)
+$(OD)/alu_tmp: $(OD) $(ALU_TMP_FILES_O) 
+	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_TMP_FILES_O)
 
 $(OD)/alu_hg18: $(OD) $(ALU_HG18_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_HG18_FILES_O)

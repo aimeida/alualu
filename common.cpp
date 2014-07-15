@@ -97,7 +97,7 @@ void split_by_sep(string &str, string &m, string &n, char sep ){
 
 int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int initv, int minSize) {
   k1 = initv;
-  if (ps.size() < minSize ) return 0;
+  if ( (int) ps.size() < minSize ) return 0;
   map <int, int> pos_cnt;  
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ )  
     addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
