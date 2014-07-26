@@ -6,7 +6,7 @@ void count_reads(map <seqan::CharString, T_READ> &qName_info, map < T_READ, int 
   for (map <seqan::CharString, T_READ>::iterator rt = qName_info.begin(); rt != qName_info.end(); rt++) 
     addKey(readCnt, rt->second); 
 }
-
+ 
 int check_one_pos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <string, int> &rg_to_idx, string chrn, int aluBegin, int aluEnd, unsigned coverage_max, float &coverage_mean, map <seqan::CharString, T_READ> &qName_info,  map<seqan::CharString, string> & rg_str){  
   qName_info.clear();
   int reads_cnt = 0;
@@ -79,22 +79,26 @@ int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_pre
   return 0;
 }
 
-bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int Log10RatioUb){
+bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg){
   float *log10_gp = new float[3];
   stringstream ss, ss_out;
   string chrn, meanCov;
   int aluBegin, aluEnd, midCnt, clipCnt, unknowCnt;
   ss.clear(); ss.str(line); 
   ss >> chrn >> aluBegin >> aluEnd >> meanCov >> midCnt >> clipCnt >> unknowCnt ;
-  float prob_ub = pow(10, -Log10RatioUb);
+  float prob_ub = pow(10, -LOG10_RATIO_UB);
+  float *gp = new float[3];
 
   for (int i = 0; i < 3; i++) log10_gp[i] = 0;
-  if (midCnt+clipCnt > 0) {
+  if (clipCnt + midCnt > 0) {
     log10_gp[0] = clipCnt * log10 ( prob_ub ) + midCnt * log10 ( (1 - prob_ub) );
     log10_gp[1] = (midCnt + clipCnt) * log10 (0.5) ; 
     log10_gp[2] = midCnt * log10 ( prob_ub ) + clipCnt * log10 ( (1 - prob_ub) );
   }
-  //float freq0 = 0.67;  // high FP ratio      
+
+  log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+  cout << "debug1## " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2] << endl; 
+  
   float freq0 = ( midCnt + 1 )/(float)(midCnt + clipCnt + 2); // 1 and 2 are psudo count
   if (unknowCnt) { 
     int insert_len, idx;
@@ -106,35 +110,47 @@ bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalP
       seqan::lexicalCast2(insert_len, token);      
       float p_y = pdf_rg[idx]->pdf_obs(insert_len);
       float p_z = pdf_rg[idx]->pdf_obs(insert_len - aluEnd + aluBegin);
+      //freq0 = 0.67;  // high FP ratio      
       log10_gp[0] += log10 (p_y);
       log10_gp[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z)) ;
       log10_gp[2] += log10 (p_z);
     }
-  }
+   }
+  
+  log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+  cout << "debug2## " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2] << endl;   
+
+  log10_gp[0] +=  2 * log10 (freq0);
+  log10_gp[1] +=  log10 ( 2 * freq0 * (1-freq0) );
+  log10_gp[2] +=  2 * log10 ( 1-freq0);
+
+  log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+  cout << "debug3## " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2] << endl;   
+  
   bool use_this_line = false;
   if ( !p00_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
     ss_out << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
-    float *gp = new float[3];
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
     ss_out << " " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2]; 
-    delete gp;    
     output_line = ss_out.str();
     use_this_line = true;
   }
-  delete log10_gp;
+
+  delete gp;    
+  delete log10_gp;  
   return use_this_line;
 }
 
-bool binomial_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int Log10RatioUb){
-  const int insertLen_Ratio = 5;
+bool binomial_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg){
   float *log10_gp = new float[3];
   stringstream ss, ss_out;
   string chrn, meanCov;
   int aluBegin, aluEnd, midCnt, clipCnt, unknowCnt;
   ss.clear(); ss.str(line); 
   ss >> chrn >> aluBegin >> aluEnd >> meanCov >> midCnt >> clipCnt >> unknowCnt ;
-  float prob_ub = pow(10, -Log10RatioUb);
+  float prob_ub = pow(10, -LOG10_RATIO_UB);
   float *gp = new float[3];
+
   int n0 = 0;
   int n1 = 0;
   if (unknowCnt) { 
@@ -147,19 +163,24 @@ bool binomial_del_tmp1(string &line, string & output_line, map <int, EmpiricalPd
       seqan::lexicalCast2(insert_len, token);      
       float p_y = pdf_rg[idx]->pdf_obs(insert_len);
       float p_z = pdf_rg[idx]->pdf_obs(insert_len - aluEnd + aluBegin);
-      if (p_y >= p_z * insertLen_Ratio) n0 ++;
-      else if (p_z >= p_y * insertLen_Ratio) n1 ++;
+      if (p_y >= p_z * 5) n0 ++;
+      else if (p_z >= p_y * 5) n1 ++;
     }
   }
+
   n0 += midCnt;
   n1 += clipCnt;
   if (n0 + n1 == 0) 
     return false;
 
-  log10_gp[0] = n0 * log10 (prob_ub) + n1 * log10 (1 - prob_ub);
+  float alpha = 0.9999;
+
+  log10_gp[0] = n0 * log10 (alpha) + n1 * log10 (1 - alpha);
   log10_gp[1] = (n0+n1) * log10(0.5);
-  log10_gp[2] = n1 * log10 (prob_ub) + n0 * log10 (1 - prob_ub);
+  log10_gp[2] = n1 * log10 (alpha) + n0 * log10 (1 - alpha);
   log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+  cout << "debug1## " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2] << endl;   
+  
   bool use_this_line = false;
   if ( !p00_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
     ss_out << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
@@ -168,14 +189,13 @@ bool binomial_del_tmp1(string &line, string & output_line, map <int, EmpiricalPd
     output_line = ss_out.str();
     use_this_line = true;
   }
+
   delete gp;    
   delete log10_gp;  
   return use_this_line;
 }
 
-
-
-void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int Log10RatioUb){
+void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg){
   // clip_read: evidence for deletion, mid_read: evidence for insertion
   ofstream fout(fn_tmp2.c_str());
   fout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";  
@@ -184,7 +204,7 @@ void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *
   assert(fin);
   getline(fin, line); // read header
   while (getline(fin, line))
-    if (parseline_del_tmp1(line, output_line, pdf_rg, Log10RatioUb))
+    if (parseline_del_tmp1(line, output_line, pdf_rg))
       fout << output_line << endl;
   fin.close();
   fout.close();
@@ -269,8 +289,7 @@ int main( int argc, char* argv[] )
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
-    int Log10RatioUb = seqan::lexicalCast<int> (cf_fh.get_conf("Log10_RATIO_UB"));
-    calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg, Log10RatioUb); 
+    calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg); 
     EmpiricalPdf::delete_map(pdf_rg);
     //move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
     //move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
@@ -296,10 +315,7 @@ int main( int argc, char* argv[] )
     system( ("rm " + fn_vcf+".tmp").c_str() );    
     cout << "regions with high coverage are removed\n";
 
-  } else if (opt == "debug") { // debugging and manually check some regions 
-    string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
-
-    /*
+  } else if (opt == "debug1") {
     float *log10_gp = new float[3];
     float *gp = new float[3];
     float offset = 0.4;
@@ -311,22 +327,29 @@ int main( int argc, char* argv[] )
     delete log10_gp;
     delete gp;
     cout << "test1 done\n";
-    */
-     
-    /*
+
+  } else if (opt == "debug2") {
+
+    string pn = argv[3];
     string line, output_line;
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-    cout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
+
+    cout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";    
+    //line = "chr21 21903875 21904163 26 48 5 2 0:525 0:534";
+    line = "chr21 41931103 41931403 30 62 6 2 0:514 0:550";
+
+    cout << line << endl;
+    //parseline_del_tmp1(line, output_line, pdf_rg);
+    binomial_del_tmp1(line, output_line, pdf_rg);
     
-    line = "chr1 17684780 17685090 36 19 3 0";
-    parseline_del_tmp1(line, output_line, pdf_rg, Log10RatioUb);
     cout << output_line << endl;
-    line = "chr1 1455790 1456098 6 2 0 2 0:733 1:748";
-    line = "chr1 1455790 1456098 6 9 1 2 0:733 1:748";
-    */
     
+  } else if (opt == "debug3") {  // check some region 
+
+    string pn = argv[3];
+
     string chrn = "chr3";
     int aluBegin = 129912695;
     int aluEnd = 129913004;
@@ -356,19 +379,17 @@ int main( int argc, char* argv[] )
       if ( qi->second == unknow_read) {
 	unknow_reads[qi->first] = 1;
       }
-    }
-    
+    }    
     bam_fh->jump_to_region(chrn, aluBegin-ALU_FLANK, aluEnd + ALU_FLANK);
     while ( true ) {
       string read_status = bam_fh->fetch_a_read(chrn, aluBegin - ALU_FLANK, aluEnd + ALU_FLANK, record);
       if (read_status == "stop" ) break;
       if (read_status == "skip" or !QC_delete_read(record)) continue;
-    }
-    
+    }    
     delete bam_fh;    
-    // genotype call /nfs_mount/bioinfo/users/yuq/work/Alu/outputs/jon_chr0/pn1.check
   } else {
     cout << "unknown options !\n";
+
   }
   
   cout << "time used " << clocki.elapsed() << endl;

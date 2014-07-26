@@ -184,7 +184,7 @@ bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, v
   record.ref = ".";
   record.alt = "1";
   record.qual = 0;
-  record.filter = ".";
+  record.filter = "PL";  // "." cause assertion in other program 
   record.info = ".";
   record.format = ".";
   float p0, p1, p2;      

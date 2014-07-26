@@ -23,7 +23,6 @@
 using namespace std;
 
 // macro for alu_delete
-#define LOG10_RATIO_UB 3 // max log(OR) for a single read, estimated from quantile(0.95)/quantile(0.05), 1e3 to 1e4
 #define LOG10_GENO_PROB 5 // min genotype prob by reads 
 #define ALU_FLANK 600
 #define BOUNDARY_OFFSET 10 

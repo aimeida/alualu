@@ -93,7 +93,7 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int estimatedAluLen, string line1){
+bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int log10RatioUb, int estimatedAluLen, string line1){
   float *log10_gp = new float[3];
   stringstream ss, ss_out;
   string chrn, pos, posr, token;

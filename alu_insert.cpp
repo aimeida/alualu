@@ -1101,7 +1101,7 @@ void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout, const strin
   rows_list.clear();
 }
 
-void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int fixed_len, string fn_clip_pass0){
+void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int log10RatioUb, int fixed_len, string fn_clip_pass0){
   ofstream fout(fn_tmp2.c_str());
   fout << "chr insertBegin insertEnd debugInfo insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
   stringstream ss;
@@ -1130,7 +1130,7 @@ void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, Empiri
       if ( pre_chrn != "") {
 	if ( tmp1_info.find(pre_chrn) != tmp1_info.end() ) {
 	  for (map<int, string>::iterator ti = tmp1_info[pre_chrn].begin(); ti != tmp1_info[pre_chrn].end(); ti ++ )
-	    if (parseline_del_tmp0("", output_line, pdf_rg, fixed_len, ti->second))
+	    if (parseline_del_tmp0("", output_line, pdf_rg, log10RatioUb, fixed_len, ti->second))
 	      rows_list.push_back( make_pair(ti->first, output_line) );
 	  tmp1_info[pre_chrn].clear();
 	}
@@ -1144,13 +1144,13 @@ void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, Empiri
       line1 = tmp1_info[chrn][pos];
       tmp1_info[chrn].erase(pos);
     }
-    if (parseline_del_tmp0(line, output_line, pdf_rg, fixed_len, line1)) 
+    if (parseline_del_tmp0(line, output_line, pdf_rg, log10RatioUb, fixed_len, line1)) 
       rows_list.push_back( make_pair(pos, output_line) );
   } 
   
   if ( tmp1_info.find(chrn) != tmp1_info.end() ) 
     for (map<int, string>::iterator ti = tmp1_info[chrn].begin(); ti != tmp1_info[chrn].end(); ti ++ )
-      if (parseline_del_tmp0("", output_line, pdf_rg, fixed_len, ti->second)) 
+      if (parseline_del_tmp0("", output_line, pdf_rg, log10RatioUb, fixed_len, ti->second)) 
 	rows_list.push_back( make_pair(ti->first, output_line) );
   
   fn_clip_pass = replace_str0_str(fn_clip_pass0, chrn, "chr0");
@@ -1460,7 +1460,8 @@ int main( int argc, char* argv[] )
      read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
      string file_tmp0 = pathDel0 + "tmp0s/" + pn + ".tmp0";
      string file_tmp2 = pathDel0 + pn + ".tmp2";
-     write_tmp2(file_tmp0, file_tmp1, file_tmp2, pdf_rg, alucons_len, file_clip_pass);
+     int Log10RatioUb = seqan::lexicalCast<int> (cf_fh.get_conf("Log10_RATIO_UB"));
+     write_tmp2(file_tmp0, file_tmp1, file_tmp2, pdf_rg, log10RatioUb, alucons_len, file_clip_pass);
      
      EmpiricalPdf::delete_map(pdf_rg);
      move_files(pathDel0 + "tmp1s/", file_tmp1);
