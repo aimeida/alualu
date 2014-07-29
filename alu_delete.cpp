@@ -79,14 +79,21 @@ int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_pre
   return 0;
 }
 
-bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int Log10RatioUb){
+bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, float Log10RatioUb){
+  const int adj_cnt = 10;
   float *log10_gp = new float[3];
   stringstream ss, ss_out;
   string chrn, meanCov;
   int aluBegin, aluEnd, midCnt, clipCnt, unknowCnt;
   ss.clear(); ss.str(line); 
   ss >> chrn >> aluBegin >> aluEnd >> meanCov >> midCnt >> clipCnt >> unknowCnt ;
+  if (midCnt > adj_cnt and clipCnt >= 2) {
+    float bias = (aluEnd - aluBegin + 200) / 200.; // read_len = 100
+    midCnt = (int) (ceil)(midCnt/bias);
+  }
+
   float prob_ub = pow(10, -Log10RatioUb);
+  float *gp = new float[3];
 
   for (int i = 0; i < 3; i++) log10_gp[i] = 0;
   if (midCnt+clipCnt > 0) {
@@ -114,13 +121,12 @@ bool parseline_del_tmp1(string &line, string & output_line, map <int, EmpiricalP
   bool use_this_line = false;
   if ( !p00_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
     ss_out << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
-    float *gp = new float[3];
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
-    ss_out << " " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2]; 
-    delete gp;    
+    ss_out << " " << setprecision(6) << gp[0] << " " << gp[1] << " " << gp[2];   
     output_line = ss_out.str();
     use_this_line = true;
   }
+  delete gp;    
   delete log10_gp;
   return use_this_line;
 }
@@ -156,9 +162,9 @@ bool binomial_del_tmp1(string &line, string & output_line, map <int, EmpiricalPd
   if (n0 + n1 == 0) 
     return false;
 
-  log10_gp[0] = n0 * log10 (prob_ub) + n1 * log10 (1 - prob_ub);
+  log10_gp[0] = n1 * log10 (prob_ub) + n0 * log10 (1 - prob_ub);
   log10_gp[1] = (n0+n1) * log10(0.5);
-  log10_gp[2] = n1 * log10 (prob_ub) + n0 * log10 (1 - prob_ub);
+  log10_gp[2] = n0 * log10 (prob_ub) + n1 * log10 (1 - prob_ub);
   log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
   bool use_this_line = false;
   if ( !p00_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
@@ -175,10 +181,10 @@ bool binomial_del_tmp1(string &line, string & output_line, map <int, EmpiricalPd
 
 
 
-void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int Log10RatioUb){
+void calculate_genoProb(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, float Log10RatioUb){
   // clip_read: evidence for deletion, mid_read: evidence for insertion
   ofstream fout(fn_tmp2.c_str());
-  fout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";  
+  fout << "chr aluBegin aluEnd adjmidCnt clipCnt unknowCnt 00 01 11\n";  
   string line, output_line;
   ifstream fin(fn_tmp1.c_str());
   assert(fin);
@@ -269,7 +275,7 @@ int main( int argc, char* argv[] )
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
-    int Log10RatioUb = seqan::lexicalCast<int> (cf_fh.get_conf("Log10_RATIO_UB"));
+    float Log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("Log10_RATIO_UB"));
     calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg, Log10RatioUb); 
     EmpiricalPdf::delete_map(pdf_rg);
     //move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;

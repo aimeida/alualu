@@ -1101,7 +1101,7 @@ void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout, const strin
   rows_list.clear();
 }
 
-void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, int log10RatioUb, int fixed_len, string fn_clip_pass0){
+void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, float log10RatioUb, int fixed_len, string fn_clip_pass0){
   ofstream fout(fn_tmp2.c_str());
   fout << "chr insertBegin insertEnd debugInfo insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
   stringstream ss;
@@ -1460,7 +1460,7 @@ int main( int argc, char* argv[] )
      read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
      string file_tmp0 = pathDel0 + "tmp0s/" + pn + ".tmp0";
      string file_tmp2 = pathDel0 + pn + ".tmp2";
-     int Log10RatioUb = seqan::lexicalCast<int> (cf_fh.get_conf("Log10_RATIO_UB"));
+     float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("Log10_RATIO_UB"));
      write_tmp2(file_tmp0, file_tmp1, file_tmp2, pdf_rg, log10RatioUb, alucons_len, file_clip_pass);
      
      EmpiricalPdf::delete_map(pdf_rg);
