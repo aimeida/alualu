@@ -25,9 +25,24 @@ EmpiricalPdf::EmpiricalPdf(string pdf_file){
 float EmpiricalPdf::pdf_obs(int insertlen) {
   if (insertlen >= max_len || insertlen <= min_len) return min_prob;
   int nearby_pos = min_len + (insertlen-min_len)/bin_width*bin_width;
-  map<int, float >::iterator it = prob_vec.find(nearby_pos);
+  map <int, float >::iterator it = prob_vec.find(nearby_pos);
   if ( it != prob_vec.end())  return it->second;
   return min_prob;
+}   
+
+void EmpiricalPdf::ratio_obs(int y, int z, float log10_ratio_ub, float & py, float & pz) {
+  assert( y > z);
+  float min_ratio = pow(10, - abs(log10_ratio_ub));
+  if ( z < 0 ) {
+    py = 1; pz = min_ratio;
+  } else {
+    float yz_ratio = pdf_obs(y) / pdf_obs(z);
+    if ( yz_ratio >= 1 ) {
+      py = 1; pz = max(1/yz_ratio, min_ratio);
+    } else {
+      py = max(yz_ratio, min_ratio); pz = 1;
+    }
+  }
 }   
 
 void EmpiricalPdf::delete_map(map <int, EmpiricalPdf *> & epdf_rg){
@@ -126,12 +141,12 @@ bool BamFileHandler::write_a_read(seqan::BamAlignmentRecord & record) {
   return write2(outStream, record, context, seqan::Bam()) == 0;
 }
 
-BamFileHandler * BamFileHandler::openBam_24chr(string bam_input, string bai_input) {
+BamFileHandler * BamFileHandler::openBam_24chr(string bam_input, string bai_input, string bam_output) {
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   chrns.push_back("chrX");
   chrns.push_back("chrY");
-  return new BamFileHandler(chrns, bam_input, bai_input);
+  return new BamFileHandler(chrns, bam_input, bai_input, bam_output);
 }
 
 FastaFileHandler::FastaFileHandler(string fn_fa) {

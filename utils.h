@@ -70,6 +70,7 @@ class EmpiricalPdf
  public:
   EmpiricalPdf(string pdf_file);
   float pdf_obs(int insertlen);
+  void ratio_obs(int y, int z, float log10_ratio_ub, float & py, float & pz);
   static void delete_map(map <int, EmpiricalPdf *> & epdf_rg); 
 };
 
@@ -87,7 +88,7 @@ class BamFileHandler{
   bool get_chrn(int query_rid, string & pairChrn);
   void print_mapping_rID2chrn();
   bool write_a_read(seqan::BamAlignmentRecord & record);  
-  static BamFileHandler * openBam_24chr(string bam_input, string bai_input=""); // chr1 - chrY
+  static BamFileHandler * openBam_24chr(string bam_input, string bai_input="", string bam_output=""); // chr1 - chrY
 
  private:
   TNameStore  nameStore;

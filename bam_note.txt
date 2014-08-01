@@ -1,0 +1,58 @@
+## num of left and read reads
+AACTICV.tmp4, 
+> quantile(dat, c(0.2, 0.5, 0.9))
+  20%   50%   90% 
+  5.0   8.0 101.5
+> length(dat)
+[1] 2206
+> sum(dat > 20 & dat < 40) 
+## 95
+
+
+5'Part A- A5TACA6 -Part B - PolyA Tail - 3'
+Part A and Part B are similar nucleotide sequences, but of opposite direction
+
+AAAAATACAAAAA ==> the only pattern i found
+
+
+#######
+mul_map: assign left or right reads
+
+special cases:
+0. tags:
+    A  character
+    i  signed 32-bit integer
+    f  single-precision float
+    Z  string
+    H  hex string
+
+a read might have a "XT:A:U" score but at the same time a MAPQ of 0 - meaning that there are many other possible alignments with a slightly worse score.
+   NBNBNBNB:  http://bio-bwa.sourceforge.net/bwa.shtml
+   X0: Number of best hits      ==> at least one of the pairs is set
+   X1: Number of suboptimal hits found by BWA
+   XT Type: Unique/Repeat/N/Mate-sw                     ## don't see M in our records
+   XA Alternative hits; format: (chr,pos,CIGAR,NM;)*    ## if more than TNT, don't output!
+   
+   see here for documentation     ===>    http://davetang.org/wiki/tiki-index.php?page=SAM
+
+   If a read has more than INT hits, the XA tag will not be written. 
+
+   SM:i:37 - Mapping quality if the read is mapped as a single read rather than as a read pair
+   AM:i:37 - Smaller single-end mapping quality of the two reads in a pair
+   RG:Z:SRR035022 - Read group. Value matches the header RG-ID tag if @RG is present in the header
+   NM:i:2 - Number of nucleotide differences (i.e. edit distance to the reference sequence)
+   MD:Z:0N0N52 - String for mismatching positions in the format of [0-9]+(([ACGTN]|\^[ACGTN]+)[0-9]+)*
+
+	
+1. insert length distribution
+file:///home/qianyuxx/Documents/project_Alu/jisphd/code/trunk/RUAluSearch/src/main/java/is/ru/bioinformatics/alu/inserted/lengthEstimation/AluInsertLengthEstimationService.java 
+
+2. if there are two equally plausible alignments, the probability for each alignment to be correct is at most 50%, which transforms to a Phred score of 3. Hence, an aligner should never indicate a mapping quality above 3 for multiply matched reads
+
+
+3. many aligners follow the recommendation to use the optional tag "NH" to indicate how many alignments are reported for this read. This helps only, of course, if you instructed the aligner to report multiple alignments.
+"Uniquely mappable read" is never satisfactorily defined. If we cannot define it, how can we measure uniqueness? In practice, all you need to do is to look at the mapping quality. DON'T look at any tags. => No
+
+4. BWA can report alternate hits in XA tag ==> OK, RIGHTTTT !
+   Bowtie has a number of options which allow you to configure which and how many alignments are reported. => No
+   

@@ -1,10 +1,10 @@
 #include "delete_utils.h"
 
-string debug_print_tread(T_READ td){
+string tread_toStr(T_READ td){
   if ( td == unknow_read ) return "unknow_read";
   if ( td == mid_read ) return "mid_read";
   if ( td == clip_read ) return "clip_read";
-  return "";
+  return "uesless_read?";
 }
 
 bool get_align_pos(int aluBegin, int aluEnd, int beginPos, int endPos, int &ref_a, int &ref_b, int &read_a, int &read_b, seqan::BamAlignmentRecord &record){
@@ -48,28 +48,22 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
   align_len = min(toViewPosition(row(align, 0), read_b - read_a), toViewPosition(row(align, 1), length(fa_seq)))
     - max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
   //cout << clippedBeginPosition(row(align, 0)) << " " << clippedBeginPosition(row(align, 1)) << " " <<  endl;
-  //cout << "score1 " << score << " " << align_len << " " << min_align_score(align_len) << " " << min_align_len << " " << endl;
-  if ( align_len >= min_align_len and score >= min_align_score(align_len) ) return true; 
+  //cout << "score1 " << score << " " << align_len << " " << min_align_len << " " << endl;
+  if ( align_len >= min_align_len and score >= round( 0.75 * align_len - 2 ) ) return true; 
   
   // AlignConfig 2=true: free end gaps for record.seq
   score = globalAlignment(align, scoringScheme, seqan::AlignConfig<false, true, true, false>()); 
   align_len = min(toViewPosition(row(align, 0), read_b - read_a), toViewPosition(row(align, 1), length(fa_seq)))
     - max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
-  return ( align_len >= min_align_len and score >= min_align_score(align_len) );
+  return ( align_len >= min_align_len and score >= round( 0.75 * align_len - 2 ));
 }
 
-T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool only_tLen_info){
+T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool debug){
   bool read_is_left = left_read(record);
   int beginPos = record.beginPos;
   int endPos = record.beginPos + getAlignmentLengthInRef(record);    
   int pair_begin = read_is_left ? beginPos : record.pNext;
   int pair_end = pair_begin + abs(record.tLen);
-
-  if (only_tLen_info ) {// silly to use only insert length info. (1) mid reads with small insert length will be wrongly interpreted. (2) many clip reads are ignored 
-    if ( pair_begin < aluBegin + BOUNDARY_OFFSET and pair_end > aluEnd - BOUNDARY_OFFSET ) return unknow_read;
-    else return useless_read;
-  }
-
   if ( (has_soft_first(record, CLIP_BP) and abs(beginPos - aluEnd) <= BOUNDARY_OFFSET ) or 
        ( has_soft_last(record, CLIP_BP) and abs(endPos - aluBegin) <= BOUNDARY_OFFSET ) ) {    
     int ref_a, ref_b, read_a, read_b;
@@ -80,6 +74,9 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEn
 	return clip_read;
     }
   }  
+  if ( debug )
+    cout << "debug# " <<  beginPos <<  " " << endPos << " " << pair_begin << " " << pair_end << endl;
+  
   // only consider as mid_read if very certain, otherwise classify as unknown read
   if ( beginPos < aluEnd - BOUNDARY_OFFSET and endPos > aluBegin + BOUNDARY_OFFSET and count_non_match(record) <= 5)       
     return mid_read;    
@@ -88,7 +85,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEn
   return useless_read;  // alu_flank is too large, we have a lot reads not useful 
 }
 
-void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
+void combine_pns_llh(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
   stringstream ss;
   string line, chrn, tmpfield;
   int aluBegin, flag;
@@ -132,7 +129,7 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
     
     map<int, int>::iterator pan = pos_pnCnt.begin();
     for ( map<int, int>::iterator pa = pos_altCnt.begin(); pa != pos_altCnt.end(); pa++, pan++) {
-      if ( pan->second <= 1) continue; // no private 
+      //if ( pan->second <= 1) continue; // no private 
       float altFreq = (pa->second) / (float)alleleCnt;
       float freq0 = (1 - altFreq) * (1 - altFreq);
       float freq1 = 2 * altFreq * (1 - altFreq);
@@ -160,7 +157,7 @@ void filter_by_llh_noPrivate(string path0, string f_in_suffix, string f_out, vec
   fout.close();
 }
 
-bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
+bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
   ifstream fin;
   stringstream ss;
   string line, chrn, tmp1, tmp2;
@@ -230,7 +227,8 @@ bool combine_pns_vcf_noPrivate(string path0, string f_in_suffix, string f_out, v
 	  appendValue(record.genotypeInfos, "0,255,255"); // otherwise vcf consider it as missing
 	}
       }
-      if (n_pn > 1) writeRecord(vcfout, record);  // don't output private loci
+      ////if (n_pn > 1) // no private
+      writeRecord(vcfout, record);  
       clear(record.genotypeInfos);
     }        
     cout << "done with " << *ci << endl;
