@@ -53,27 +53,39 @@ config.decode: used by Yu in Iceland, where the old files sitting
        
    opt = "combine_pos_pns" :
         write results: (@C)file_alu_insert1
-        find common insertion positions of multiple individuals, also filter out insertions outside pre_defined freq range.
-        eg:  only insertions with freq in [minfreq, maxfreq] are considered, I use [0.02, 1] as in config.dk file
-
+        find common insertion positions of multiple individuals
         Note: some PNs with extreme large amount of reads (that might be alu mate). (almost 10 times of other PNs)
               eg: MXQBTEO, HYKJEJS, EIVHBDQ, KSRDJGR
               EITHER:  > 4G memory to fun; OR: ignore them
               I chose to ignore them. For each chromosome, about 15% individuals with extremely high potential insert positions are ignored. 
-
 	
-   opt = "clipreads_by_pn":
-     for each pn, write the broken reads at these insertion positions to files at (@C)file_clip_reads/chr1/pn_minfreq_maxfreq.
-     a read is considered as broken reads only if cigar string shows soft clip, AND the score after realignment is high.
+   opt = "clipReads_pn":
+     for each pn, write the broken reads at these insertion positions to files at insert_alu1/clip0/chr1/pn
+     a read is considered as broken reads only if cigar string shows soft clip, AND the score of realignment is high.
 
-   opt = "clipreads_pos_pns":
-     write files at  (@C)file_clip_reads/chr1_pos/regionBegin_regionEnd
+   opt = "clipReads_pns":
+     write files at,        insert_alu1/clip0/chr1_pos/regionBegin_regionEnd
+     exact position at,     insert_alu1/clip0/chr1.clip_pn
      all broken reads with insertion between regionBegin and regionEnd are written into corresponding files. 
-     exact position is written at (@C)file_alu_insert1/chr1_0.02_1.tmp
-     exact position with more details: (@C)file_alu_insert1/chr1_0.02_1
 
-   opt = "fixed_delete0_pn":
-     write *tmp0 and *tmp2 files for alu_deletion methods, with a fixed alu consensus sequence, instead of inferred length
+   opt = "write_tmp0_pn":
+    insert_alu1/cons/chr*/pn.aludb
+    insert_alu1/cons/chr*/pn.clip
+
+todo: add qName for alu_and_clip_read
+
+
+   opt = "clipPos_pns":
+     (1) re_write alu and clip reads in folder insert_alu1/cons/chr*_pos/
+     (2) write exact breakpoint at:  insert_alu1/cons/chr0_clip_pass 
+
+   opt = "write_tmp2_pn":
+     (1) write "*.tmp1" files, count of aluRead and clipRead, by reading **insert_alu1/cons/chr*/pn.aludb
+     (2) write "*.tmp2" files
+
+        calculate likelihood from previous    
+
 
    opt = "fixed_vcf_pns":  	 
      combine results and write big vcf 
+     	     

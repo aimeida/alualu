@@ -1,7 +1,8 @@
 file_pn /home/qianyuxx/faststorage/AluDK/inputs/PN_all
 bam_rid_chrn /home/qianyuxx/faststorage/AluDK/inputs/bam_rid_chrn  ## mapping of rid to chrn in bam header 
 file_bam_prefix /home/qianyuxx/faststorage/AluDK/inputs/bamFile/
-file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/alu_
+file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/       ## original alu files 
+file_alupos_filter /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19_filter/    ## new alu files, combine neighbor sites
 file_fa_prefix /home/qianyuxx/faststorage/AluDK/inputs/fa_hg19/
 LOG10_RATIO_UB 3  ## max log(OR) for a single read
 ## insert_length_dist

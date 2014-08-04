@@ -17,6 +17,8 @@ bool split_global_align(seqan::CharString &fa_seq, seqan::BamAlignmentRecord &re
 T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEnd, FastaFileHandler *fasta_fh, bool debug = false);
 void combine_pns_llh(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00);
 bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00);
+void write_rm2(string f_input, string f_output, map < string, std::set<int> > & chrn_aluBegin, float chisq_th);
+void filtered_vcf(string f_input, string f_output, int offset, map <string, set<int> > &chrn_aluBegin);
 string tread_toStr(T_READ td);
 
 #endif 

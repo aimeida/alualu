@@ -1,4 +1,5 @@
 opt="opt3"
+${opt3}/alu_delete config.dk preprocess
 ${opt3}/alu_delete config.dk write_tmps_pn 0
 ${opt3}/alu_delete config.dk write_vcf_pns
 

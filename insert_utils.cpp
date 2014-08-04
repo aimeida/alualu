@@ -191,7 +191,7 @@ bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqa
   return score >= round(th_score * (align_len - cutEnd)) ;
 }
 
-bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header) {
+bool align_clip_to_ref(char left_right, int adj_clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh) {
   const int ref_plus_bp = 10; // allow small indels
   int score;
   seqan::CharString ref_fa;
@@ -204,10 +204,8 @@ bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align
     fasta_fh->fetch_fasta_upper(adj_clipPos - align_len - ref_plus_bp, adj_clipPos, ref_fa);
     read_clip_fa = infix(record.seq, 0, align_len);
   }
-  if (global_align_insert( hasFlagRC(record), read_clip_fa, ref_fa, score, ALIGN_END_CUT, 0.7) ) {
-    fout << header << left_right << " " << adj_clipPos << " " << record.qName << " " << clipPos << " " <<  get_cigar(record) << endl;
+  if (global_align_insert( hasFlagRC(record), read_clip_fa, ref_fa, score, ALIGN_END_CUT, 0.7) ) 
     return true;
-  }
   return false;
 }
 

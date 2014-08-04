@@ -463,6 +463,49 @@ AluRefPos::AluRefPos(string fn, int minLen_alu) {
   db_size = alu_db.size();
 }
 
+AluRefPos::AluRefPos(string fn, int minLen_alu, int minDist_neighbor) {
+  // assume input is sorted 
+  ifstream fin( fn.c_str());
+  assert(fin);
+  string chrn, at, line;
+  int bp, ep, bp_pre, ep_pre;
+  stringstream ss;
+  list <RepDB1> alu_db_list;
+  getline(fin, line);
+  ss.str(line);
+  ss >> chrn >> bp_pre >> ep_pre;
+  while ( getline(fin, line)) {
+    ss.clear(); ss.str(line);
+    ss >> chrn >> bp >> ep >> at;
+    bool flag = true;
+    if ( !alu_db_list.empty() and abs( (alu_db_list.back()).end_pos - bp ) < minDist_neighbor ) {
+      alu_db_list.pop_back();
+      flag = false;
+    } else if ( minLen_alu > 0 and ep - bp < minLen_alu) {      
+      flag = false;
+    } else if ( abs(ep_pre - bp) < minDist_neighbor ) {
+      flag = false;
+    }     
+    ///cout << flag << " " << bp << " " << alu_db_list.size() << endl;
+    if (flag ) {
+      RepDB1 one_alu = RepDB1(bp, ep, at);
+      alu_db_list.push_back( one_alu );
+    }
+    bp_pre = bp;
+    ep_pre = ep;
+  }
+  fin.close();  
+  RepDB1 one_alu = RepDB1(bp_pre, ep_pre, at);
+  alu_db_list.push_back( one_alu );
+
+  for (list <RepDB1>::iterator al = alu_db_list.begin(); al != alu_db_list.end(); al++ ) 
+    alu_db.insert(*al);
+  alu_db_list.clear();
+
+  adi = alu_db.begin(); // initialize pointer
+  db_size = alu_db.size();
+}
+
 bool AluRefPos::within_alu( int pos) {
   for (std::set <RepDB1>::iterator di = alu_db.begin(); di != alu_db.end(); di++ )  {
     if ( pos >= (*di).begin_pos and pos <= (*di).end_pos )
@@ -479,6 +522,28 @@ void AluRefPos::debug_print() {
     cout << (*di).begin_pos << " " << (*di).end_pos << endl;
 }
 
+bool AluRefPos::write_new_alu(string chrn, string fn, string fn_new, int join_len){
+  AluRefPos *alurefpos = new AluRefPos(fn, 5);
+  ofstream fout(fn_new.c_str());
+  alurefpos->nextdb() ;
+  int beginPos_pre = alurefpos->get_beginP();
+  int endPos_pre = alurefpos->get_endP();
+  string at;
+  while ( alurefpos->nextdb() ) {
+    int beginPos = alurefpos->get_beginP();
+    int endPos = alurefpos->get_endP();
+    at = alurefpos->get_type();
+    if (beginPos - endPos_pre > join_len) {  // close this block, create new
+      fout << chrn << " " << beginPos << " " << endPos << " " <<  at << endl;
+      beginPos_pre = beginPos;
+    }
+    endPos_pre = endPos;
+  }
+  fout << chrn << beginPos_pre << " " << endPos_pre << " " << at << endl;
+  fout.close();
+  delete alurefpos;
+  return true;
+}
 
 string phred_scaled(float p0, float p1, float p2) {
   float pmax = max(p0, max(p1, p2));

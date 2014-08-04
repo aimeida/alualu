@@ -129,7 +129,6 @@ void combine_pns_llh(string path0, string f_in_suffix, string f_out, vector <str
     
     map<int, int>::iterator pan = pos_pnCnt.begin();
     for ( map<int, int>::iterator pa = pos_altCnt.begin(); pa != pos_altCnt.end(); pa++, pan++) {
-      //if ( pan->second <= 1) continue; // no private 
       float altFreq = (pa->second) / (float)alleleCnt;
       float freq0 = (1 - altFreq) * (1 - altFreq);
       float freq1 = 2 * altFreq * (1 - altFreq);
@@ -227,7 +226,6 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
 	  appendValue(record.genotypeInfos, "0,255,255"); // otherwise vcf consider it as missing
 	}
       }
-      ////if (n_pn > 1) // no private
       writeRecord(vcfout, record);  
       clear(record.genotypeInfos);
     }        
@@ -238,3 +236,57 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
   return true;
 }
 
+void write_rm2(string f_input, string f_output, map < string, std::set<int> > & chrn_aluBegin, float chisq_th) {
+  string line, chrn;
+  int aluBegin, pnCnt;
+  float alleleFreq, log_llh_Ratio;
+  ifstream fin(f_input.c_str());
+  getline(fin, line);
+  fstream fout;
+  fout.open(f_output.c_str(), fstream::app|fstream::out);
+  stringstream ss;  
+  while ( getline(fin, line)) {
+    ss.clear(); ss.str(line); 
+    ss >> chrn >> aluBegin >> pnCnt >> alleleFreq >> log_llh_Ratio;
+    if ( chrn_aluBegin.find(chrn) != chrn_aluBegin.end() and 
+	 chrn_aluBegin[chrn].find(aluBegin) != chrn_aluBegin[chrn].end() )
+      continue;
+    if ( pnCnt == 1) {
+      chrn_aluBegin[chrn].insert(aluBegin);
+      fout << chrn << " " << aluBegin << " singleton\n";
+    } else if (log_llh_Ratio <= chisq_th) {
+      fout << chrn << " " << aluBegin << " llh\n";
+      chrn_aluBegin[chrn].insert(aluBegin);
+    }
+  }
+  fin.close();
+  fout.close();
+}
+
+void filtered_vcf(string f_input, string f_output, int offset, map <string, set<int> > &chrn_aluBegin) {
+  string line, chrn;
+  int aluBegin;
+  stringstream ss;
+  ifstream fin(f_input.c_str());
+  if(!fin) {
+    cerr << f_input << " does not exist!\n";
+    exit(0);
+  }
+  ofstream fout(f_output.c_str());
+  getline(fin, line);
+  fout << line << endl;
+  while (getline(fin, line)) {
+    if (line[0]=='#') {
+      fout << line << endl;
+      continue;
+    }
+    ss.clear(); ss.str(line); 
+    ss >> chrn >> aluBegin;
+    aluBegin = aluBegin + offset;
+    if ( chrn_aluBegin.find(chrn) == chrn_aluBegin.end() or 
+	 chrn_aluBegin[chrn].find(aluBegin) == chrn_aluBegin[chrn].end())
+      fout << line << endl;
+  }
+  fin.close();
+  fout.close();
+}

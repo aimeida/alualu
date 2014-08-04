@@ -47,9 +47,24 @@ inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){
   unsigned i = length(record.cigar) - 1;
   return (record.cigar[i].operation == 'S') and (record.cigar[i].count >= min_bp) ;
 };
+
 inline bool has_soft_first(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
   return (record.cigar[0].operation == 'S') and (record.cigar[0].count >= min_bp); 
 };
+
+// if pair is Alu
+inline bool aluclip_RC_match(seqan::BamAlignmentRecord &record){
+  if (has_soft_last(record, CLIP_BP) and has_soft_first(record, CLIP_BP) ) 
+    return false;
+  if ( (record.rID != record.rNextId ) or abs(record.tLen) > DISCORDANT_LEN ) {
+    if (has_soft_last(record, CLIP_BP) and !hasFlagRC(record))   // left of breakpoint
+      return true;
+    if (has_soft_first(record, CLIP_BP) and hasFlagRC(record))
+      return true;
+    return false;
+  }
+  return true;
+}
 
 inline int count_non_match(seqan::BamAlignmentRecord &record){ 
   int non_match_len = 0;
@@ -147,7 +162,8 @@ class AluRefPos   // used by alu_delete, alu_insert
 {
 public: 
   int db_size;
-  AluRefPos(string fn, int minLen_alu = 0);   
+  AluRefPos(string fn, int minLen_alu);
+  AluRefPos(string fn, int minLen_alu, int minDist_neighbor);   
   bool nextdb(){ adi++; return adi != alu_db.end();}
   int get_beginP() const { assert(adi != alu_db.end()); return (*adi).begin_pos; }
   int get_endP() const { assert(adi != alu_db.end()); return (*adi).end_pos; }
@@ -155,6 +171,7 @@ public:
   bool within_alu(int pos);
   void debug_print();
   ~AluRefPos(void) { alu_db.clear();}
+  static bool write_new_alu(string chrn, string fn, string fn_new, int join_len);  // join database 
  private:
   std::set <RepDB1> alu_db;
   std::set <RepDB1>::iterator adi;  

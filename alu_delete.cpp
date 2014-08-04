@@ -34,14 +34,14 @@ int check_one_pos(BamFileHandler* bam_fh, FastaFileHandler *fasta_fh, map <strin
   return 1;
 }
 
-int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_prefix, int coverage_max, map<string, int> &rg_to_idx) {    
+int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_prefix, vector<string> &chrns, string &f_out, string &f_log, string &file_alupos_chr0, int coverage_max, map<string, int> &rg_to_idx) {    
   map < seqan::CharString, T_READ> qName_info;  
   ofstream f_tmp1( f_out.c_str()); 
   f_tmp1 << "chr aluBegin aluEnd mean_coverage midCnt clipCnt unknowCnt unknowStr\n";
   ofstream f_log1( f_log.c_str());  // print out info for clip reads 
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrn = *ci;
-    string file_alupos = file_alupos_prefix + chrn;
+    string file_alupos = replace_str0_str(file_alupos_chr0, chrn, "chr0");
     AluRefPos *alurefpos = new AluRefPos(file_alupos, minLen_alu_del); // default 200
     FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);    
     int aluBegin, aluEnd;
@@ -215,60 +215,6 @@ void write_rm1(string f_output, map < string, std::set<int> > & chrn_aluBegin) {
   fout.close();
 }
 
-void write_rm2(string f_input, string f_output, map < string, std::set<int> > & chrn_aluBegin, float chisq_th) {
-  string line, chrn;
-  int aluBegin, pnCnt;
-  float alleleFreq, log_llh_Ratio;
-  ifstream fin(f_input.c_str());
-  getline(fin, line);
-  fstream fout;
-  fout.open(f_output.c_str(), fstream::app|fstream::out);
-  stringstream ss;  
-  while ( getline(fin, line)) {
-    ss.clear(); ss.str(line); 
-    ss >> chrn >> aluBegin >> pnCnt >> alleleFreq >> log_llh_Ratio;
-    if ( chrn_aluBegin.find(chrn) != chrn_aluBegin.end() and 
-	 chrn_aluBegin[chrn].find(aluBegin) != chrn_aluBegin[chrn].end() )
-      continue;
-    if ( pnCnt == 1) {
-      chrn_aluBegin[chrn].insert(aluBegin);
-      fout << chrn << " " << aluBegin << " singleton\n";
-    } else if (log_llh_Ratio <= chisq_th) {
-      fout << chrn << " " << aluBegin << " llh\n";
-      chrn_aluBegin[chrn].insert(aluBegin);
-    }
-  }
-  fin.close();
-  fout.close();
-}
-
-void remove_highCov_region(string f_input, string f_output, int offset, map <string, set<int> > &chrn_aluBegin) {
-  string line, chrn;
-  int aluBegin;
-  stringstream ss;
-  ifstream fin(f_input.c_str());
-  if(!fin) {
-    cerr << f_input << " does not exist!\n";
-    exit(0);
-  }
-  ofstream fout(f_output.c_str());
-  getline(fin, line);
-  fout << line << endl;
-  while (getline(fin, line)) {
-    if (line[0]=='#') {
-      fout << line << endl;
-      continue;
-    }
-    ss.clear(); ss.str(line); 
-    ss >> chrn >> aluBegin;
-    aluBegin = aluBegin + offset;
-    if (chrn_aluBegin[chrn].find(aluBegin) == chrn_aluBegin[chrn].end())
-      fout << line << endl;
-  }
-  fin.close();
-  fout.close();
-}
-
 int main( int argc, char* argv[] )
 {
   string config_file = argv[1];
@@ -289,9 +235,26 @@ int main( int argc, char* argv[] )
   string path0 = cf_fh.get_conf("file_alu_delete0");
   check_folder_exists(path0);
   
-  float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("Log10_RATIO_UB"));
+  float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("LOG10_RATIO_UB"));
+  string file_alupos_raw = cf_fh.get_conf("file_alupos_prefix"); 
+  string file_alupos_filter = cf_fh.get_conf("file_alupos_filter"); 
+  check_folder_exists(file_alupos_filter);
 
-  if ( opt == "write_tmps_pn" ) { 
+  if ( opt == "preprocess" ) { 
+    int join_len = 10;
+//    for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) 
+//      AluRefPos::write_new_alu(*ci, file_alupos_raw + "alu_" + *ci, file_alupos_filter + "alu_" + *ci, join_len);          
+    
+    AluRefPos *alurefpos;
+    alurefpos = new AluRefPos(file_alupos_filter + "alu_chr1", 0);
+    cout << "test: size " << alurefpos->db_size << endl;
+    delete alurefpos;
+
+    alurefpos = new AluRefPos(file_alupos_filter + "alu_chr1", 0, 300);
+    cout << "test: size " << alurefpos->db_size << endl;
+    delete alurefpos;
+
+  } else if ( opt == "write_tmps_pn" ) { 
     int idx_pn = seqan::lexicalCast<int> (argv[3]);
     assert(argc == 4);
     string pn = ID_pn[idx_pn];
@@ -299,18 +262,18 @@ int main( int argc, char* argv[] )
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );
     
     unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
-    string file_alupos_prefix = cf_fh.get_conf("file_alupos_prefix"); 
     string fn_tmp1 = path0 + pn + ".tmp1";
     string fn_log1 = path0 + pn + ".log1";
     int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
-    /*
+
     string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
     string bai_input = bam_input + ".bai";      
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
-    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos_prefix, coverage_max, rg_to_idx);
+    string file_alupos = file_alupos_filter + "alu_chr0";
+    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos, coverage_max, rg_to_idx);
     delete bam_fh;
     move_files(path0+"log1s/", path0 + pn + ".log1") ;
-    */
+
     string fn_tmp2 = path0 + pn + ".tmp2";
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
@@ -334,7 +297,7 @@ int main( int argc, char* argv[] )
       read_highCov_region(path0 + "log1s/" + *pi + ".log1",chrn_aluBegin);
     write_rm1(fn_rm, chrn_aluBegin);
     write_rm2(fn_prefix + ".pos.tmp", fn_rm, chrn_aluBegin, 1.92); //qchisq(0.95, df=1)  [1] 3.841459 
-    remove_highCov_region(fn_prefix + ".vcf.tmp", fn_prefix + ".vcf", -1, chrn_aluBegin);
+    filtered_vcf(fn_prefix + ".vcf.tmp", fn_prefix + ".vcf", -1, chrn_aluBegin);
 
   } else if (opt == "debug1") { // manually check some regions 
     
