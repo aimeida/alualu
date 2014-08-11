@@ -18,8 +18,8 @@ def print2(pn_all, fn_path, path1, bin_path, fast_queue = True):
             print >>fout, "#SBATCH -e %d_%s.e" % (pi, pn)
             #print >>fout, '%(bin_path)salu_delete ../config.dk write_tmps_pn %(pi)d'%locals()
             #print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_pn %(pi)d'%locals()
-            print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp0_pn %(pi)d'%locals()
-            #print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp2_pn %(pi)d'%locals()
+            #print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp0_pn %(pi)d'%locals()
+            print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp2_pn %(pi)d'%locals()
         pi += 1
 
 
@@ -40,8 +40,8 @@ def print3(fn_path, path1, bin_path):
             print >>fout, "#SBATCH --job-name %s" % (chrn)
             print >>fout, "#SBATCH -o %s.o" % chrn
             print >>fout, "#SBATCH -e %s.e" % chrn
-            print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_pns %(chrn)s'%locals()
-            #print >>fout, '%(bin_path)salu_insert ../config.dk clipPos_pns %(chrn)s'%locals()
+            #print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_pns %(chrn)s'%locals()
+            print >>fout, '%(bin_path)salu_insert ../config.dk clipPos_pns %(chrn)s'%locals()
             #print >>fout, '%(bin_path)salu_insert2 ../config.dk consReads_build %(chrn)s'%locals()
             #print >>fout, '%(bin_path)salu_insert2 ../config.dk consReads_chr %(chrn)s'%locals()
         pi += 1

@@ -95,9 +95,9 @@ void split_by_sep(string &str, string &m, string &n, char sep ){
   getline(ss, n, ' ');
 }
 
-int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int initv, int minSize) {
-  k1 = initv;
-  if ( (int) ps.size() < minSize ) return 0;
+int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int minInput) {
+  k1 = 0;
+  if ( (int) ps.size() < minInput ) return 0;
   map <int, int> pos_cnt;  
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ )  
     addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
@@ -123,18 +123,18 @@ int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, i
       addKey(pos_cnt, *pi , 1);
       match_cnt++;
     }
- 
+  
   assert( !pos_cnt.empty() );
   cnt_pos = flip_map(pos_cnt);
   it = cnt_pos.rbegin();
-  //cout << "size " << pos_cnt.size() << " " <<  ps.size() << endl;
   if ( match_cnt / (float) ps.size() >= freq_th ) 
-    k1 = it->second;      
-  return it->second; // return the value anyway 
+    k1 = it->second;
+  return it->first;  // return matched count
 }
 
-int major_two_keys (vector <int> & ps, int & k1, int & k2, int bin_width, float freq_th, bool debugprint ) {
+int major_two_keys (vector <int> & ps, int & k1, int & k2, int & kf1, int & kf2, int bin_width, float freq_th, bool debugprint ) {
   k1 = k2 = 0;
+  kf1 = kf2 = 0;
   if (ps.empty() ) 
     return 0;
   if (ps.size() == 1) {
@@ -169,10 +169,8 @@ int major_two_keys (vector <int> & ps, int & k1, int & k2, int bin_width, float 
 
   if (f1 < freq_th)  return 0;
 
-  if ( debugprint ) {
+  if ( debugprint ) 
     cout << "round " << _k1 << " " << _k2 << endl;
-    //debugprint_vec(ps); 
-  }
   
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ ) {
     if ( abs( *pi - _k1) <= (int) bin_width * 1.3) {
@@ -182,12 +180,17 @@ int major_two_keys (vector <int> & ps, int & k1, int & k2, int bin_width, float 
     }
   }
   
-  if ( !pos_cnt.empty())  k1 = (flip_map(pos_cnt).rbegin())->second;
-  else k1 = 0;
+  if ( !pos_cnt.empty())  { 
+    cnt_pos = flip_map(pos_cnt);
+    k1 = (cnt_pos.rbegin())->second;
+    kf1 = (cnt_pos.rbegin())->first;
+  } else k1 = 0;
 
-  if ( _k2 and !pos_cnt2.empty() ) 
-    k2 = (flip_map(pos_cnt2).rbegin())->second;
-  else k2 = 0;
-
+  if ( _k2 and !pos_cnt2.empty() ) {
+    cnt_pos = flip_map(pos_cnt2);
+    k2 = (cnt_pos.rbegin())->second;
+    kf2 = (cnt_pos.rbegin())->first;
+  } else k2 = 0;
+  
   return 0;
 }

@@ -188,18 +188,14 @@ if __name__ == "__main__":
 
     pn_used = map(lambda x:x.strip(), file(file_pn_used).readlines())
     f_vcftxt = f_vcf + '.txt'
-    f_vcftxt2 = f_vcftxt + '.filter'
-
     idx = get_idx(f_vcf, pn_used)
     vcf_to_text(pn_used, idx, f_vcf, f_vcftxt)        
-    filter_chisq(f_llh, f_vcftxt, f_vcftxt2 + ".tmp") 
-    combine_rows(f_vcftxt2 + '.tmp', f_vcftxt2)    
 
-    npos = len(file(f_vcftxt2).readlines()) - 1
+    npos = len(file(f_vcftxt).readlines()) - 1
     print npos, 'positions considered'
 
     trio_group= parse_trio_group(f_vcf)
-    chr_pos, seqs = read_vcftxt(f_vcftxt2)
+    chr_pos, seqs = read_vcftxt(f_vcftxt)
     for gn, v1 in trio_group.items():
         
         ## debugging

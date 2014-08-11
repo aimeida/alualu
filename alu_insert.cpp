@@ -422,30 +422,32 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
       list <int> cigar_cnts;
       
       int _cliplen;
-      seqan::CharString _clipSeq;      
+      seqan::CharString _clipSeq;            
       
-      if ( ! aluclip_RC_match(record) ) continue;
-      if (has_soft_last(record, CLIP_BP) and endPos >= region_begin - FLANK_REGION_LEN and endPos < region_end + FLANK_REGION_LEN) {
+      bool s1 = has_soft_last(record, CLIP_BP);
+      bool s2 = has_soft_first(record, CLIP_BP); 
+  
+      if (s1 and s2) continue;
+      if (!aluclip_RC_match(record) ) continue;
+      if ( s1 and endPos >= region_begin - FLANK_REGION_LEN and endPos < region_end + FLANK_REGION_LEN) {
 	adj_clipPos = endPos;
 	if (length(ref_fa) == 0) {
           fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
           parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
         }
 	if (clipLeft_move_right( record.seq, ref_fa, cigar_cnts, refBegin, adj_clipPos, align_len) and 
-	    trim_clip_soft_last(record, _cliplen, _clipSeq, CLIP_Q) and 
-	    align_clip_to_ref('L', adj_clipPos, align_len, record, fasta_fh) ) 
-	  fout << ss_header.str() << "L " << adj_clipPos << " " << record.qName << " " << endPos << " " <<  get_cigar(record) << endl;
+	    trim_clip_soft_last(record, _cliplen, _clipSeq, CLIP_Q) )
+	  //////// if (align_clip_to_ref('L', adj_clipPos, align_len, record, fasta_fh) ) // no need to realign, error rate about 3%
+	  fout << ss_header.str() << "L " << adj_clipPos << " " << record.qName << " " << endPos << " " <<  get_cigar(record) << endl;	
       } 
-
-      else if ( has_soft_first(record, CLIP_BP) and beginPos >= region_begin - FLANK_REGION_LEN and beginPos < region_end + FLANK_REGION_LEN) {
+      else if ( s2 and beginPos >= region_begin - FLANK_REGION_LEN and beginPos < region_end + FLANK_REGION_LEN) {
 	adj_clipPos = beginPos;
 	if (length(ref_fa) == 0) {
           fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
           parse_cigar(get_cigar(record), cigar_opts, cigar_cnts);
         }
 	if (clipRight_move_left( record.seq, ref_fa, cigar_cnts, refBegin, adj_clipPos, align_len) and 
-	    trim_clip_soft_first(record, _cliplen, _clipSeq, CLIP_Q) and 
-	    align_clip_to_ref('R', adj_clipPos, align_len, record, fasta_fh ))
+	    trim_clip_soft_first(record, _cliplen, _clipSeq, CLIP_Q))
 	  fout << ss_header.str() << "R " << adj_clipPos << " " << record.qName << " " << beginPos << " " <<  get_cigar(record) << endl;
       }
     }
@@ -551,11 +553,9 @@ void region_pos_vote( string fn, int & cl1, int & cl2, int & cr1, int & cr2 ) {
     pn_splitori_pos[pn].push_back( make_pair( left_right, clipPos) );
   }
   fin.close();  
-  vector < int > cls;
-  vector < int > crs;
+  vector < int > cls, crs;
   map <string, vector <pair<char, int> > >::iterator psi;
-  vector <pair<char, int> >::iterator si;
-  
+  vector <pair<char, int> >::iterator si; 
   for ( psi = pn_splitori_pos.begin(); psi != pn_splitori_pos.end(); psi++) {
     int pl1 = 0, pl2 = 0, pr1 = 0, pr2 = 0;
     vector<int> pls, prs;    
@@ -563,12 +563,17 @@ void region_pos_vote( string fn, int & cl1, int & cl2, int & cr1, int & cr2 ) {
       if ( (*si).first == 'L') pls.push_back( (*si).second ); 
       else prs.push_back( (*si).second ); 
     }
-    if ( (int)pls.size() >= MIN_PN_CLIP_CNT)
-      major_two_keys(pls, pl1, pl2, CLIP_BP_LEFT, MIN_VOTE_FREQ - 0.1);  // each pn 2 votes 
+    int fl1, fl2;
+    if ( (int)pls.size() >= MIN_PN_CLIP_CNT) 
+      major_two_keys(pls, pl1, pl2, fl1, fl2, CLIP_BP_LEFT, MIN_VOTE_FREQ - 0.1);  // each pn 2 votes 
     
-    if ( (int)prs.size() >= MIN_PN_CLIP_CNT)
-      major_two_keys(prs, pr1, pr2, CLIP_BP_LEFT, MIN_VOTE_FREQ - 0.1);     
-
+    int fr1, fr2;
+    if ( (int)prs.size() >= MIN_PN_CLIP_CNT) 
+      major_two_keys(prs, pr1, pr2, fr1, fr2, CLIP_BP_LEFT, MIN_VOTE_FREQ - 0.1);     
+    
+    if ( fl1 <= 1 and fr1 <= 1 and abs(pl1 - pr1) > MAX_POS_DIF ) {
+      pl1 = 0; pr1 = 0;
+    }
     if (pl1 > 0) {
       cls.push_back(pl1);
       if (pl2 > 0) cls.push_back(pl2);
@@ -576,13 +581,23 @@ void region_pos_vote( string fn, int & cl1, int & cl2, int & cr1, int & cr2 ) {
     }
     if (pr1 > 0) {
       crs.push_back(pr1);
-      if (pl2 > 0) crs.push_back(pr2);
+      if (pr2 > 0) crs.push_back(pr2);
       else crs.push_back(pr1);
     }
   }  
   
-  major_two_keys(cls, cl1, cl2, CLIP_BP_LEFT, MIN_VOTE_FREQ);
-  major_two_keys(crs, cr1, cr2, CLIP_BP_LEFT, MIN_VOTE_FREQ);
+  int fc1, fc2;
+  major_two_keys(cls, cl1, cl2, fc1, fc2, CLIP_BP_LEFT, MIN_VOTE_FREQ);
+  ////if (region_begin == 26354188) cout << "cl1 " << cl1 << " " << fc1 << endl;
+  if ( fc1 <= 2 ) cl1 = 0;
+  if ( fc2 <= 2 ) cl2 = 0;
+
+  major_two_keys(crs, cr1, cr2, fc1, fc2, CLIP_BP_LEFT, MIN_VOTE_FREQ);
+  if ( fc1 <= 2 ) cr1 = 0;
+  if ( fc2 <= 2 ) cr2 = 0;
+  
+  //if (!cls.empty() and !crs.empty()) 
+  //  cout << "##1 " << region_begin << " " << cls.size() << " " << crs.size() << " " << cl1 << " " << cr1 << endl;  
 }
 
 string get_pos_pair(int cl1, int cl2, int cr1, int cr2){
@@ -616,13 +631,13 @@ void regions_pos_vote( string path1, std::set < pair<int, int> > & regionPos_set
   for (std::set < pair <int, int> >::iterator ri = regionPos_set.begin(); ri != regionPos_set.end(); ri++ ) {
     int cl1, cl2, cr1, cr2;
     region_pos_vote(path1 + pos_to_fn(*ri), cl1, cl2, cr1, cr2) ; // at least two reads to vote for this position
-    string cs = get_pos_pair(cl1, cl2, cr1, cr2);
-    ///cout << "##0 " <<  pos_to_fn(*ri) << " " << cl1 << " " << cl2 << " " << cr1 << " " << cr2 << endl;
+//    if ( cl1 + cl2 + cr1 + cr2 >0 ) 
+//      cout << "##0 " <<  pos_to_fn(*ri) << " " << cl1 << " " << cl2 << " " << cr1 << " " << cr2 << endl;
+    string cs = get_pos_pair(cl1, cl2, cr1, cr2);   
     if ( cs.size() > 3 ) 
       fout << (*ri).first << " " << (*ri).second << cs << endl;
   }  
 }
-
 
 void neighbor_pos_filename(std::set < pair<int,int> > & regionPos_set, std::set <pair <int, int> > & fns, int clipLeft) {
   const int FLANK_REGION_LEN = 80;
@@ -648,7 +663,7 @@ int approximate_pos_pns(string path1, string fn_input, string fn_output, std::se
   while (getline(fin,line)) {
     ss.clear(); ss.str( line );
     ss >> region_begin >> region_end;
-    while ( ss >> pos2) 
+    while ( ss >> pos2)   // in each region, several potential breakpoints
       clipLeft_fn0[pos2].insert( make_pair(region_begin, region_end)) ;
   }
   fin.close();
@@ -674,7 +689,7 @@ int approximate_pos_pns(string path1, string fn_input, string fn_output, std::se
   //cout << "size0 " << clipLeft_fn0.size() << " " << clipLeft_fn.size() << endl;
   clipLeft_fn0.clear();
   ofstream fout(fn_output.c_str());
-  fout << "clipLeft clipRight pn(count)\n";
+  fout << "clipMid pn(count)\n";
   for (map< int, std::set < pair<int, int> > >::iterator pi = clipLeft_fn.begin(); pi != clipLeft_fn.end(); pi++ ) {
     int clipLeft = pi->first;
     map <string, std::set<string> > pn_qName;
@@ -698,7 +713,7 @@ int approximate_pos_pns(string path1, string fn_input, string fn_output, std::se
     if ( pn_qName.empty() )  
       continue;      
 
-    fout << clipLeft << " -1" ;  // clipRight unknown for now
+    fout << clipLeft;  // clipRight unknown for now
     for (map <string, std::set<string> >::iterator pi = pn_qName.begin(); pi != pn_qName.end(); pi++) 
       fout << " " << pi->first << "," << (pi->second).size() ;
     fout << endl;
@@ -707,37 +722,37 @@ int approximate_pos_pns(string path1, string fn_input, string fn_output, std::se
   return 1;
 }
 
-
-void vote_clipPos(int clip0, int & clipl, int & clipr, string path0, vector <string> & pns, map <string, int> & pn_cnt, float freq_th, int bin_width ){
+void vote_clipPos(int clip0, int & clipl, int & clipr, string path0, map <string, int> & pn_cnt, float freq_th){
   clipl = clipr = 0;
   vector <int> clipls, cliprs;
-  for ( vector<string>::iterator pi = pns.begin(); pi != pns.end(); pi++ ) {
-    ifstream fin( (path0 + *pi).c_str() );
+  for (map <string, int>::iterator pi = pn_cnt.begin(); pi != pn_cnt.end(); pi++ ) {
+    ifstream fin( (path0 + pi->first).c_str() );
     assert(fin);
-    string line, pn; 
+    string line, tmpv0; 
     char left_right;
     int adj_clipPos, tmpv1, tmpv2;
     stringstream ss;
     getline(fin, line);   
     while ( getline(fin, line) ) {
       ss.clear(); ss.str( line );
-      ss >> pn >> tmpv1 >> tmpv2 >> left_right >> adj_clipPos;
+      ss >> tmpv0 >> tmpv1 >> tmpv2 >> left_right >> adj_clipPos;
       //cout << clip0 << " " << tmpv2 << " " << adj_clipPos << endl;
       if ( clip0 + 300 < tmpv2  ) break;
       if ( abs(clip0 - adj_clipPos) <= MAX_POS_DIF ) {
-	addKey(pn_cnt, *pi, 1); 
+	pi->second += 1;
 	if ( left_right == 'L' )  clipls.push_back(adj_clipPos); 
 	else if ( left_right == 'R' ) cliprs.push_back(adj_clipPos); 
       } 
     }
     fin.close(); 
   }
-  //cout << "vote " << clip0 << " "  <<  pns.size() << " " << clipls.size() << " " << cliprs.size() << endl;
-  major_key_freq(clipls, clipl, bin_width, freq_th, 0, 3);
-  major_key_freq(cliprs, clipr, bin_width, freq_th, 0, 3);  
+  //cout << "vote " << clip0 << " " << clipls.size() << " " << cliprs.size() << endl;
+  ////if ( major_key_freq(clipls, clipl, MAX_POS_DIF, freq_th, 3) >= 2  // eg: freq_th = 0.7, at least 3 clip read exact the same   
+  major_key_freq(clipls, clipl, MAX_POS_DIF, freq_th, 3);  // eg: freq_th = 0.7, at least 3 clip read exact the same 
+  major_key_freq(cliprs, clipr, MAX_POS_DIF, freq_th, 3); 
 }
 
-void exact_pos_pns(string path0, string fn_input, string fn_output, int min_pn, float freq_th ) {
+void exact_pos_pns(string path0, string fn_input, string fn_output, float freq_th ) {
   ifstream fin(fn_input.c_str());
   assert(fin);
   ofstream fout(fn_output.c_str());
@@ -745,25 +760,26 @@ void exact_pos_pns(string path0, string fn_input, string fn_output, int min_pn, 
   string line, pn, cnt, tmpv;
   int clip0, clipl, clipr;
   getline(fin,line);
-  fout << line << endl;
+  fout << "clipLeft clipRight pn(count)\n";
   while (getline(fin, line)) {
     ss.clear(); ss.str(line); 
-    ss >> clip0 >> tmpv;
-    vector<string> pns;
+    ss >> clip0;
+    map <string, int> pn_cnt;
     while ( ss >> tmpv ) {
       split_by_sep (tmpv, pn, cnt, ',');
-      pns.push_back(pn);
+      pn_cnt[pn] = 0;
     }
-    if ( (int)pns.size() < min_pn) continue;
-    map <string, int> pn_cnt;
-    vote_clipPos(clip0, clipl, clipr, path0, pns, pn_cnt, freq_th, MAX_POS_DIF );
 
-    //cout << clip0 << " " << pns.size() << " " << clipl << " " << clipr << endl;
+    int tmpcnt;
+    seqan::lexicalCast2(tmpcnt, cnt);    
+    if (pn_cnt.size() <= 1 and tmpcnt <= 2 ) continue;  // at least 2 reads to support 
+    
+    vote_clipPos(clip0, clipl, clipr, path0, pn_cnt, freq_th);
+    //cout << clip0 << " " << pn_cnt.size() << " " << clipl << " " << clipr << endl;
     if (!clipl and !clipr ) continue;
-
     fout << clipl << " " << clipr;
     for (map <string, int>::iterator pi = pn_cnt.begin(); pi != pn_cnt.end(); pi++ ) 
-      fout << " " << pi->first << "," << pi->second;
+      fout << " " << pi->first;
     fout << endl;
   }
   fin.close();
@@ -781,8 +797,8 @@ bool is_clipread(int & clipLen, seqan::CharString & clipSeq, seqan::BamAlignment
 }
 
 string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clipRight, PAR_DELETE0 & pars, int & clipLen, seqan::CharString & clipSeq) {
-  string iread = "useless";
-  if (!aluclip_RC_match(record))
+  string iread = "useless";    
+  if (!aluclip_RC_match(record)) 
     return iread;
   
   int thisEnd = record.beginPos + (int)getAlignmentLengthInRef(record);   
@@ -820,89 +836,89 @@ string classify_read( seqan::BamAlignmentRecord & record, int clipLeft, int clip
   return "useless";
 }
 
-void tmp0_reads(string chrn, ofstream &ftmp1, vector< pair<int, int> > & insert_pos, BamFileHandler *bam_fh, ofstream & fout, ofstream & fout2,  map < int, vector<ALUREAD_INFO> > & rid_alureads, map<string, int> & rg_to_idx, PAR_DELETE0 & pars) {
-  seqan::BamAlignmentRecord record;
-  string read_status;
-  for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) {
-    int clipLeft = (*pi).first;
-    int clipRight = (*pi).second;
-    int region_begin = clipLeft - ALU_FLANK; // no need for larger flank region, if i only want to build consensus
-    int region_end = clipRight + ALU_FLANK;	
-    if (! bam_fh->jump_to_region(chrn, region_begin, region_end)) 
-      continue;    
-    map < seqan::CharString, string > rg_str;
-    map < seqan::CharString, string > qname_iread;
-    map < seqan::CharString, string > qname_foutStr;
-    while ( true ) {
-      read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
-      if (read_status == "stop" ) break;
-      if (read_status == "skip" or !QC_insert_read(record)) continue;      
-      map < seqan::CharString, string >::iterator qi = qname_iread.find(record.qName);
-      if ( qi != qname_iread.end() and (qi->second).substr(0,3) == "alu")
-	continue;
-
-      int clipLen;
-      seqan::CharString clipSeq;
-      string iread = classify_read(record, clipLeft, clipRight, pars, clipLen, clipSeq);                  
-      if ( iread == "alu_read" or iread == "alu_clip") {// mate is mapped to Alu
-	int this_pos;
-	if (hasFlagRC(record)) this_pos = -record.beginPos;  // breakpoints should be on the left 
-	else this_pos = record.beginPos;	
-	ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, this_pos, clipLeft, record.pNext, length(record.seq), hasFlagRC(record)==hasFlagNextRC(record) );
-	rid_alureads[record.rNextId].push_back(one_aluRead);
-      } 
-
-      bool conflict = false;
-      if (iread != "alu_clip") {
-	string ir = "";   
-	get_mapVal(qname_iread, record.qName, ir);  	
-	if  ( (iread == "clip_read" and ir == "skip_read") or (iread == "skip_read" and ir == "clip_read") ) 
-	  conflict = true;	
-      }
+int tmp0_reads(string chrn, int clipLeft, int clipRight, BamFileHandler *bam_fh, ofstream & fout, ofstream & fout2,  map < int, vector<ALUREAD_INFO> > & rid_alureads, map<string, int> & rg_to_idx, PAR_DELETE0 & pars) {
+  int region_begin = clipLeft - ALU_FLANK; // no need for larger flank region, if i only want to build consensus
+  int region_end = clipRight + ALU_FLANK;	
+  if (! bam_fh->jump_to_region(chrn, region_begin, region_end)) 
+    return 0;
+  map < seqan::CharString, string > rg_str;
+  map < seqan::CharString, string > qname_iread;
+  map < seqan::CharString, string > qname_clipInfo;
+  map < seqan::CharString, string > qname_skipInfo;
+  while ( true ) {
+    seqan::BamAlignmentRecord record;
+    string read_status = bam_fh->fetch_a_read(chrn, region_begin, region_end, record);
+    if (read_status == "stop" ) break;
+    if (read_status == "skip" or !QC_insert_read(record)) continue;      
+    map < seqan::CharString, string >::iterator qi = qname_iread.find(record.qName);
+    if ( qi != qname_iread.end() and (qi->second).substr(0,3) == "alu")  continue;
       
-      if ( iread == "unknow_read" or conflict) {    
-	qname_iread[record.qName] = "unknow_read";
-	int rgIdx = get_rgIdx(rg_to_idx, record);
-	stringstream rg_ss;
-	rg_ss << " " << rgIdx << ":" << abs(record.tLen);
-	rg_str[record.qName] = rg_ss.str();
-      } 
-      else if (iread == "clip_read" or iread == "alu_clip") {
-	qname_iread[record.qName] = iread;
-	stringstream ssf;
-	ssf << clipLeft << " " << clipSeq  << " " << clipLen << " ";
-	if (record.cigar[0].operation == 'S') ssf << record.beginPos; 	    
-	else ssf << record.beginPos + (int)getAlignmentLengthInRef(record);	    
-	int rgIdx = get_rgIdx(rg_to_idx, record);
-	ssf << " " << get_cigar(record) << " " << rgIdx << " " << record.beginPos << " " ;
-	if ( record.rID == record.rNextId )  ssf << record.beginPos + record.tLen << " ";
-	else  ssf << "-1 ";
-	ssf << record.qName << endl;
-	qname_foutStr[record.qName] = ssf.str();
-      }		
-      else if (iread == "skip_read") {   // consider to print them out ???
-	qname_iread[record.qName] = iread;	
-      }
-    }   
+    int clipLen;
+    seqan::CharString clipSeq;
+    string iread = classify_read(record, clipLeft, clipRight, pars, clipLen, clipSeq);                  
+    if ( iread == "alu_read" or iread == "alu_clip") {// mate is mapped to Alu
+      int this_pos;
+      if (hasFlagRC(record)) this_pos = -record.beginPos;  // alu is left read
+      else this_pos = record.beginPos;	   // alu is right read
+      ALUREAD_INFO one_aluRead = ALUREAD_INFO(record.qName, this_pos, clipLeft, record.pNext, length(record.seq), hasFlagRC(record)==hasFlagNextRC(record) );
+	rid_alureads[record.rNextId].push_back(one_aluRead);
+    } 
     
-    vector<string>  str_unknowreads;   
-    int cnt_skipreads = 0;   
-    for (map < seqan::CharString, string >::iterator qi = qname_iread.begin(); qi != qname_iread.end(); qi++ ) {
-      if ( qi->second == "skip_read") {
-	cnt_skipreads++;
-      } else if ( qi->second == "clip_read" or  qi->second == "alu_clip") {
-	fout << qname_foutStr[ qi->first ];
-      } else if ( qi->second == "unknow_read") {
-	str_unknowreads.push_back( rg_str[qi->first] );	
-      }
-    }    
-    if (! str_unknowreads.empty()) {
-      ftmp1 <<  chrn << " " << clipLeft << " -1 " << cnt_skipreads << " " << str_unknowreads.size() ;
-      for  ( vector< string > ::iterator si = str_unknowreads.begin(); si != str_unknowreads.end(); si++ )
-	ftmp1 << " " << *si ;
-      ftmp1 << endl;
+    bool conflict = false;
+    if (iread != "alu_clip") {
+      string ir = "";   
+      get_mapVal(qname_iread, record.qName, ir);  	
+      if  ( (iread == "clip_read" and ir == "skip_read") or (iread == "skip_read" and ir == "clip_read") ) 
+	conflict = true;	
     }
+    
+    if ( iread == "unknow_read" or conflict) {    
+      qname_iread[record.qName] = "unknow_read";
+      int rgIdx = get_rgIdx(rg_to_idx, record);
+      stringstream rg_ss;
+      rg_ss << rgIdx << ":" << abs(record.tLen) << ":" << min(record.beginPos, record.pNext);
+      rg_str[record.qName] = rg_ss.str();
+    } 
+    else if (iread == "clip_read" or iread == "alu_clip") {
+      qname_iread[record.qName] = iread;
+      stringstream ssf;
+      ssf << clipSeq  << " " << clipLen << " ";
+      if (record.cigar[0].operation == 'S') ssf << record.beginPos; 	    
+      else ssf << record.beginPos + (int)getAlignmentLengthInRef(record);	    
+      int rgIdx = get_rgIdx(rg_to_idx, record);
+      ssf << " " << get_cigar(record) << " " << rgIdx << " " << record.beginPos << " " ;
+      if ( record.rID == record.rNextId )  ssf << record.beginPos + record.tLen << " ";
+      else  ssf << "-1 ";
+      qname_clipInfo[record.qName] = ssf.str();
+    }		
+    else if (iread == "skip_read") {   // consider to print them out ???
+      qname_iread[record.qName] = iread;	
+      stringstream ssf;
+      ssf << record.beginPos << " " << record.beginPos + (int)getAlignmentLengthInRef(record); 
+      qname_skipInfo[record.qName] = ssf.str();
+    }
+  }   
+  
+  vector<string>  str_unknowreads;   
+  bool flag = false;
+  for (map < seqan::CharString, string >::iterator qi = qname_iread.begin(); qi != qname_iread.end(); qi++ ) {
+    if ( qi->second == "skip_read") {
+      fout2 << clipLeft << " " << qname_skipInfo[ qi->first] << " " << qi->first << endl;  
+    } else if ( qi->second == "clip_read" or  qi->second == "alu_clip") {
+      fout << clipLeft << " " << qname_clipInfo[ qi->first] << " " << qi->first << endl;
+      flag = true;
+    } else if ( qi->second == "unknow_read") {
+      str_unknowreads.push_back( rg_str[qi->first] );	
+    }
+  }   
+  if (!rid_alureads.empty()) flag = true;
+  if (flag and !str_unknowreads.empty()) {   // write more info for unknown reads, check them in details ????
+    fout2 << clipLeft << " UR " << str_unknowreads.size() ;
+    for  ( vector< string > ::iterator si = str_unknowreads.begin(); si != str_unknowreads.end(); si++ )
+      fout2 << " " << *si ;
+    fout2 << endl;
   }
+  return 1;
 }
 
 // too slow, not used any more
@@ -960,52 +976,132 @@ void alumate_reads2(string file_db, ofstream & fout, int rid,  vector<ALUREAD_IN
   }
   for ( vector<ALUREAD_INFO>::iterator ai = aluinfos.begin(); ai != aluinfos.end(); ai++ )  {
     string atype = alu_type_default;
-    get_mapVal(qnames, toCString( (*ai).qName), atype);
+    string qx = toCString( (*ai).qName);
+    get_mapVal(qnames, qx, atype);
     fout << (*ai).clipLeft << " " << atype << " " << rid << " " << (*ai).pos << " " << (*ai).sameRC << " "
 	 << (*ai).readLen << " " <<  (*ai).qName << " " << (*ai).this_pos << endl;
   }
 }
 
-void count_alumate(string file_input, map <int, int> & insertBegin_cnt ) {
-  insertBegin_cnt.clear();
-  ifstream fin(file_input.c_str());
-  assert(fin);
-  stringstream ss;
-  string line, tmpv1;
-  int pos;
-  getline(fin, line); // read header
-  while (getline(fin, line)) {
-    ss.clear(); ss.str(line); 
-    ss >> pos >> tmpv1;
-    if ( tmpv1.substr(0,3) == "Alu" )
-      addKey(insertBegin_cnt, pos, 1);
-  }
-  fin.close();
-}
-
-void count_clipread(string fn_clip, map < int, pair <int, int> > & exact_pos, map <int, int > & clip_cnt, map <int, vector< string > > & unknow_info) {
-  // if not in exact_pos, use unknow info instead
+void count_clipr(string fn_clip, map < int, pair <int, int> > & exact_pos, map <int, set<string> > & aluclip_cnts, map <int, vector< string > > & unknow_str) {
+  // if not in exact_pos, write into unknow_str
   ifstream fin ( fn_clip.c_str()) ;
   assert(fin);
   stringstream ss;
-  string line, tmpv1, tmpv2, rgIdx;
+  string line, tmpv1, tmpv2, rgIdx, qName;
   int pos, clipc, clipLen, p1, p2;
   getline(fin, line); // read header
   while (getline(fin, line)) {
     ss.clear(); ss.str(line); 
-    ss >> pos >> tmpv1 >> clipLen >> clipc; 
+    ss >> pos ; 
     map < int, pair <int, int> >::iterator ei = exact_pos.find(pos); 
     if ( ei == exact_pos.end() )   // check positions that failed !!!
       continue;
-    ss >> tmpv2 >> rgIdx >> p1 >> p2;
-    if ( (clipLen < 0 and abs(clipc - (ei->second).first) <= CLIP_BP_MID ) or 
-	 (clipLen > 0 and abs(clipc - (ei->second).second) <= CLIP_BP_MID )) {
-      addKey( clip_cnt, pos, 1);
-    } else if ( p2 > 0 and abs(p2 - p1) < DISCORDANT_LEN  and    // check why it happens !!!!
-		min(p1, p2) < min( (ei->second).first,  (ei->second).second ) - CLIP_BP and 
-		max(p1, p2) > max( (ei->second).first,  (ei->second).second ) + CLIP_BP ) {
-      string tmps = rgIdx + ":" + int_to_string( abs(p2 - p1) );
-      unknow_info[pos].push_back( tmps );
+    int exact_left = (ei->second).first;
+    int exact_right = (ei->second).second;    
+    ss >> tmpv1 >> clipLen >> clipc >> tmpv2 >> rgIdx >> p1 >> p2 >> qName;   // p1, p2 is pair_begin and pair_end
+    bool check_unknow = false;
+    if (clipLen < 0) {
+      if ( ( exact_left and abs(clipc - exact_left) <= CLIP_BP_LEFT ) or 
+	   ( !exact_left and abs(clipc - exact_right) <= MAX_POS_DIF ) )
+	aluclip_cnts[pos].insert(qName);
+      else check_unknow = false;
+    } else if (clipLen > 0 ) {
+      if ( ( exact_right and abs(clipc - exact_right) <= CLIP_BP_LEFT ) or 
+	   ( !exact_right and abs(clipc - exact_left) <= MAX_POS_DIF ) )
+	aluclip_cnts[pos].insert(qName);
+      else check_unknow = false;
+    } 
+    if ( check_unknow and p2 > 0 and abs(p2 - p1) < DISCORDANT_LEN ) {
+      check_unknow = false;
+      if ( exact_left and exact_right) {
+	if ( min(p1, p2) <= min(exact_left, exact_right) - CLIP_BP and max(p1, p2) >= max(exact_left, exact_right) + CLIP_BP )  
+	  check_unknow = true;
+      } else {
+	if ( min(p1, p2) <= max(exact_left, exact_right) - MAX_POS_DIF and max(p1, p2) >= max(exact_left, exact_right) + MAX_POS_DIF)  
+	  check_unknow = true;	  
+      }
+      if (check_unknow) {
+	string tmps = rgIdx + ":" + int_to_string( abs(p2 - p1) );
+	unknow_str[pos].push_back( tmps );
+      }
+    }
+  } 
+}
+
+void count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map <int, set <string> > & aluclip_cnts){
+  ifstream fin(file_input.c_str());
+  assert(fin);
+  stringstream ss;
+  string line, alu_type, qName;
+  int pos, rid, aluBegin, sameRC, read_len, thisBegin;
+  getline(fin, line); // read header
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line); 
+    ss >> pos;
+    map < int, pair <int, int> >::iterator ei = exact_pos.find(pos); 
+    if ( ei == exact_pos.end() )   // check positions that failed !!!
+      continue;
+    ss >> alu_type >> rid >> aluBegin >> sameRC >> read_len >> qName >> thisBegin;
+    map <int, set <string> >::iterator aci = aluclip_cnts.find(pos);
+    if ( aci != aluclip_cnts.end() and (aci->second).find(qName) != (aci->second).end() )
+      continue;
+    int exact_left = (ei->second).first;
+    int exact_right = (ei->second).second;    
+    int tmpmax = max (exact_left, exact_right);
+    int tmpmin = (!exact_left or !exact_right) ? tmpmax : min(exact_left, exact_right);
+    if ( (thisBegin < 0 and abs(thisBegin) < tmpmax - CLIP_BP) or  // RC should match
+	 (thisBegin > 0 and abs(thisBegin) > tmpmin + CLIP_BP) )
+      continue;    
+    if ( alu_type.substr(0,3) == "Alu" ) {
+      aluclip_cnts[pos].insert(qName);
+    } else if ( aci !=aluclip_cnts.end() ) {// align to alu consensus 
+      // check if clip reads exists first ??
+      // fixme!!!
+    }
+  }
+  fin.close();
+}
+
+
+void count_skipr(string file_input, map < int, pair <int, int> > & exact_pos, map <int, set <string> > & aluclip_cnts, map <int, int > & skip_cnts, map <int, vector <string> > & unknow_str){
+  ifstream fin(file_input.c_str());
+  assert(fin);
+  stringstream ss;
+  string line, col2, ustr;
+  int pos;
+  getline(fin, line); // read header
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line); 
+    ss >> pos >> col2;
+    if ( aluclip_cnts.find(pos) == aluclip_cnts.end()) // not interesting if neither clip or alu reads exist
+      continue;
+    map < int, pair <int, int> >::iterator ei = exact_pos.find(pos); 
+    int exact_left = (ei->second).first;
+    int exact_right = (ei->second).second;    
+    int tmpmax = max (exact_left, exact_right);
+    int tmpmin = (!exact_left or !exact_right) ? tmpmax : min(exact_left, exact_right);
+    if ( col2 == "UR" ) {
+      int unknowCnt;
+      ss >> unknowCnt;
+      string token, idx, s_insert_len;
+      int pair_begin, insert_len;
+      for (int i = 0; i < unknowCnt; i++) {
+	getline(ss, idx, ':');
+	getline(ss, s_insert_len, ':');
+	seqan::lexicalCast2(insert_len, s_insert_len);      
+	getline(ss, token, ' ');
+	seqan::lexicalCast2(pair_begin, token);      
+	if ( pair_begin < tmpmin - CLIP_BP_MID and pair_begin + insert_len > tmpmax + CLIP_BP_MID) {
+	  unknow_str[pos].push_back(idx + ":" + s_insert_len);
+	}	  
+      }
+    } else {
+      int thisBegin, thisEnd;
+      seqan::lexicalCast2( thisBegin, col2);
+      ss >> thisEnd;
+      if (thisBegin <= tmpmin - CLIP_BP and thisEnd >= tmpmax + CLIP_BP)  // prefer under call      
+	addKey( skip_cnts, pos, 1);
     }
   }
 }
@@ -1041,137 +1137,59 @@ void read_clip_pass(string fn_clip_pass, map < int, pair <int, int> > & exact_po
   fin.close();
 }
 
-void write_tmp1(vector <string> & chrns, string fn_tmp1, string fn_clip_pass0, string fn_clip0, string fn_alu0) {
-  ofstream fout(fn_tmp1.c_str());
-  fout << "chr insertBegin aluRead clipRead unknow unknowStr\n";  
-  string line;
-  stringstream ss;  
+void write_tmp1(vector <string> & chrns, string file_tmp1, string fn_clip_pass0, string fn_clip0, string fn_alu0, string fn_su0) {
+  ofstream fout(file_tmp1.c_str());
+  fout << "chr insertMid debugInfo aluclipCnt skipCnt unknowCnt unknowStr\n";  
   for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
     string chrn = *ci;
     string fn_clip_pass = replace_str0_str(fn_clip_pass0, chrn, "chr0");
     map < int, pair <int, int> > exact_pos;
     read_clip_pass(fn_clip_pass, exact_pos);
-    string fn_alu = replace_str0_str(fn_alu0, chrn, "chr0");
-    map <int, int > alu_cnt;
-    count_alumate(fn_alu, alu_cnt);
-    
+    map <int, set <string> > aluclip_cnts;
+    map <int, vector <string> > unknow_str;
+    map <int, int > skip_cnts;
     string fn_clip = replace_str0_str(fn_clip0, chrn, "chr0");
-    map <int, int > clip_cnt;
-    map <int, vector <string> > unknow_info;
-    count_clipread(fn_clip, exact_pos, clip_cnt, unknow_info);
-
-//    if (chrn == "chr21") {
-//      cout << "debug# " << fn_clip << " " << clip_cnt.size() << endl;
-//      debugprint_map(clip_cnt);
-//    }
-
-    map <int, string> tmp1_info;
-    for (map <int, int >::iterator ai = clip_cnt.begin(); ai != clip_cnt.end() ; ai++ ) {
-      if ( alu_cnt.find(ai->first) == alu_cnt.end() ) {
-	tmp1_info[ai->first] = "0 " + int_to_string(ai->second) + " ";
+    count_clipr(fn_clip, exact_pos, aluclip_cnts, unknow_str);
+    string fn_alu = replace_str0_str(fn_alu0, chrn, "chr0");
+    count_alur(fn_alu, exact_pos, aluclip_cnts);
+    string fn_su = replace_str0_str(fn_su0, chrn, "chr0");    
+    count_skipr(fn_su, exact_pos, aluclip_cnts, skip_cnts, unknow_str);
+    for (map <int, set <string> >::iterator ai = aluclip_cnts.begin(); ai != aluclip_cnts.end(); ai++ ) {
+      int exact_left = (exact_pos[ai->first]).first;
+      int exact_right = (exact_pos[ai->first]).second; 
+      int exact_mid = (!exact_left or !exact_right) ? max(exact_left, exact_right) : (exact_left + exact_right)/2;
+      int skipCnt = 0;
+      get_mapVal( skip_cnts, ai->first, skipCnt);
+      fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << (ai->second).size()
+	   << " " << skipCnt << " ";
+      map <int, vector <string> >::iterator ui = unknow_str.find(ai->first);
+      if ( ui == unknow_str.end() ) {
+	fout << "0";
       } else {
-	tmp1_info[ai->first] = int_to_string(alu_cnt[ai->first]) + " " + int_to_string(ai->second) + " ";
-	alu_cnt.erase(ai->first);
+	fout << (ui->second).size();
+	for ( vector <string>::iterator it = (ui->second).begin(); it != (ui->second).end(); it++) 
+	  fout << " " << *it;
       }
+      fout << endl;
     }
-    clip_cnt.clear();
-    for (map <int, int >::iterator ai = alu_cnt.begin(); ai != alu_cnt.end() ; ai++ ) 
-      tmp1_info[ai->first] = int_to_string(ai->second) + " 0 ";
-    alu_cnt.clear();
-
-    for ( map <int, string>::iterator ti = tmp1_info.begin(); ti != tmp1_info.end(); ti++ ) {
-      map <int, vector <string> >::iterator ui = unknow_info.find(ti->first); 
-      if ( ui == unknow_info.end()) {
-	ti->second += "0";
-      } else {
-	ti->second += int_to_string((ui->second).size( ))  ;
-	for ( vector <string>::iterator si = (ui->second).begin(); si !=  (ui->second).end(); si++ )
-	  ti->second += ( " " + *si) ;
-	unknow_info.erase(ti->first);
-      }
-    }    
-    for ( map <int, vector <string> >::iterator ui = unknow_info.begin(); ui != unknow_info.end(); ui++ ) {
-      string cnt = int_to_string( (ui->second).size()) + " " ; 
-      tmp1_info[ui->first] = "0 0 " + int_to_string( (ui->second).size());
-      for ( vector <string>::iterator si = (ui->second).begin(); si !=  (ui->second).end(); si++ ) 
-	tmp1_info[ui->first] += (" " + *si) ;
-    }
-    
-    for ( map <int, string>::iterator ti = tmp1_info.begin(); ti != tmp1_info.end(); ti++ ) 
-      fout << chrn << " " << ti->first << " " << ti->second << endl;
   }
   fout.close();
 }
 
-void write_tmp2_chrn( list< IntString> & rows_list, ofstream & fout, const string & fn_clip_pass) {
-  map < int, pair <int, int> > exact_pos;
-  read_clip_pass(fn_clip_pass, exact_pos);
-  rows_list.sort(compare_IntString);
-  for (list< IntString>::iterator ri = rows_list.begin(); ri!=rows_list.end(); ri++) {
-    map < int, pair <int, int> >::iterator ei = exact_pos.find( (*ri).first);
-    if ( ei == exact_pos.end() ) continue;  // extra filter ??
-    string old_pos = int_to_string(ei->first) ;
-    string new_pos = int_to_string( (ei->second).first ) + " " + int_to_string( (ei->second).second ) + " " + old_pos;
-    fout << replace_str0_str( (*ri).second , new_pos, old_pos )  << endl;
-  }
-  rows_list.clear();
-}
-
-void write_tmp2(string fn_tmp0, string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, float log10RatioUb, int fixed_len, string fn_clip_pass0){
-  ofstream fout(fn_tmp2.c_str());
-  fout << "chr insertBegin insertEnd debugInfo insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
-  stringstream ss;
-  string line, chrn, output_line;
-  int pos;
+void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, float log10RatioUb, int fixed_len){
   ifstream fin0(fn_tmp1.c_str());
   assert(fin0);
+  ofstream fout(fn_tmp2.c_str());
+  fout << "chr insertBegin insertEnd insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
+  stringstream ss;
+  string line, output_line;
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
-  while (getline(fin0, line)) {
-    ss.clear(); ss.str(line); 
-    ss >> chrn >> pos;
-    tmp1_info[chrn][pos] = line;
-  }  
+  while (getline(fin0, line)) 
+    if (parseline_del_tmp0(line, output_line, pdf_rg, log10RatioUb, fixed_len))
+      fout << output_line << endl;
   fin0.close();
-  ifstream fin(fn_tmp0.c_str());
-  assert(fin);
-  string pre_chrn = "";
-  string fn_clip_pass;
-  list< IntString> rows_list;
-  getline(fin, line); // read header
-  while (getline(fin, line)) {
-    ss.clear(); ss.str(line); 
-    ss >> chrn >> pos;
-    if ( chrn != pre_chrn) {
-      if ( pre_chrn != "") {
-	if ( tmp1_info.find(pre_chrn) != tmp1_info.end() ) {
-	  for (map<int, string>::iterator ti = tmp1_info[pre_chrn].begin(); ti != tmp1_info[pre_chrn].end(); ti ++ )
-	    if (parseline_del_tmp0("", output_line, pdf_rg, log10RatioUb, fixed_len, ti->second))
-	      rows_list.push_back( make_pair(ti->first, output_line) );
-	  tmp1_info[pre_chrn].clear();
-	}
-	fn_clip_pass = replace_str0_str(fn_clip_pass0, pre_chrn, "chr0");
-	write_tmp2_chrn(rows_list, fout, fn_clip_pass);
-      }
-      pre_chrn = chrn;      
-    }    
-    string line1 = "";
-    if ( tmp1_info.find(chrn) != tmp1_info.end() and tmp1_info[chrn].find(pos) != tmp1_info[chrn].end()) {
-      line1 = tmp1_info[chrn][pos];
-      tmp1_info[chrn].erase(pos);
-    }
-    if (parseline_del_tmp0(line, output_line, pdf_rg, log10RatioUb, fixed_len, line1)) 
-      rows_list.push_back( make_pair(pos, output_line) );
-  } 
-  
-  if ( tmp1_info.find(chrn) != tmp1_info.end() ) 
-    for (map<int, string>::iterator ti = tmp1_info[chrn].begin(); ti != tmp1_info[chrn].end(); ti ++ )
-      if (parseline_del_tmp0("", output_line, pdf_rg, log10RatioUb, fixed_len, ti->second)) 
-	rows_list.push_back( make_pair(ti->first, output_line) );
-  
-  fn_clip_pass = replace_str0_str(fn_clip_pass0, chrn, "chr0");
-  write_tmp2_chrn(rows_list, fout, fn_clip_pass);
-  fin.close();  
+  fout.close();
 }
 
 int main( int argc, char* argv[] )
@@ -1292,7 +1310,6 @@ int main( int argc, char* argv[] )
       cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
       return 0;
     }
-
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");
     string file_fa = cf_fh.get_conf("file_fa_prefix");    
@@ -1312,23 +1329,28 @@ int main( int argc, char* argv[] )
 
     assert (argc == 4);
     string chrn = argv[3];    
-    int min_pn = 2;
-    if (min_pn != 1)
-      cout << "NB: private insertions are ignored!\n";
-
     string tmp_path0 = pathClip + chrn + "/";
     string tmp_path1 = pathClip + chrn + "_pos/";
+    string file_clipRegion = pathClip + chrn + ".clip_region";
+    string file_clipPos = pathClip + chrn + ".clip_pn";
+    string tmp_path2 = pathCons + chrn + "/";  // to be used in next step 
+
+    system( ("rm "+ tmp_path1 + "*").c_str() );      
+    system( ("rm "+ tmp_path2 + "*").c_str() );      
     combine_clipreads_by_pos(pns_used, tmp_path0, tmp_path1);
     std::set < pair<int, int> > regionPos_set;    
     assert( nonempty_files_sorted( tmp_path1, regionPos_set) );
     if (regionPos_set.empty()) return 0;
-      
-    string file_clipRegion = pathClip + chrn + ".clip_region";
     regions_pos_vote(tmp_path1, regionPos_set, file_clipRegion);
-    string file_clipPos = pathClip + chrn + ".clip_pn";
-    if (! approximate_pos_pns(tmp_path1, file_clipRegion, file_clipPos+".tmp", regionPos_set, MAX_POS_DIF)) return 0;        
-    exact_pos_pns(tmp_path0, file_clipPos+".tmp", file_clipPos, min_pn, consensus_freq);
+    if ( approximate_pos_pns(tmp_path1, file_clipRegion, file_clipPos+".tmp", regionPos_set, MAX_POS_DIF))
+      exact_pos_pns(tmp_path0, file_clipPos+".tmp", file_clipPos, consensus_freq);
     
+    /* debug print
+    vector< pair<int, int> > insert_pos;
+    read_first2col( file_clipPos , insert_pos, true) ;
+    for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) 
+      cout << (*pi).first << " " << (*pi).second << endl;
+    */
   } else if ( opt == "write_tmp0_pn" ) {   // write alu and clip reads for each PN
 
     assert (argc == 4);
@@ -1346,36 +1368,37 @@ int main( int argc, char* argv[] )
 	fmap << bi->first << " " << bi->second << endl;
       fmap.close();
     }
+
     map<string, int> rg_to_idx;
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
-    string file_tmp0 = pathDel0 + pn + ".tmp0";
-    ofstream fout0 ( file_tmp0.c_str());
-    fout0 << "chr insertBegin insertEnd clipCnt unknowCnt unknowStr\n"; 
     PAR_DELETE0 pars = { seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q")), CLIP_BP_MID};
-    for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
 
+    for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){      
+      vector< pair<int, int> > insert_pos;      
+      string file_clipPos = pathClip + *ci + ".clip_pn";      
+      // write down clip reads 
       string file_clip2 = pathCons + *ci + "/" + pn + ".clip";
       ofstream fclip ( file_clip2.c_str());  
       fclip << "clipPos seq clipLen clipPos_by_cigar cigar rgIdx beginPos pairEnd qName\n";   
-
+      // use database, faster, also discard half of the reads
       string file_alu2 = pathCons + *ci + "/" + pn + ".aludb";
-      ofstream falu ( file_alu2.c_str());  // use database, faster, also discard half of the reads
+      ofstream falu ( file_alu2.c_str());  
       falu << "clipPos alu_type rid aluBegin sameRC read_len qName thisBegin\n";      
+      // mapping span insertion breakpoint
+      string file_skip = pathCons + *ci + "/" + pn + ".skip";  
+      ofstream fskip ( file_skip.c_str());  
+      fskip << "clipPos thisBegin(UR) thisEnd(Cnt) qName(Str)\n";
 
-      string file_skip = pathCons + *ci + "/" + pn + ".skip";  // mapping span insertion breakpoint
-      ofstream fskip ( file_alu2.c_str());  
-      fskip << "clipPos thisBegin thisEnd\n";
-
-      vector< pair<int, int> > insert_pos;      
-      string file_clipPos = pathClip + *ci + ".clip_pn";
       if ( !read_first2col( file_clipPos , insert_pos, true) ) {
 	fclip.close(); falu.close(); fskip.close(); continue;	
       }
       map < int, vector<ALUREAD_INFO>  > rid_alureads;       // info of alu reads 
-      tmp0_reads(*ci, fout0, insert_pos, bam_fh, fclip, fskip, rid_alureads, rg_to_idx, pars);            
+      for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) 
+	tmp0_reads(*ci, (*pi).first, (*pi).second, bam_fh, fclip, fskip, rid_alureads, rg_to_idx, pars);            
+      
       fclip.close();      
       fskip.close();
-
+      
       if ( !rid_alureads.empty() ) {
 	for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
 	  string chrn, file_db;
@@ -1389,22 +1412,15 @@ int main( int argc, char* argv[] )
       } else 
 	falu.close();
     }   
-    fout0.close();
-    move_files(pathDel0 + "tmp0s/", file_tmp0);
 
-  } else if (opt == "clipPos_pns" ) {  
+  } else if (opt == "clipPos_pns" ) {  // make sure each insertion has exact breakpoint 
 
     assert (argc == 4);
     string chrn = argv[3];
-    const size_t minVoteCnt = 3;
     string pathCons1 = pathCons + chrn + "/" ;
-    string pathCons2 = pathCons + chrn + "_pos/" ;
-    system( ("rm "+ pathCons2 + "*").c_str() );      
     map <int, vector<string> > pos_seqs;
-    for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) {
+    for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
       read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs);
-      read_seq(*pi, pathCons1 + *pi + ".aludb", pos_seqs, "na");
-    }
 
     string file_clip_pass = pathCons + chrn + "_clip_pass" ;
     ofstream fout2( file_clip_pass.c_str() );
@@ -1414,44 +1430,47 @@ int main( int argc, char* argv[] )
       return 0;
     }
     //// rewrite reads to another folder      
+    string pathCons2 = pathCons + chrn + "_pos/" ;
+    system( ("rm "+ pathCons2 + "*").c_str() );      
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-      string file_cons1 = pathCons2 + int_to_string(pi->first);
+      string file_cons1 = pathCons2 + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
       ofstream fout1(file_cons1.c_str());
       for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
 	fout1 << *si << endl;
       sort_file_by_col<string> (file_cons1, 1, true); // sort by pn
       fout1.close();		
-   } 
+    } 
     
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
       int posl = pi->first;
-
-      // if (posl != 124870) continue;
-      // cout << "## debug1 ## " << posl << " " << pos_seqs.size() << endl;
       vector <int> clipls, cliprs;
       for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
 	parse_line1(*si, posl, CLIP_BP_MID, clipls, cliprs);
-      //debugprint_vec(clipls);
-      //debugprint_vec(cliprs);
-      
       int clipl, clipr;
-      int _clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq, 0, minVoteCnt);   
-      int _clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, 0, minVoteCnt);
+      int n_clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq, 2);   
+      int n_clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, 2);
       if (!clipl and !clipr ) continue;
-      ///cout << "clipl " << clipl << " " << _clipl <<  " clipr " << clipr << " " << _clipr << endl;
-      if ( !clipl ) {
-	if ( abs(_clipl - clipr) <= CLIP_BP_MID and clipls.size() >= minVoteCnt) clipl = _clipl;
-	else clipl = clipr;
-      } else if (!clipr) {
-	if ( abs(_clipr - clipl) <= CLIP_BP_MID and cliprs.size() >= minVoteCnt) clipr = _clipr;
-	else clipr = clipl;
-      } 
-      fout2 << pi->first << " " << clipl << " " << clipr << endl;
+      int pos_dif =  (!clipl or !clipr) ? 0 : abs(clipl - clipr);
+      ///cout << "clipl " << clipl << " " << n_clipl <<  " clipr " << clipr << " " << n_clipr << endl;
+      if ( pos_dif > MAX_POS_DIF ){ 
+	if ( n_clipl <= 1 and n_clipr <= 1 ) 
+	  continue;
+	int nl = clipls.size();
+	int nr = cliprs.size ();
+	if ( nl > nr and nr <= 5)
+	  fout2 << pi->first << " " << clipl << " 0 " <<  endl;	  	
+	else if ( nr > nl and nl <= 5)
+	  fout2 << pi->first << " 0 " << clipr << " " <<  endl;	  	
+	else
+	  cout << "err? " << pi->first << " " << clipl << " " << clipr << " " <<  endl;	  
+      } else {	
+	fout2 << pi->first << " " << clipl << " " << clipr << " " <<  endl;	  
+      }      
     }
     fout2.close() ;
-        
-  } else if (opt == "write_tmp2_pn") {   // first count clip and alu reads, then genotype calling 
-     
+    
+  } else if (opt == "write_tmp2_pn") { 
+    
      assert (argc == 4);
      string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
      if ( pns_used.find(pn) == pns_used.end() ){ 
@@ -1459,20 +1478,20 @@ int main( int argc, char* argv[] )
        return 0;
      }
      
-     string file_tmp1 = pathDel0 + pn + ".tmp1";
      string file_clip_pass = pathCons + "chr0_clip_pass" ;
-     string file_clip2 = pathCons + "chr0/" + pn + ".clip"; 
-     string file_alu2 = pathCons + "chr0/" + pn + ".aludb"; 
-     write_tmp1(chrns, file_tmp1, file_clip_pass, file_clip2, file_alu2);	    
-     
+     string file_clip = pathCons + "chr0/" + pn + ".clip"; 
+     string file_alu = pathCons + "chr0/" + pn + ".aludb"; 
+     string file_su = pathCons + "chr0/" + pn + ".skip"; // include skip and unknown reads
+
+     string file_tmp1 = pathDel0 + pn + ".tmp1";
+     cout << "debug output ! " << file_tmp1 << endl;
+     write_tmp1(chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su);	    
+     string file_tmp2 = pathDel0 + pn + ".tmp2";
      map <int, EmpiricalPdf *> pdf_rg;    
      string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
      read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
-     string file_tmp0 = pathDel0 + "tmp0s/" + pn + ".tmp0";
-     string file_tmp2 = pathDel0 + pn + ".tmp2";
-     float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("Log10_RATIO_UB"));
-     write_tmp2(file_tmp0, file_tmp1, file_tmp2, pdf_rg, log10RatioUb, alucons_len, file_clip_pass);
-     
+     float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("LOG10_RATIO_UB"));
+     write_tmp2(file_tmp1, file_tmp2, pdf_rg, log10RatioUb, alucons_len);     
      EmpiricalPdf::delete_map(pdf_rg);
      move_files(pathDel0 + "tmp1s/", file_tmp1);
      move_files(pathDel0 + "tmp2s/", file_tmp2);
@@ -1484,6 +1503,7 @@ int main( int argc, char* argv[] )
     string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";
     int col_idx =  get_col_idx(tmp_file_pn, "00");
     
+    cout << "col_idx " << col_idx << endl;
     string vcf_prefix = pathDel0 + int_to_string( pns.size());
     string fn_rm = vcf_prefix + ".pos.torm"; 
     combine_pns_llh(path_input, ".tmp2", vcf_prefix + ".pos.tmp", pns, chrns, col_idx);
@@ -1495,9 +1515,9 @@ int main( int argc, char* argv[] )
   
   } else if (opt == "debug0") { 
 
-    string chrn = "chr21";
-    int refBegin = 9652780;
-    int refEnd = 9652780 + 90;
+    string chrn = "chr4";
+    int refBegin = 77948411 - 200 ; 
+    int refEnd = 77948411;
 
     string file_fa = cf_fh.get_conf("file_fa_prefix");    
     FastaFileHandler * fasta_fh = new FastaFileHandler(file_fa + chrn + ".fa", chrn);

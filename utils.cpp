@@ -529,9 +529,10 @@ bool AluRefPos::write_new_alu(string chrn, string fn, string fn_new, int join_le
   int beginPos_pre = alurefpos->get_beginP();
   int endPos_pre = alurefpos->get_endP();
   string at;
+  int beginPos, endPos;
   while ( alurefpos->nextdb() ) {
-    int beginPos = alurefpos->get_beginP();
-    int endPos = alurefpos->get_endP();
+    beginPos = alurefpos->get_beginP();
+    endPos = alurefpos->get_endP();
     at = alurefpos->get_type();
     if (beginPos - endPos_pre > join_len) {  // close this block, create new
       fout << chrn << " " << beginPos << " " << endPos << " " <<  at << endl;
@@ -539,7 +540,8 @@ bool AluRefPos::write_new_alu(string chrn, string fn, string fn_new, int join_le
     }
     endPos_pre = endPos;
   }
-  fout << chrn << beginPos_pre << " " << endPos_pre << " " << at << endl;
+  //// last one ignore!
+  /////fout << chrn << " " << beginPos_pre << " " << endPos_pre << " " << at << endl;
   fout.close();
   delete alurefpos;
   return true;

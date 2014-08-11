@@ -71,9 +71,7 @@ config.decode: used by Yu in Iceland, where the old files sitting
    opt = "write_tmp0_pn":
     insert_alu1/cons/chr*/pn.aludb
     insert_alu1/cons/chr*/pn.clip
-
-todo: add qName for alu_and_clip_read
-
+    insert_alu1/cons/chr*/pn.skip
 
    opt = "clipPos_pns":
      (1) re_write alu and clip reads in folder insert_alu1/cons/chr*_pos/
