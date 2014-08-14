@@ -192,6 +192,15 @@ seqan::CharString FastaFileHandler::fasta_seq(string fa_input, string seq_name,i
 AluconsHandler::AluconsHandler(string fn_fa, string sn):
   FastaFileHandler(fn_fa) {
   update_seq_name(sn);
+  ifstream fin( (fn_fa+".fai").c_str() );
+  string line, aname;
+  stringstream ss;
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line);
+    ss >> aname;
+    seq_names.push_back(aname);
+  }
+  fin.close();
 }
 
 void AluconsHandler::update_seq_name(string sn) {

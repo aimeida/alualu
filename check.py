@@ -159,18 +159,14 @@ if __name__ == "__main__":
     
     allow_denovo = True 
     #allow_denovo = False
-    #verbose = False
-    verbose = True
+    verbose = False
+    #verbose = True
 
     if opt == 'i':
+        print "next step:  sh check.sh 0 1006 chr1 44059297"
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.pos'
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/29.vcf'
-
-    elif opt == 'i1':
-        file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
-        f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.pos'
-        f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_1/29.vcf'
         
     elif opt == 'c':
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used'
@@ -178,6 +174,7 @@ if __name__ == "__main__":
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/cons_delete0/29.vcf'
         
     elif opt == 'd':
+        print "next step:  sh check.sh 1 1006 chr1 44059297"
         file_pn_used = '/home/qianyuxx/faststorage/AluDK/inputs/PN_all'
         f_llh = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.pos' 
         f_vcf = '/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/30.vcf' 
@@ -198,10 +195,10 @@ if __name__ == "__main__":
     chr_pos, seqs = read_vcftxt(f_vcftxt)
     for gn, v1 in trio_group.items():
         
-        ## debugging
-        verbose = True
-        if gn != '1006': 
-            continue
+#        ## debugging
+#        verbose = True
+#        if gn != '1006': 
+#            continue
         
         if len(v1) != 3:
             continue

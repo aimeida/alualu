@@ -131,9 +131,10 @@ class FastaFileHandler {
 
 class AluconsHandler : public FastaFileHandler {
  public:
+  vector <string> seq_names;
   string seq_name;
   int seq_len;
-  AluconsHandler(string fn_fa, string sn);
+  AluconsHandler(string fn_fa, string sn = "AluY");
   void update_seq_name(string sn);
   seqan::CharString fetch_alucons(int key);
  private:

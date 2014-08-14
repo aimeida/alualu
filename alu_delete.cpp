@@ -42,7 +42,7 @@ int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_pre
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrn = *ci;
     string file_alupos = replace_str0_str(file_alupos_chr0, chrn, "chr0");
-    AluRefPos *alurefpos = new AluRefPos(file_alupos, minLen_alu_del); // default 200
+    AluRefPos *alurefpos = new AluRefPos(file_alupos, minLen_alu_del, 300);  // min distance to neighbor is 200 bp 
     FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);    
     int aluBegin, aluEnd;
     for (int count_loci = 0; ; count_loci++) {
@@ -242,8 +242,10 @@ int main( int argc, char* argv[] )
 
   if ( opt == "preprocess" ) { 
     int join_len = 10;
-//    for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) 
-//      AluRefPos::write_new_alu(*ci, file_alupos_raw + "alu_" + *ci, file_alupos_filter + "alu_" + *ci, join_len);          
+    for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++)   // combine Alu if less than 10 
+      AluRefPos::write_new_alu(*ci, file_alupos_raw + "alu_" + *ci, file_alupos_filter + "alu_" + *ci, join_len);          
+    AluRefPos::write_new_alu("chrX", file_alupos_raw + "alu_chrX" , file_alupos_filter + "alu_chrX", join_len);          
+    AluRefPos::write_new_alu("chrY", file_alupos_raw + "alu_chrY" , file_alupos_filter + "alu_chrY", join_len);          
     
     AluRefPos *alurefpos;
     alurefpos = new AluRefPos(file_alupos_filter + "alu_chr1", 0);
@@ -280,8 +282,8 @@ int main( int argc, char* argv[] )
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     calculate_genoProb(fn_tmp1, fn_tmp2, pdf_rg, log10RatioUb); 
     EmpiricalPdf::delete_map(pdf_rg);
-    //move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
-    //move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
+    move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
+    move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
     
   } else if (opt == "write_vcf_pns") {   // write vcf for all pn
     vector <string> pns;

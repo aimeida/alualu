@@ -22,8 +22,6 @@ file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/
 file_alu_insert1 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/
 file_pn_used /home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used  ### manually create, otherwise use each pn.
 file_alu_cons /home/qianyuxx/faststorage/AluDK/inputs/alu_cons.fa	
-type_alu_cons AluY
-#alucons_len 299     ## default alu length
-alucons_len 400 
+alucons_len 300 ## default alu length
 consensus_freq 0.7  ## at least so many clip_read or alu_reads are used in building the consensus
 CLIP_Q 25  ## cut reads on both ends 

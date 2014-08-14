@@ -80,7 +80,7 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen) {
+bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, bool test_print) {
   float *log10_gp = new float[3];
   stringstream ss, ss_out;
   string chrn, insertMid, debugInfo, token;
@@ -100,7 +100,6 @@ bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalP
     log10_gp[1] = midCnt * log10 (ph0) + clipCnt * log10 (1 - ph0) + (midCnt + clipCnt) * logPM  ;
     log10_gp[2] = midCnt * logPE + clipCnt * logPM;
   }
-
   for (int i = 0; i < unknowCnt; i++) {
     getline(ss, token, ':');
     seqan::lexicalCast2(idx, token);
@@ -111,21 +110,23 @@ bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalP
     log10_gp[0] += log10 (p_y);
     log10_gp[1] += log10 (ph0 * p_y + (1 - ph0) * p_z) ;
     log10_gp[2] += log10 (p_z);
-  }
-  
+    if (test_print) {
+      cout << "y: " << p_y << " " << insert_len + estimatedAluLen << " " << pdf_rg[idx]->pdf_obs(insert_len + estimatedAluLen) << endl;
+      cout << "z: " << p_z << " " << insert_len << " " << pdf_rg[idx]->pdf_obs(insert_len) << endl;
+    }
+  }  
   bool use_this_line = false;
   if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
     string exact_left, exact_right;
     split_by_sep(debugInfo, exact_left, exact_right, ',');
-    if (exact_left=="0") exact_left = exact_right;
-    if (exact_right=="0") exact_right = exact_left;
+    if ( exact_left  == "0" ) exact_left = exact_right;
+    if ( exact_right == "0" ) exact_right = exact_left;
     ss_out << chrn << " " << exact_left << " " << exact_right << " " << estimatedAluLen << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
     ss_out << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0];  // NB: switch 00 and 11, unlike alu_delete
     use_this_line = true;
     output_line = ss_out.str();
   }
-
   delete gp;    
   delete log10_gp;
   return use_this_line;
@@ -242,4 +243,42 @@ void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID
   for (map < string, int >::iterator pi = pn_lineCnt.begin(); pi != pn_lineCnt.end(); pi++)
     if ( pi->second <= cnt_th) fout << pi->first << endl;
   fout.close();
+}
+
+bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th){
+  TAlign align;
+  seqan::Score<int> scoringScheme(0, -1, -1, -2); 
+  resize(rows(align), 2);
+  assignSource(row(align,0), ref_fa);  // 2,3
+  assignSource(row(align,1), alucons);   // 1,4, free gap at end
+  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
+  int align_start = max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
+  int align_end = min(toViewPosition(row(align, 0), length(ref_fa)), toViewPosition(row(align, 1), length(alucons)));
+  sim_rate = 0;
+  int align_len = align_end - align_start;
+  if ( align_len <= CLIP_BP or align_len <= sim_th * length(ref_fa))
+    return false;
+  TRow &row0 = row(align,0);
+  TRowIterator it0 = begin(row0);
+  TRow &row1 = row(align,1);
+  TRowIterator it1 = begin(row1);
+  int i = 0, dif = 0;
+  while ( i++ < align_start ) {  it0++; it1++; }
+  while ( i++ <= align_end) {
+    if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
+    it0++; it1++;
+  }
+  sim_rate = 1 - dif / (float) align_len;
+  ///if (sim_rate >= sim_th) cout << "ok " << align << endl;
+  return  sim_rate >= sim_th;
+}
+
+string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th){
+  for ( vector<string>::iterator si = (alucons_fh->seq_names).begin(); si != (alucons_fh->seq_names).end(); si++) {
+    alucons_fh->update_seq_name(*si);
+    for (int k = 1; k <= 4; k++) 
+      if (align_alu_cons(ref_fa, alucons_fh->fetch_alucons(k), sim_rate, sim_th))
+	return *si;
+  }  
+  return "";
 }
