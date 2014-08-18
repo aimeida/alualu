@@ -367,16 +367,19 @@ bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seq
 RepMaskPos::RepMaskPos(string file_rmsk, vector<string> &chrns, int join_len){
   ifstream fin(file_rmsk.c_str());
   assert(fin);
-  string line, chrn;
+  string line, chrn, repType;
   int beginPos, endPos, beginPos_pre, endPos_pre;
   stringstream ss;  
   map<string, std::set <RepDB1> > rep_db;
   while (getline(fin, line)) {
     ss.clear(); ss.str( line );
-    ss >> chrn >> beginPos >> endPos;
-    if ( find(chrns.begin(), chrns.end(), chrn) == chrns.end() ) continue;
-    RepDB1 one_rep = RepDB1(beginPos, endPos, "");
-    rep_db[chrn].insert(one_rep);  // sorted
+    ss >> chrn >> beginPos >> endPos >> repType;
+    //    if ( repType.substr(0,3) == "Alu" or repType.substr(0,2) == "L1") {  // power low in G1000 genome
+    if ( repType.substr(0,3) == "Alu") {
+      if ( find(chrns.begin(), chrns.end(), chrn) == chrns.end() ) continue;
+      RepDB1 one_rep = RepDB1(beginPos, endPos, "");
+      rep_db[chrn].insert(one_rep);  // sorted
+    }
   }
   fin.close();    
   for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
@@ -558,6 +561,7 @@ bool AluRefPos::write_new_alu(string chrn, string fn, string fn_new, int join_le
 
 string phred_scaled(float p0, float p1, float p2) {
   float pmax = max(p0, max(p1, p2));
+  //cout << p0 << " " << p1 << " " << p2 << " " << pmax << " " << p0/pmax << endl;
   string s0 =  ( p0 == pmax ) ?  "0" : phred_log(p0/pmax);
   string s1 =  ( p1 == pmax ) ?  "0" : phred_log(p1/pmax);
   string s2 =  ( p2 == pmax ) ?  "0" : phred_log(p2/pmax);

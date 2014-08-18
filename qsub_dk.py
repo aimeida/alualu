@@ -22,9 +22,9 @@ def print2(pn_all, fn_path, path1, bin_path, time_sec):
             print >>fout, "#SBATCH -e %d_%s.e" % (pi, pn)
             print >>fout, "echo `date`"
             #print >>fout, '%(bin_path)salu_delete ../config.dk write_tmps_pn %(pi)d'%locals()
-            #print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_pn %(pi)d'%locals()
+            print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_pn %(pi)d'%locals()
             #print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp0_pn %(pi)d'%locals()
-            print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp2_pn %(pi)d'%locals()
+            #print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp2_pn %(pi)d'%locals()
             print >>fout, "echo `date`"
 
         pi += 1

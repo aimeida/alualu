@@ -392,7 +392,7 @@ bool combine_pn_pos(string chrn, map <int, string> &id_pn_map, string tmpn,  str
 }
 
 bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, FastaFileHandler *fasta_fh,  string fin_pos, string fout_reads, int CLIP_Q) {
-  const int FLANK_REGION_LEN = 80;
+  const int MAX_REGION_LEN = 400;
   ifstream fin( (fin_pos).c_str());
   if (!fin) return false;
   string line, numAluRead, _pn;
@@ -400,10 +400,13 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
   fout << "pn region_begin region_end left_right adj_clipPos qName clipPos cigar\n" ;
   stringstream ss, ss_header;
   int region_begin, region_end, refBegin, refEnd;
-  
+  int region_begin0, region_end0;
   while (getline(fin, line)) {
     ss.clear(); ss.str( line );
     ss >> numAluRead >> region_begin >> region_end;
+    int _tmpwin = ( MAX_REGION_LEN - region_end + region_begin) / 2;
+    region_begin0 = region_begin - _tmpwin;
+    region_end0 = region_end + _tmpwin;
     bool pn_has_alumate = false;
     while ( ss >> _pn ) 
       if ( _pn == pn) { pn_has_alumate=true; break;}
@@ -413,7 +416,6 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
     if (! bam_fh->jump_to_region(chrn, refBegin, refEnd) ) continue;
     ss_header.clear(); ss_header.str("");
     ss_header << pn << " " << region_begin << " " << region_end << " " ;    
-
     seqan::BamAlignmentRecord record;
     while ( true ) {
       string read_status = bam_fh->fetch_a_read(chrn, refBegin, refEnd, record);
@@ -432,10 +434,10 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
       
       bool s1 = has_soft_last(record, CLIP_BP);
       bool s2 = has_soft_first(record, CLIP_BP); 
-  
       if (s1 and s2) continue;
+      if (!s1 and !s2) continue;
       if (!aluclip_RC_match(record) ) continue;
-      if ( s1 and endPos >= region_begin - FLANK_REGION_LEN and endPos < region_end + FLANK_REGION_LEN) {
+      if ( s1 and endPos >= region_begin0 and endPos < region_end0 ) {
 	adj_clipPos = endPos;
 	if (length(ref_fa) == 0) {
           fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
@@ -443,10 +445,9 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
         }
 	if (clipLeft_move_right( record.seq, ref_fa, cigar_cnts, refBegin, adj_clipPos, align_len) and 
 	    trim_clip_soft_last(record, _cliplen, _clipSeq, CLIP_Q) )
-	  //////// if (align_clip_to_ref('L', adj_clipPos, align_len, record, fasta_fh) ) // no need to realign, error rate about 3%
 	  fout << ss_header.str() << "L " << adj_clipPos << " " << record.qName << " " << endPos << " " <<  get_cigar(record) << endl;	
       } 
-      else if ( s2 and beginPos >= region_begin - FLANK_REGION_LEN and beginPos < region_end + FLANK_REGION_LEN) {
+      else if ( s2 and beginPos >= region_begin0 and beginPos < region_end0 ) {
 	adj_clipPos = beginPos;
 	if (length(ref_fa) == 0) {
           fasta_fh->fetch_fasta_upper(refBegin, refEnd, ref_fa);
@@ -461,6 +462,44 @@ bool clipreads_at_insertPos(string pn, string chrn, BamFileHandler *bam_fh, Fast
   fin.close();
   fout.close();
   return true;
+}
+
+void filter_noise ( string fn, int r, int minCov) {  // round by resolution
+  ///cout << round_by_resolution(98, 10) << endl; 
+  ifstream fin( fn.c_str());
+  assert(fin);
+  string header, line, tmpv;
+  vector < pair<int, string> > pr_vec;
+  map < int, int > pr_cnt;
+  getline(fin, header);   
+  while (getline(fin, line)) {
+    stringstream ss;
+    int pos, posr;
+    ss.clear(); ss.str(line);
+    for (int i = 0; i < 4; i++) ss >> tmpv;
+    ss >> pos;
+    posr = round_by_resolution(pos,r);
+    if ( pr_cnt.find(posr) != pr_cnt.end() ) {
+      pr_cnt[posr] += 1;
+      pr_vec.push_back( make_pair(posr, line));      
+    } else if ( pr_cnt.find(posr-1) != pr_cnt.end() ) {
+      pr_cnt[posr-1] += 1;
+      pr_vec.push_back( make_pair(posr-1, line));      
+    } else if ( pr_cnt.find(posr+1) != pr_cnt.end() ) {
+      pr_cnt[posr+1] += 1;
+      pr_vec.push_back( make_pair(posr+1, line));      
+    } else {
+      pr_cnt[posr] = 1;
+      pr_vec.push_back( make_pair(posr, line));      
+    }
+  }
+  fin.close();
+  ofstream fout( fn.c_str());
+  fout << header << endl;
+  for (vector < pair<int, string> >::iterator pi = pr_vec.begin(); pi != pr_vec.end(); pi++ ) 
+    if (pr_cnt[(*pi).first] >= minCov)  // at least 2 reads !!
+      fout << (*pi).second << endl;
+  fout.close();
 }
 
 // for each insertion region, combine reads from different pns 
@@ -595,15 +634,15 @@ void region_pos_vote( string fn, int & cl1, int & cl2, int & cr1, int & cr2 ) {
   int fc1, fc2;
   major_two_keys(cls, cl1, cl2, fc1, fc2, CLIP_BP_LEFT, MIN_VOTE_FREQ);
   ////if (region_begin == 26354188) cout << "cl1 " << cl1 << " " << fc1 << endl;
-  if ( fc1 <= 2 ) cl1 = 0;
-  if ( fc2 <= 2 ) cl2 = 0;
-
-  major_two_keys(crs, cr1, cr2, fc1, fc2, CLIP_BP_LEFT, MIN_VOTE_FREQ);
-  if ( fc1 <= 2 ) cr1 = 0;
-  if ( fc2 <= 2 ) cr2 = 0;
+  if ( cl1 and fc1 <= 2 and fc1 / (float) cls.size() < 0.99 ) cl1 = 0;
+  if ( cl2 and fc2 <= 2) cl2 = 0;
   
-  //if (!cls.empty() and !crs.empty()) 
-  //  cout << "##1 " << region_begin << " " << cls.size() << " " << crs.size() << " " << cl1 << " " << cr1 << endl;  
+  major_two_keys(crs, cr1, cr2, fc1, fc2, CLIP_BP_LEFT, MIN_VOTE_FREQ);
+  if ( cr1 and fc1 <= 2 and fc1 / (float) crs.size() < 0.99 ) cr1 = 0;
+  if ( fc2 <= 2 ) cr2 = 0;
+
+ //if (!cls.empty() and !crs.empty()) 
+ //  cout << "##1 " << region_begin << " " << cls.size() << " " << crs.size() << " " << cl1 << " " << cr1 << endl;  
 }
 
 string get_pos_pair(int cl1, int cl2, int cr1, int cr2){
@@ -638,7 +677,7 @@ void regions_pos_vote( string path1, std::set < pair<int, int> > & regionPos_set
     int cl1, cl2, cr1, cr2;
     region_pos_vote(path1 + pos_to_fn(*ri), cl1, cl2, cr1, cr2) ; // at least two reads to vote for this position
 //    if ( cl1 + cl2 + cr1 + cr2 >0 ) 
-//      cout << "##0 " <<  pos_to_fn(*ri) << " " << cl1 << " " << cl2 << " " << cr1 << " " << cr2 << endl;
+//      cout << pos_to_fn(*ri) << " " << cl1 << " " << cl2 << " " << cr1 << " " << cr2 << endl;
     string cs = get_pos_pair(cl1, cl2, cr1, cr2);   
     if ( cs.size() > 3 ) 
       fout << (*ri).first << " " << (*ri).second << cs << endl;
@@ -1073,7 +1112,7 @@ void count_clipr(string fn_clip, map < int, pair <int, int> > & exact_pos, map <
   } 
 }
 
-void count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map <int, set <string> > & aluclip_cnts, map < int, string > & rid_chrn, string file_fa, AluconsHandler *alucons_fh, vector <string> & chrns ) {
+int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map <int, set <string> > & aluclip_cnts, map < int, string > & rid_chrn, string file_fa, AluconsHandler *alucons_fh, vector <string> & chrns, bool alumate_align) {
   ifstream fin(file_input.c_str());
   assert(fin);
   stringstream ss;
@@ -1106,8 +1145,17 @@ void count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map
       to_realign.push_back(ra);
     } 
   }  
-  FastaFileHandler * fasta_fh;
+  fin.close();
+  
+  if (!alumate_align) 
+    return 0;
+
+  FastaFileHandler * fasta_fh = NULL;
   string chrn_pre = "chr0";
+  map <int, int > pre_count;
+  map <int, int > toalign_count;
+  map <int, int > added_count;
+
   for (vector < REALIGNS >::iterator ti = to_realign.begin(); ti != to_realign.end(); ti ++ ) {
     string chrn = rid_chrn[(*ti).rid];
     if ( std::find( chrns.begin(), chrns.end(), chrn) == chrns.end())
@@ -1121,13 +1169,27 @@ void count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map
     float sim_rate;
     fasta_fh->fetch_fasta_upper((*ti).aBegin, (*ti).aEnd, ref_fa);
     string alu_type = align_alu_cons_call(ref_fa, alucons_fh, sim_rate, 0.8);
+    // keep track of counts
+    if ( pre_count.find((*ti).pos_key) == pre_count.end() ) {
+      pre_count[(*ti).pos_key] = aluclip_cnts[(*ti).pos_key].size();
+    }
+    
+    addKey(toalign_count, (*ti).pos_key, 1);
     if (!alu_type.empty()) {
       aluclip_cnts[(*ti).pos_key].insert((*ti).qName);
       //cout << "aligned " << chrn << " " << alu_type << " " << (*ti).pos_key << " " << (*ti).qName << endl;
+      addKey(added_count, (*ti).pos_key, 1);
     }
   }
   if (chrn_pre != "chr0" ) delete fasta_fh;
-  fin.close();
+  // print out counts
+  cout << "debug print: pos, preCnt, toalignCnt, addedCnt\n";
+  for (map <int, int >::iterator pi = pre_count.begin(); pi != pre_count.end(); pi ++ ) {
+    int addcnt = 0;
+    get_mapVal( added_count, pi->first, addcnt);
+    cout << pi->first << " " << pi->second << " " << toalign_count[pi->first] << " " << addcnt << endl;
+  }
+  return 0;
 }
 
 
@@ -1231,7 +1293,8 @@ void write_tmp1(vector <string> & chrns, string file_tmp1, string fn_clip_pass0,
     string fn_su = replace_str0_str(fn_su0, chrn, "chr0");    
 
     count_clipr(fn_clip, exact_pos, aluclip_cnts, unknow_str);
-    count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns); 
+    count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, false);  
+    //count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, true);  //re_align, might be slow 
     count_skipr(fn_su, exact_pos, aluclip_cnts, skip_cnts, unknow_str);
     for (map <int, set <string> >::iterator ai = aluclip_cnts.begin(); ai != aluclip_cnts.end(); ai++ ) {
       int exact_left = (exact_pos[ai->first]).first;
@@ -1265,7 +1328,7 @@ void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
   while (getline(fin0, line)) 
-    if (parseline_del_tmp0(line, output_line, pdf_rg, log10RatioUb, fixed_len))
+    if (parseline_del_tmp0(line, output_line, pdf_rg, log10RatioUb, fixed_len, 2))  // at least 2 counts support clip 
       fout << output_line << endl;
   fin0.close();
   fout.close();
@@ -1313,50 +1376,63 @@ int main( int argc, char* argv[] )
       check_folder_exists(pathClip + *ci + "_pos/");
       check_folder_exists(pathCons + *ci);
       check_folder_exists(pathCons + *ci + "_pos/");
-    }  
+    } 
+
+    string bam_input = cf_fh.get_conf( "file_bam_prefix") + ID_pn[0] + ".bam";
+    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
+    string bam_rid_chrn = cf_fh.get_conf("bam_rid_chrn");
+    if ( check_file_size(bam_rid_chrn) <= 0 ) {
+      ofstream fmap(bam_rid_chrn.c_str());
+      for ( map<int, string>::iterator bi = bam_fh->rID_chrn.begin(); bi !=  bam_fh->rID_chrn.end(); bi++) 
+	fmap << bi->first << " " << bi->second << endl;
+      fmap.close();
+    }
+    delete bam_fh;
+    
   } else if (opt == "write_tmps_pn") {     // write tmp0 files 
     assert (argc == 4);
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
-    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input);
     string file1 = path0 + pn + ".tmp1";
     map<int, string>::iterator rc ;
-
     //// write pn.tmp1.
     map <string, int> rg_to_idx;    
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
-    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
-    alu_mate_flag(bam_fh, file1, header1, rg_to_idx);
-    //  cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
 
-    //// write chr*/pn.tmp1  use database to filter alu mate
-    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
-    MapFO fileMap;    
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      fileMap[rc->first] = new ofstream( ( path0 + rc->second + "/" + pn + ".tmp1").c_str() );
-      assert(fileMap[rc->first]);
-      *(fileMap[rc->first]) << header2 ;
-    }     
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_filter") + "alu_" + rc->second);           
-    close_fhs(fileMap, bam_fh->rID_chrn);    
-   
-    int col_idx = 0;
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      string file_tmp1 =  path0 + rc->second +"/" + pn + ".tmp1";
-      if (!col_idx) col_idx = get_col_idx(file_tmp1, "this_pos"); 
-      sort_file_by_col<int> (file_tmp1, col_idx, true);
-    }
-    move_files(path0+"tmp1s/", file1);    
-   
-    alumate_counts_filter(path0, pn, ".tmp1", ".tmp2", ".tmp3", chrns, LEFT_PLUS_RIGHT); 
-
+//    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input);
+//    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
+//    alu_mate_flag(bam_fh, file1, header1, rg_to_idx);
+//    //  cout << "done with reading this bam file, time used " << clocki.elapsed() << endl; // about 2 hours    
+//
+//    //// write chr*/pn.tmp1  use database to filter alu mate
+//    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
+//    MapFO fileMap;    
+//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+//      fileMap[rc->first] = new ofstream( ( path0 + rc->second + "/" + pn + ".tmp1").c_str() );
+//      assert(fileMap[rc->first]);
+//      *(fileMap[rc->first]) << header2 ;
+//    }     
+//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
+//      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_filter") + "alu_" + rc->second);           
+//    close_fhs(fileMap, bam_fh->rID_chrn);    
+//   
+//    int col_idx = 0;
+//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+//      string file_tmp1 =  path0 + rc->second +"/" + pn + ".tmp1";
+//      if (!col_idx) col_idx = get_col_idx(file_tmp1, "this_pos"); 
+//      sort_file_by_col<int> (file_tmp1, col_idx, true);
+//    }
+//    move_files(path0+"tmp1s/", file1);    
+//   
+//    alumate_counts_filter(path0, pn, ".tmp1", ".tmp2", ".tmp3", chrns, LEFT_PLUS_RIGHT); 
+//     delete bam_fh;
+    
     //// filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
     const int REP_MASK_JOIN = 200;
     RepMaskPos *repmaskPos;
+    std::set < string > skip_type;
     repmaskPos = new RepMaskPos(cf_fh.get_conf( "file_repeatMask"), chrns, REP_MASK_JOIN); 
     filter_location_rep( path0, pn, ".tmp3", ".tmp3st", chrns, repmaskPos);    
-    delete bam_fh;
     delete repmaskPos;
     
   }  else if (opt == "combine_pos_pns") { // combine positions from multiple individuals
@@ -1401,6 +1477,7 @@ int main( int argc, char* argv[] )
       FastaFileHandler * fasta_fh = new FastaFileHandler(file_fa + *ci + ".fa", *ci);
       // move clip pos such that matched length is maximized 
       clipreads_at_insertPos(pn, *ci, bam_fh, fasta_fh, fin_pos, fout_reads, CLIP_Q);  
+      filter_noise(fout_reads, MAX_POS_DIF, 2);
       delete fasta_fh;
     }
     delete bam_fh;
@@ -1422,16 +1499,10 @@ int main( int argc, char* argv[] )
     std::set < pair<int, int> > regionPos_set;    
     assert( nonempty_files_sorted( tmp_path1, regionPos_set) );
     if (regionPos_set.empty()) return 0;
-    regions_pos_vote(tmp_path1, regionPos_set, file_clipRegion);
+    regions_pos_vote(tmp_path1, regionPos_set, file_clipRegion);   
     if ( approximate_pos_pns(tmp_path1, file_clipRegion, file_clipPos+".tmp", regionPos_set, MAX_POS_DIF))
       exact_pos_pns(tmp_path0, file_clipPos+".tmp", file_clipPos, consensus_freq);
     
-    /* debug print
-    vector< pair<int, int> > insert_pos;
-    read_first2col( file_clipPos , insert_pos, true) ;
-    for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) 
-      cout << (*pi).first << " " << (*pi).second << endl;
-    */
   } else if ( opt == "write_tmp0_pn" ) {   // write alu and clip reads for each PN
 
     assert (argc == 4);
@@ -1442,14 +1513,6 @@ int main( int argc, char* argv[] )
     }
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
-    string bam_rid_chrn = cf_fh.get_conf("bam_rid_chrn");
-    if ( check_file_size(bam_rid_chrn) <= 0 ) {
-      ofstream fmap(bam_rid_chrn.c_str());
-      for ( map<int, string>::iterator bi = bam_fh->rID_chrn.begin(); bi !=  bam_fh->rID_chrn.end(); bi++) 
-	fmap << bi->first << " " << bi->second << endl;
-      fmap.close();
-    }
-
     map<string, int> rg_to_idx;
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
     PAR_DELETE0 pars = { seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q")) };
@@ -1485,7 +1548,6 @@ int main( int argc, char* argv[] )
 	  string chrn, file_db;
 	  if ( bam_fh->get_chrn(ri->first, chrn) ) file_db =  path0 + chrn +"/" + pn + ".tmp1";	    
 	  else file_db = "";
-	  /* ///reading bam file too slow: alumate_reads1(bam_fh, file_db, falu, ri->first, ri->second); */
 	  alumate_reads2(file_db, falu, ri->first,  ri->second, "na");
 	}
 	falu.close();
@@ -1493,6 +1555,7 @@ int main( int argc, char* argv[] )
       } else 
 	falu.close();
     }   
+    delete bam_fh;
 
   } else if (opt == "clipPos_pns" ) {  // make sure each insertion has exact breakpoint 
 
@@ -1590,12 +1653,13 @@ int main( int argc, char* argv[] )
     
     cout << "col_idx " << col_idx << endl;
     string vcf_prefix = pathDel0 + int_to_string( pns.size());
-    string fn_rm = vcf_prefix + ".pos.torm"; 
+
     combine_pns_llh(path_input, ".tmp2", vcf_prefix + ".pos.tmp", pns, chrns, col_idx);
     combine_pns_vcf(path_input, ".tmp2", vcf_prefix + ".vcf.tmp", pns, chrns, col_idx);  
     
     map <string, std::set<int> > chrn_aluBegin;
-    write_rm2(vcf_prefix + ".pos.tmp", fn_rm, chrn_aluBegin, 1.92); //qchisq(0.95, df=1)  [1] 3.841459 
+    string fn_rm = vcf_prefix + ".pos.torm"; 
+    write_rm2(vcf_prefix + ".pos.tmp", fn_rm, chrn_aluBegin, 1.92, false); //qchisq(0.95, df=1)  [1] 3.841459 
     filtered_vcf(vcf_prefix + ".vcf.tmp", vcf_prefix + ".vcf", -1, chrn_aluBegin);
   
   } else if (opt == "debug0") { 
@@ -1638,11 +1702,11 @@ int main( int argc, char* argv[] )
     string line, output_line;
     //line = "chr1 162628630 162628642,162628619 2 6 3 0:483 0:517 0:473";
     line = "chr1 162628630 162628642,162628619 3 0 1 1:163";
-    if (parseline_del_tmp0(line, output_line, pdf_rg, 3, alucons_len, true))
+    if (parseline_del_tmp0(line, output_line, pdf_rg, 3, alucons_len, 2, true))
       cout << output_line << endl;
 
     line = "chr1 162628630 162628642,162628619 3 0 0";
-    if (parseline_del_tmp0(line, output_line, pdf_rg, 3, alucons_len, true))
+    if (parseline_del_tmp0(line, output_line, pdf_rg, 3, alucons_len, 2, true))
       cout << output_line << endl;
 
 

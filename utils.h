@@ -76,7 +76,12 @@ inline int count_non_match(seqan::BamAlignmentRecord &record){
 
 inline bool p00_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[2] - log10_p[0], log10_p[1] - log10_p[0]) <= min_log10p; }
 inline bool p11_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[0] - log10_p[2], log10_p[1] - log10_p[2]) <= min_log10p; }
-inline string phred_log (float p) { return p ? (int_to_string (-(int)(log10 (p) * 10)) ) : "255"; }
+inline string phred_log (float p) { 
+  if (!p) return "255";
+  //float tmpf = -(log10 (p) * 10); 
+  float tmpf = max( (float) 1.0, - (log10 (p) * 10)) ; 
+  return int_to_string( (int) tmpf );
+}
 
 class EmpiricalPdf
 {

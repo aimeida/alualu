@@ -236,7 +236,7 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
   return true;
 }
 
-void write_rm2(string f_input, string f_output, map < string, std::set<int> > & chrn_aluBegin, float chisq_th) {
+void write_rm2(string f_input, string f_output, map < string, std::set<int> > & chrn_aluBegin, float chisq_th, bool rm_singleton) {
   string line, chrn;
   int aluBegin, pnCnt;
   float alleleFreq, log_llh_Ratio;
@@ -253,7 +253,8 @@ void write_rm2(string f_input, string f_output, map < string, std::set<int> > & 
       continue;
     if ( pnCnt == 1) {
       chrn_aluBegin[chrn].insert(aluBegin);
-      fout << chrn << " " << aluBegin << " singleton\n";
+      if (rm_singleton)
+	fout << chrn << " " << aluBegin << " singleton\n";
     } else if (log_llh_Ratio <= chisq_th) {
       fout << chrn << " " << aluBegin << " llh\n";
       chrn_aluBegin[chrn].insert(aluBegin);

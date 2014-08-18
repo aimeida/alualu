@@ -298,7 +298,7 @@ int main( int argc, char* argv[] )
     for ( vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) 
       read_highCov_region(path0 + "log1s/" + *pi + ".log1",chrn_aluBegin);
     write_rm1(fn_rm, chrn_aluBegin);
-    write_rm2(fn_prefix + ".pos.tmp", fn_rm, chrn_aluBegin, 1.92); //qchisq(0.95, df=1)  [1] 3.841459 
+    write_rm2(fn_prefix + ".pos.tmp", fn_rm, chrn_aluBegin, 1.92, false); //qchisq(0.95, df=1)  [1] 3.841459 
     filtered_vcf(fn_prefix + ".vcf.tmp", fn_prefix + ".vcf", -1, chrn_aluBegin);
 
   } else if (opt == "debug1") { // manually check some regions 
