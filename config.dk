@@ -4,7 +4,7 @@ file_bam_prefix /home/qianyuxx/faststorage/AluDK/inputs/bamFile/
 file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/       ## original alu files 
 file_alupos_filter /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19_filter/    ## new alu files, combine neighbor sites
 file_fa_prefix /home/qianyuxx/faststorage/AluDK/inputs/fa_hg19/
-LOG10_RATIO_UB 3  ## max log(OR) for a single read
+LOG10_RATIO_UB 3.5  ## max log(OR) for a single read
 ## insert_length_dist
 file_insertlen /home/qianyuxx/faststorage/AluDK/outputs/insert_len/
 file_dist_prefix /home/qianyuxx/faststorage/AluDK/outputs/insert_len/prob/

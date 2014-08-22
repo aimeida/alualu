@@ -147,6 +147,9 @@ def one_family(pn1, pn2, pn3, pos, allow_denovo, verbose):
             else:
                 conflict_pos.append(pos[i])
 
+##        if pos[i] == "chr1_11096562":
+##            print from1, from2, pn1[i], pn2[i], pn3[i]
+
     conflict_rate = len(conflict_pos) / float(npos)
     print '%d positions OK, confliction rate: %.1f %% for %d positions' %(npos - len(conflict_pos), conflict_rate * 100, npos)
     if verbose:
@@ -195,10 +198,10 @@ if __name__ == "__main__":
     chr_pos, seqs = read_vcftxt(f_vcftxt)
     for gn, v1 in trio_group.items():
         
-#        ## debugging
-#        verbose = True
-#        if gn != '1006': 
-#            continue
+#      ## debugging
+#         verbose = True
+#         if gn != '1481': 
+#             continue
         
         if len(v1) != 3:
             continue

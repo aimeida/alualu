@@ -251,13 +251,12 @@ void write_rm2(string f_input, string f_output, map < string, std::set<int> > & 
     if ( chrn_aluBegin.find(chrn) != chrn_aluBegin.end() and 
 	 chrn_aluBegin[chrn].find(aluBegin) != chrn_aluBegin[chrn].end() )
       continue;
-    if ( pnCnt == 1) {
+    if ( pnCnt == 1 and rm_singleton) {
       chrn_aluBegin[chrn].insert(aluBegin);
-      if (rm_singleton)
-	fout << chrn << " " << aluBegin << " singleton\n";
+      fout << chrn << " " << aluBegin << " singleton\n";
     } else if (log_llh_Ratio <= chisq_th) {
-      fout << chrn << " " << aluBegin << " llh\n";
       chrn_aluBegin[chrn].insert(aluBegin);
+      fout << chrn << " " << aluBegin << " llh\n";
     }
   }
   fin.close();

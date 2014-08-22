@@ -53,10 +53,7 @@ inline bool has_soft_first(seqan::BamAlignmentRecord &record, unsigned min_bp){
 };
 
 // if pair is Alu
-inline bool aluclip_RC_match(seqan::BamAlignmentRecord &record){
-  bool s1 = has_soft_last(record, CLIP_BP);
-  bool s2 = has_soft_first(record, CLIP_BP); 
-  if ( !s1 and !s2 )  return true;
+inline bool aluclip_RC_match(seqan::BamAlignmentRecord &record, bool s1, bool s2){
   if ( (record.rID != record.rNextId ) or abs(record.tLen) > DISCORDANT_LEN ) {
     if ( s1 and !hasFlagRC(record))   // left of breakpoint
       return true;

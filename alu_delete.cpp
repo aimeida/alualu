@@ -42,7 +42,7 @@ int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_pre
   for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
     string chrn = *ci;
     string file_alupos = replace_str0_str(file_alupos_chr0, chrn, "chr0");
-    AluRefPos *alurefpos = new AluRefPos(file_alupos, minLen_alu_del, 300);  // min distance to neighbor is 200 bp 
+    AluRefPos *alurefpos = new AluRefPos(file_alupos, minLen_alu_del, 300);  // min distance to neighbor is 300 bp 
     FastaFileHandler *fasta_fh = new FastaFileHandler(file_fa_prefix + chrn + ".fa", chrn);    
     int aluBegin, aluEnd;
     for (int count_loci = 0; ; count_loci++) {
@@ -236,11 +236,12 @@ int main( int argc, char* argv[] )
   check_folder_exists(path0);
   
   float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("LOG10_RATIO_UB"));
-  string file_alupos_raw = cf_fh.get_conf("file_alupos_prefix"); 
+
   string file_alupos_filter = cf_fh.get_conf("file_alupos_filter"); 
   check_folder_exists(file_alupos_filter);
 
   if ( opt == "preprocess" ) { 
+    string file_alupos_raw = cf_fh.get_conf("file_alupos_prefix"); 
     int join_len = 10;
     for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++)   // combine Alu if less than 10 
       AluRefPos::write_new_alu(*ci, file_alupos_raw + "alu_" + *ci, file_alupos_filter + "alu_" + *ci, join_len);          

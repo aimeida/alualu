@@ -108,7 +108,10 @@ bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalP
     getline(ss, token, ' ');
     seqan::lexicalCast2(insert_len, token);      
     float p_y, p_z;
-    pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 0.5, p_y, p_z);
+    if (midCnt >= 3 )
+      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1, p_y, p_z);
+    else
+      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 0.5, p_y, p_z);
     log10_gp[0] += log10 (p_y);
     log10_gp[1] += log10 (ph0 * p_y + (1 - ph0) * p_z) ;
     log10_gp[2] += log10 (p_z);
