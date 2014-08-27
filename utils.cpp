@@ -534,31 +534,6 @@ void AluRefPos::debug_print() {
     cout << (*di).begin_pos << " " << (*di).end_pos << endl;
 }
 
-bool AluRefPos::write_new_alu(string chrn, string fn, string fn_new, int join_len){
-  AluRefPos *alurefpos = new AluRefPos(fn, 5);
-  ofstream fout(fn_new.c_str());
-  alurefpos->nextdb() ;
-  int beginPos_pre = alurefpos->get_beginP();
-  int endPos_pre = alurefpos->get_endP();
-  string at;
-  int beginPos, endPos;
-  while ( alurefpos->nextdb() ) {
-    beginPos = alurefpos->get_beginP();
-    endPos = alurefpos->get_endP();
-    at = alurefpos->get_type();
-    if (beginPos - endPos_pre > join_len) {  // close this block, create new
-      fout << chrn << " " << beginPos << " " << endPos << " " <<  at << endl;
-      beginPos_pre = beginPos;
-    }
-    endPos_pre = endPos;
-  }
-  //// last one ignore!
-  /////fout << chrn << " " << beginPos_pre << " " << endPos_pre << " " << at << endl;
-  fout.close();
-  delete alurefpos;
-  return true;
-}
-
 string phred_scaled(float p0, float p1, float p2) {
   float pmax = max(p0, max(p1, p2));
   //cout << p0 << " " << p1 << " " << p2 << " " << pmax << " " << p0/pmax << endl;

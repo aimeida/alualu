@@ -85,86 +85,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEn
   return useless_read;  // alu_flank is too large, we have a lot reads not useful 
 }
 
-void combine_pns_llh(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> &chrns, int col_00) {
-  stringstream ss;
-  string line, chrn, tmpfield;
-  int aluBegin, flag;
-  float p0, p1, p2;
-
-  map < int, int > pos_altCnt; // count of alternative alleles 
-  map < int, int > pos_pnCnt;  // count of pns having polymorphism at this loci
-  map < int, map<string, GENO_PROB * > > pos_pnProb;  
-  map < int, map<string, GENO_PROB * > >::iterator pp;
-  map < string, GENO_PROB * >::iterator ppi;
-
-  ofstream fout(f_out.c_str());  
-  fout <<  "chrn aluBegin pnCnt alleleFreq Log_LikelihoodRatio\n"; 
-  int alleleCnt = pns.size() * 2; 
-  for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-    for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-      ifstream fin( (path0 + *pi + f_in_suffix).c_str() );
-      assert(fin);
-      getline(fin, line); 
-      flag = 1;
-      while ( getline(fin, line) ) {
-	ss.clear(); ss.str( line );
-	ss >> chrn >>  aluBegin;
-	for (int ti = 0; ti < col_00 - 3; ti++) ss >> tmpfield;
-
-	ss >> p0 >> p1 >> p2 ;
-	  
-	if (chrn != *ci) {
-	  if (flag) continue;
-	  else break;
-	}
-	flag = 0;
-	pos_pnProb[ aluBegin ][*pi] = new GENO_PROB( p0, p1, p2);	  
-	if (p1 > p0 or p2 > p0) {
-	  addKey(pos_altCnt, aluBegin, p1 > p2 ? 1 : 2);	
-	  addKey(pos_pnCnt, aluBegin, 1);
-	}
-      }
-      fin.close();
-    }
-    
-    map<int, int>::iterator pan = pos_pnCnt.begin();
-    for ( map<int, int>::iterator pa = pos_altCnt.begin(); pa != pos_altCnt.end(); pa++, pan++) {
-      float altFreq = (pa->second) / (float)alleleCnt;
-      float freq0 = (1 - altFreq) * (1 - altFreq);
-      float freq1 = 2 * altFreq * (1 - altFreq);
-      float freq2 = altFreq * altFreq;
-      float llh_alt = 0, llh_00 = 0;
-      for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-	if ( (ppi = pos_pnProb[pa->first].find(*pi)) != pos_pnProb[pa->first].end() ) {
-	  llh_00 +=  ( (ppi->second)->g0 > 0 ? log( (ppi->second)->g0 ) : ( - LOG10_GENO_PROB ) ) ;
-	  llh_alt += log (freq0 * (ppi->second)->g0 + freq1 * (ppi->second)->g1 + freq2 * (ppi->second)->g2);  
-	} else
-	  llh_alt += log (freq0);  // g0 = 1	
-      }
-      fout << *ci << " " << pa->first << " " << pan->second << " " << altFreq << " " << llh_alt - llh_00 << endl;
-    }
-    cout << "done with " << *ci << endl;
-
-    pos_altCnt.clear(); 
-    pos_pnCnt.clear();
-    for (pp = pos_pnProb.begin(); pp != pos_pnProb.end(); pp++) {
-      for ( ppi = (pp->second).begin(); ppi != (pp->second).end(); ppi++) 
-	delete ppi->second;
-    }
-    pos_pnProb.clear();
-  } 
-  fout.close();
-}
-
-bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, int col_00) {
-  ifstream fin;
-  stringstream ss;
-  string line, chrn, tmp1, tmp2;
-  int aluBegin, aluEnd, cii, flag;
-  map < pair<int, int>, map<string, string> > pos_pnProb;
-  map < pair<int, int>, map<string, string> > pos_pnProb_all;
-  map < pair<int, int>, map<string, string> >::iterator ppp;
-  map<string, string>::iterator pp;
+bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, map <string, std::set<int> > & chrn_aluBegin, float llh_th, string ref_name) {
   vector <string>::iterator ci, pi;
   //seqan::VcfStream vcfout("-", seqan::VcfStream::WRITE);
   seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE);
@@ -174,20 +95,30 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
     appendValue(vcfout.header.sampleNames, *pi);
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileformat", "VCFv4.1"));
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileDate", "201402"));
-  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("reference", "hg18"));
-  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=PL,Number=3,Type=Integer, Description=\"Phred-scaled likelihoods for genotypes\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("reference", ref_name));  // eg: hg19
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=Integer, Description=\"Genotype\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FORMAT", "<ID=PL,Number=3,Type=Integer, Description=\"Phred-scaled likelihoods for genotypes\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=highCov, Description=\"Region coverage too high\">"));
   seqan::VcfRecord record;    
   record.ref = ".";
   record.alt = "1";
-  record.qual = 0;
-  record.filter = "PL";  // "." cause assertion in other program 
   record.info = ".";
-  record.format = ".";
+  record.format = "GT:PL";
+
+  ifstream fin;
+  stringstream ss;
+  string line, chrn;
+  int aluBegin, aluEnd, cii, flag;
+  int midCnt, clipCnt, unknowCnt;
   float p0, p1, p2;      
-  string tmpfield;
+  string phred_str_00 = "0,255,255";
+  string phred_str_missing = ".,.,.";
+  
+  map < pair<int, int>, map<string, string> > pos_pnProb;
+  map < pair<int, int>, map<string, string> > pos_pnGeno;
   for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
     pos_pnProb.clear();
-    pos_pnProb_all.clear();
+    pos_pnGeno.clear();
     for ( pi = pns.begin(); pi != pns.end(); pi++) {
       fin.open( (path0 + *pi + f_in_suffix).c_str() );
       assert(fin);
@@ -195,98 +126,63 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
       flag = 1;
       while ( getline(fin, line) ) {
 	ss.clear(); ss.str( line );
-	ss >> chrn >>  aluBegin >> aluEnd;
-	for (int ti = 0; ti < col_00 - 4; ti++) ss >> tmpfield;
-	ss >> p0 >> p1 >> p2 ;
+	ss >> chrn;
 	if (chrn != *ci) {
 	  if (flag) continue;
 	  else break;
+	}
+	flag = 0; 
+	ss >>  aluBegin >> aluEnd >> midCnt;
+	if ( midCnt < 0 ) {  // evidence of G00
+	  pos_pnProb[ make_pair(aluBegin, aluEnd) ][*pi] = phred_str_00;
+	} else {
+	  ss >> clipCnt >> unknowCnt >> p0 >> p1 >> p2 ;
+	  string phred_scaled_str = phred_scaled(p0, p1, p2);
+	  pos_pnProb[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
+	  if (p1 > p0 or p2 > p0) {
+	    pos_pnGeno[ make_pair(aluBegin, aluEnd) ][*pi] = ( p1 > p2) ? "1" : "2"; // only G01 and G11
 	  }
-	flag = 0;
-	string phred_scaled_str = phred_scaled(p0, p1, p2);
-	pos_pnProb_all[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
-	if (p1 > p0 or p2 > p0) pos_pnProb[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
+	}
       }
       fin.close();
     }
-    cout << *ci << " size " << pos_pnProb.size() << endl;
-    // Write out the records.
-    for (ppp = pos_pnProb.begin(); ppp != pos_pnProb.end(); ppp++) {
-      record.beginPos = (ppp->first).first;
-      record.rID = cii;
-      record.id = int_to_string((ppp->first).second);
-      int n_pn = 0;
+    
+    // Write out the records.    
+    map < pair<int, int>, map<string, string> >::iterator pi3, pj3;
+    map<string, string>::iterator pi2, pj2;
+    for (pi3 = pos_pnProb.begin(); pi3 != pos_pnProb.end(); pi3++) {
+      pj3 = pos_pnGeno.find ( pi3->first );
+      if ( pj3 == pos_pnGeno.end() )
+	continue;
+      record.beginPos = (pi3->first).first;
+      record.rID = cii;   // change ???
+      record.id = int_to_string((pi3->first).second);      
+      record.qual = 0;  // change ??
       for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-	if ( (pp = ppp->second.find(*pi)) != ppp->second.end() ) { 
-	  appendValue(record.genotypeInfos, pp->second);
-	  n_pn++ ;
-	} else if ((pp = pos_pnProb_all[ppp->first].find(*pi)) !=  pos_pnProb_all[ppp->first].end() ) {
-	  appendValue(record.genotypeInfos,  pos_pnProb_all[ppp->first][*pi]); 	  
+	string ginfo;
+	pi2 = pi3->second.find(*pi);
+	if ( pi2 == pi3->second.end() ) { 
+	  ginfo = ".:" + phred_str_missing ;
 	} else {
-	  appendValue(record.genotypeInfos, "0,255,255"); // otherwise vcf consider it as missing
+	  pj2 = pj3->second.find(*pi);
+	  if ( pj2 == pj3->second.end() )
+	    ginfo = "0:" + pi2->second;
+	  else 
+	    ginfo = pj2->second + ":" + pi2->second;
 	}
+	appendValue(record.genotypeInfos, ginfo);
       }
+      if ( chrn_aluBegin[*ci].find( (pi3->first).first ) == chrn_aluBegin[*ci].end() )
+	record.filter = "PASS";
+      else
+	record.filter = "highCov";
       writeRecord(vcfout, record);  
       clear(record.genotypeInfos);
-    }        
-    cout << "done with " << *ci << endl;
+    } 
+    cout << *ci << " size " << pos_pnProb.size() << endl;
   }  // chrn finished
   clear(record);
   seqan::close(vcfout);
   return true;
 }
 
-void write_rm2(string f_input, string f_output, map < string, std::set<int> > & chrn_aluBegin, float chisq_th, bool rm_singleton) {
-  string line, chrn;
-  int aluBegin, pnCnt;
-  float alleleFreq, log_llh_Ratio;
-  ifstream fin(f_input.c_str());
-  getline(fin, line);
-  fstream fout;
-  fout.open(f_output.c_str(), fstream::app|fstream::out);
-  stringstream ss;  
-  while ( getline(fin, line)) {
-    ss.clear(); ss.str(line); 
-    ss >> chrn >> aluBegin >> pnCnt >> alleleFreq >> log_llh_Ratio;
-    if ( chrn_aluBegin.find(chrn) != chrn_aluBegin.end() and 
-	 chrn_aluBegin[chrn].find(aluBegin) != chrn_aluBegin[chrn].end() )
-      continue;
-    if ( pnCnt == 1 and rm_singleton) {
-      chrn_aluBegin[chrn].insert(aluBegin);
-      fout << chrn << " " << aluBegin << " singleton\n";
-    } else if (log_llh_Ratio <= chisq_th) {
-      chrn_aluBegin[chrn].insert(aluBegin);
-      fout << chrn << " " << aluBegin << " llh\n";
-    }
-  }
-  fin.close();
-  fout.close();
-}
-
-void filtered_vcf(string f_input, string f_output, int offset, map <string, set<int> > &chrn_aluBegin) {
-  string line, chrn;
-  int aluBegin;
-  stringstream ss;
-  ifstream fin(f_input.c_str());
-  if(!fin) {
-    cerr << f_input << " does not exist!\n";
-    exit(0);
-  }
-  ofstream fout(f_output.c_str());
-  getline(fin, line);
-  fout << line << endl;
-  while (getline(fin, line)) {
-    if (line[0]=='#') {
-      fout << line << endl;
-      continue;
-    }
-    ss.clear(); ss.str(line); 
-    ss >> chrn >> aluBegin;
-    aluBegin = aluBegin + offset;
-    if ( chrn_aluBegin.find(chrn) == chrn_aluBegin.end() or 
-	 chrn_aluBegin[chrn].find(aluBegin) == chrn_aluBegin[chrn].end())
-      fout << line << endl;
-  }
-  fin.close();
-  fout.close();
-}

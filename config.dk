@@ -1,8 +1,11 @@
+#chrns chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22,chrX
+chrns chr21
+ref_name hg19
+##
 file_pn /home/qianyuxx/faststorage/AluDK/inputs/PN_all
 bam_rid_chrn /home/qianyuxx/faststorage/AluDK/inputs/bam_rid_chrn  ## mapping of rid to chrn in bam header 
 file_bam_prefix /home/qianyuxx/faststorage/AluDK/inputs/bamFile/
 file_alupos_prefix /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/       ## original alu files 
-file_alupos_filter /home/qianyuxx/faststorage/AluDK/inputs/alu_hg19_filter/    ## new alu files, combine neighbor sites
 file_fa_prefix /home/qianyuxx/faststorage/AluDK/inputs/fa_hg19/
 LOG10_RATIO_UB 3.5  ## max log(OR) for a single read
 ## insert_length_dist
@@ -15,7 +18,6 @@ file_alu_delete0 /home/qianyuxx/faststorage/AluDK/outputs/delete_alu0/
 coverage_max 90	   
 pn_del_vcf /home/qianyuxx/faststorage/AluDK/inputs/PN_all  ## if all pn finished running
 ## alu_insert
-minLen_alu_ins 150 
 cut_bp_aluread 10          ## cut at both ends to build consensus
 file_repeatMask /home/qianyuxx/faststorage/AluDK/inputs/raw_data/rmsk.hg19
 file_alu_insert0 /home/qianyuxx/faststorage/AluDK/outputs/insert_alu0/		  

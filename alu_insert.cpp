@@ -1430,7 +1430,7 @@ int main( int argc, char* argv[] )
       *(fileMap[rc->first]) << header2 ;
     }     
     for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_filter") + "alu_" + rc->second);           
+      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_prefix") + "alu_" + rc->second);           
     close_fhs(fileMap, bam_fh->rID_chrn);    
     
     int col_idx = 0;

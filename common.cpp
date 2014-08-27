@@ -88,6 +88,14 @@ int check_file_size(string fn){
   }
 }
 
+void parse_chrns(string s_chrns, vector<string> &chrns){
+  stringstream ss;
+  ss.str(s_chrns);
+  string m;
+  while (getline(ss, m, ','))
+    chrns.push_back(m);
+}
+
 void split_by_sep(string &str, string &m, string &n, char sep ){
   stringstream ss;
   ss.str(str);

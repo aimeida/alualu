@@ -175,7 +175,6 @@ public:
   bool within_alu(int pos);
   void debug_print();
   ~AluRefPos(void) { alu_db.clear();}
-  static bool write_new_alu(string chrn, string fn, string fn_new, int join_len);  // join database 
  private:
   std::set <RepDB1> alu_db;
   std::set <RepDB1>::iterator adi;  

@@ -193,6 +193,7 @@ void get_pn(string pn_file, map<int, string> &ID_pn);
 void read_file_pn_used(string fn, std::set <string> & pns_used);
 void read_file_pn_used(string fn, vector <string> & pns_used);
 int check_file_size(string fn);
+void parse_chrns(string s_chrns, vector<string> &chrns);
 void split_by_sep(string &str, string &m, string &n, char sep );
 int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int minInput); 
 int major_two_keys (vector <int> & ps, int & k1, int & k2, int & kf1, int & kf2, int bin_width, float freq_th, bool debugprint = false );
