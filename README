@@ -1,0 +1,8 @@
+difference from master branch
+
+1. config.dk -->  config.decode
+
+2. delete_utils.cpp:  //  seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE); BJARNI DEL
+   delete_utils.cpp:  seqan::VcfStream vcfout(f_out.c_str(), seqan::VcfStream::WRITE); //BJARNI INS
+
+3. Makefiles
