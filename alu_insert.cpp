@@ -1127,7 +1127,7 @@ void count_clipr(string fn_clip, map < int, pair <int, int> > & exact_pos, map <
   }
 }
 
-int count_alur(int minClipCnt, string file_input, map < int, pair <int, int> > & exact_pos, map <int, set <string> > & aluclip_cnts, map < int, string > & rid_chrn, string file_fa, AluconsHandler *alucons_fh, vector <string> & chrns, bool alumate_align) {
+int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map <int, set <string> > & aluclip_cnts, map < int, string > & rid_chrn, string file_fa, AluconsHandler *alucons_fh, vector <string> & chrns, bool alumate_align) {
   ifstream fin(file_input.c_str());
   assert(fin);
   stringstream ss;
@@ -1144,11 +1144,9 @@ int count_alur(int minClipCnt, string file_input, map < int, pair <int, int> > &
       continue;
     ss >> alu_type >> rid >> aluBegin >> sameRC >> read_len >> qName >> thisBegin;
     map <int, set <string> >::iterator aci = aluclip_cnts.find(pos);
-    if ( aci == aluclip_cnts.end() or (int)(aci->second).size() < minClipCnt )  // at least 2 clip counts
+    if ( aci != aluclip_cnts.end() and (aci->second).find(qName) != (aci->second).end() )
       continue;
-    if ( (aci->second).find(qName) != (aci->second).end() )   // aluclip_read
-      continue;    
-    
+    //////if (int)(aci->second).size() < 2 ) continue 
     int exact_left = (ei->second).first;
     int exact_right = (ei->second).second;    
     int tmpmax = max (exact_left, exact_right);
@@ -1230,18 +1228,32 @@ void count_skipr(string file_input, map < int, pair <int, int> > & exact_pos, ma
     int tmpmin = (!exact_left or !exact_right) ? tmpmax : min(exact_left, exact_right);
     if ( col2 == "UR" ) {
       int unknowCnt;
+      string unknowStr, token, idx, s_insert_len;
       int aluC = 0;
       ss >> unknowCnt;
-      string token, idx, s_insert_len;
-      int pair_begin, insert_len, unknow_exact;
       for (int i = 0; i < unknowCnt; i++) {
-	getline(ss, idx, ':');
-	getline(ss, s_insert_len, ':');
+	ss >> unknowStr;
+	stringstream ss2;
+	ss2.str(unknowStr);
+	int pair_begin, insert_len, unknow_exact;          
+	getline(ss2, idx, ':');
+	getline(ss2, s_insert_len, ':');
 	seqan::lexicalCast2(insert_len, s_insert_len);      
-	getline(ss, token, ':');
+	getline(ss2, token, ':');
 	seqan::lexicalCast2(pair_begin, token);      
-	getline(ss, token, ' '); 
-	seqan::lexicalCast2(unknow_exact, token);  // check if they are real unknow reads or mis_classified clip reads 
+	getline(ss2, token, ':');
+	seqan::lexicalCast2(unknow_exact, token);      
+	
+//	string token, idx, s_insert_len;
+//	int pair_begin, insert_len, unknow_exact;
+//	getline(ss, idx, ':');
+//	getline(ss, s_insert_len, ':');
+//	seqan::lexicalCast2(insert_len, s_insert_len);      
+//	getline(ss, token, ':');
+//	seqan::lexicalCast2(pair_begin, token);      
+//	getline(ss, token, ' '); 
+//	seqan::lexicalCast2(unknow_exact, token);  // check if they are real unknow reads or mis_classified clip reads 
+
 	if ( unknow_exact < 0 ) {
 	  if ( (exact_left and abs(-unknow_exact - exact_left) < CLIP_BP ) or 
 	       (!exact_left and abs(-unknow_exact - exact_right) <= CLIP_BP_MID ) )
@@ -1295,7 +1307,7 @@ void read_clip_pass(string fn_clip_pass, map < int, pair <int, int> > & exact_po
   fin.close();
 }
 
-void write_tmp1(vector <string> & chrns, string file_tmp1, string fn_clip_pass0, string fn_clip0, string fn_alu0, string fn_su0, map < int, string > & rid_chrn, string file_fa, AluconsHandler *alucons_fh) {
+void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp1, string fn_clip_pass0, string fn_clip0, string fn_alu0, string fn_su0, map < int, string > & rid_chrn, string file_fa, AluconsHandler *alucons_fh) {
   ofstream fout(file_tmp1.c_str());
   fout << "chr insertMid debugInfo aluclipCnt skipCnt unknowCnt unknowStr\n";  
   for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
@@ -1311,26 +1323,35 @@ void write_tmp1(vector <string> & chrns, string file_tmp1, string fn_clip_pass0,
     string fn_su = replace_str0_str(fn_su0, chrn, "chr0");    
 
     count_clipr(fn_clip, exact_pos, aluclip_cnts, unknow_str);
-    count_alur(2, fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, false);  // min 2 clip reads exists 
-    //count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, true);  //re_align, might be slow 
+    count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, false);  // min 2 clip reads exists 
+    ////count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, true);  //re_align, might be slow 
     count_skipr(fn_su, exact_pos, aluclip_cnts, skip_cnts, unknow_str);
-    for (map <int, set <string> >::iterator ai = aluclip_cnts.begin(); ai != aluclip_cnts.end(); ai++ ) {
-      int exact_left = (exact_pos[ai->first]).first;
-      int exact_right = (exact_pos[ai->first]).second; 
+
+    for (map < int, pair <int, int> >::iterator ei = exact_pos.begin(); ei != exact_pos.end(); ei++ ) {
+      int exact_left = (ei->second).first;
+      int exact_right = (ei->second).second;
       int exact_mid = (!exact_left or !exact_right) ? max(exact_left, exact_right) : (exact_left + exact_right)/2;
-      int skipCnt = 0;
-      get_mapVal( skip_cnts, ai->first, skipCnt);
-      fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << (ai->second).size()
-	   << " " << skipCnt << " ";
-      map <int, vector <string> >::iterator ui = unknow_str.find(ai->first);
-      if ( ui == unknow_str.end() ) {
-	fout << "0";
-      } else {
-	fout << (ui->second).size();
-	for ( vector <string>::iterator it = (ui->second).begin(); it != (ui->second).end(); it++) 
-	  fout << " " << *it;
+      map <int, set <string> >::iterator ai = aluclip_cnts.find(ei->first);
+      if ( ai != aluclip_cnts.end() ) {
+	int skipCnt = 0;
+	get_mapVal( skip_cnts, ai->first, skipCnt);
+	fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << (ai->second).size()
+	     << " " << skipCnt << " ";
+	map <int, vector <string> >::iterator ui = unknow_str.find(ai->first);
+	if ( ui == unknow_str.end() ) {
+	  fout << "0";
+	} else {
+	  fout << (ui->second).size();
+	  for ( vector <string>::iterator it = (ui->second).begin(); it != (ui->second).end(); it++) 
+	    fout << " " << *it;
+	}
+	fout << endl;
+      } else {  // enough unknow reads cover this region, eg. at least 5
+	if (covered_reads(bam_fh, chrn, exact_mid - 200, exact_mid + 200, MISSING_CNT) ) 
+	  fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << - MISSING_CNT << endl;
+////	else 
+////	  cout << "missing# " <<  exact_left << " " << exact_right << endl;
       }
-      fout << endl;
     }
   }
   fout.close();
@@ -1340,14 +1361,13 @@ void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_
   ifstream fin0(fn_tmp1.c_str());
   assert(fin0);
   ofstream fout(fn_tmp2.c_str());
-  fout << "chr insertBegin insertEnd insertLen midCnt clipCnt unknowCnt 00 01 11\n";  
+  fout << "chr insertBegin insertEnd midCnt clipCnt unknowCnt 00 01 11 insertLen\n";  
   stringstream ss;
   string line, output_line;
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
   while (getline(fin0, line)) 
-    if (parseline_del_tmp0(line, output_line, pdf_rg, log10RatioUb, fixed_len, 2))  // at least 2 counts support clip 
-      fout << output_line << endl;
+    parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 2, false);  // at least 2 counts support clip 
   fin0.close();
   fout.close();
 }
@@ -1363,11 +1383,10 @@ int main( int argc, char* argv[] )
   
   int alucons_len = seqan::lexicalCast<int> (cf_fh.get_conf("alucons_len"));
   float consensus_freq = seqan::lexicalCast<float> (cf_fh.get_conf("consensus_freq"));
+
   vector<string> chrns;
-  for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
-  chrns.push_back("chrX");
-  chrns.push_back("chrY");
-  
+  string s_chrns = cf_fh.get_conf("chrns");
+  parse_chrns(s_chrns, chrns);
   string path0 = cf_fh.get_conf( "file_alu_insert0") ;    
   check_folder_exists(path0);
   string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
@@ -1577,12 +1596,43 @@ int main( int argc, char* argv[] )
   } else if (opt == "clipPos_pns" ) {  // make sure each insertion has exact breakpoint 
 
     assert (argc == 4);
-
     string chrn = argv[3];
+
     string pathCons1 = pathCons + chrn + "/" ;
-    map <int, vector<string> > pos_seqs;
+    map <int, vector<string> > _pos_seqs, pos_seqs;
     for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
-      read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs);
+      read_seq(*pi, pathCons1 + *pi + ".clip", _pos_seqs);  
+
+    // filter pos near the alu region !!
+    string file_alu_known = cf_fh.get_conf( "file_alu_known");
+    if (file_alu_known != "na") {
+      const int FLANKING = 100; 
+      list <pair<int, int> > db;
+      file_alu_known = file_alu_known + "alu_" + chrn;
+      ifstream fin(file_alu_known.c_str());
+      string line, tmpv;
+      stringstream ss;
+      int aluBegin, aluEnd;
+      while (getline(fin, line)) {
+	ss.clear(); ss.str(line);
+	ss >> tmpv >> aluBegin >> aluEnd;
+	db.push_back(make_pair(aluBegin, aluEnd));
+      }
+      fin.close();
+      list <pair<int, int> > query;
+      for (map <int,  vector<string> >::iterator pi = _pos_seqs.begin(); pi != _pos_seqs.end() ; pi++ ) 
+	query.push_back( make_pair( pi->first - FLANKING, pi->first + FLANKING ) );
+      list <pair<int, int> > query_no_overlap;
+      intersect_fast0(query, db, query_no_overlap);
+      //cout << "debug# " << query.size() << " " << query_no_overlap.size() << endl;
+      for (list <pair<int, int> >::iterator qi = query_no_overlap.begin(); qi != query_no_overlap.end(); qi++)  {
+	int _pos = (*qi).first + FLANKING;
+	pos_seqs[_pos] = _pos_seqs[_pos];
+      }
+    } else {
+      pos_seqs.swap(_pos_seqs);
+    }
+    _pos_seqs.clear();
 
     string file_clip_pass = pathCons + chrn + "_clip_pass" ;
     ofstream fout2( file_clip_pass.c_str() );
@@ -1609,7 +1659,6 @@ int main( int argc, char* argv[] )
       vector <int> clipls, cliprs;
       for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
 	parse_line1(*si, posl, MAX_POS_DIF, clipls, cliprs);   // MAX_POS_DIF instead of CLIP_BP_MID
-
       int clipl, clipr;
       int n_clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq, 2);   
       int n_clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, 2);
@@ -1634,14 +1683,13 @@ int main( int argc, char* argv[] )
     fout2.close() ;
     
   } else if (opt == "write_tmp2_pn") { 
-    
      assert (argc == 4);
      string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
+
      if ( pns_used.find(pn) == pns_used.end() ){ 
        cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
        return 0;
      }
-     
      string file_clip_pass = pathCons + "chr0_clip_pass" ;
      string file_clip = pathCons + "chr0/" + pn + ".clip"; 
      string file_alu = pathCons + "chr0/" + pn + ".aludb"; 
@@ -1649,11 +1697,16 @@ int main( int argc, char* argv[] )
      string file_tmp1 = pathDel0 + pn + ".tmp1";
      map < int, string > rid_chrn;
      get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
+     
      string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
-     get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
      AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));
-     write_tmp1(chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
+     
+     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
+     BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
+     write_tmp1(bam_fh, chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
+     delete bam_fh;
      delete alucons_fh;
+
      string file_tmp2 = pathDel0 + pn + ".tmp2";
      map <int, EmpiricalPdf *> pdf_rg;    
      string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
@@ -1667,21 +1720,18 @@ int main( int argc, char* argv[] )
    } else if (opt == "fixed_vcf_pns") {
     vector <string> pns;
     read_file_pn_used(file_pn_used, pns); 
-    string path_input = pathDel0 + "tmp2s/";
-    string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";
-    int col_idx =  get_col_idx(tmp_file_pn, "00");
-    
-    cout << "col_idx " << col_idx << endl;
-    string vcf_prefix = pathDel0 + int_to_string( pns.size());
 
-    combine_pns_llh(path_input, ".tmp2", vcf_prefix + ".pos.tmp", pns, chrns, col_idx);
-    combine_pns_vcf(path_input, ".tmp2", vcf_prefix + ".vcf.tmp", pns, chrns, col_idx);  
+    string path_input = pathDel0 + "tmp2s/";
+    string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";    
+    int col_idx =  get_col_idx(tmp_file_pn, "00");
+    cout << "col_idx " << col_idx << endl;
     
+    string vcf_prefix = pathDel0 + int_to_string( pns.size());
     map <string, std::set<int> > chrn_aluBegin;
-    string fn_rm = vcf_prefix + ".pos.torm"; 
-    write_rm2(vcf_prefix + ".pos.tmp", fn_rm, chrn_aluBegin, 1.92, false); //qchisq(0.95, df=1)  [1] 3.841459 
-    filtered_vcf(vcf_prefix + ".vcf.tmp", vcf_prefix + ".vcf", -1, chrn_aluBegin);
-  
+    string ref_name = cf_fh.get_conf("ref_name");
+    float llh_th = 1.92; //qchisq(0.95, df=1)  [1] 3.841459 
+    combine_pns_vcf(path_input, ".tmp2", vcf_prefix + ".vcf", pns, chrns, chrn_aluBegin, llh_th, ref_name);   
+    
   } else if (opt == "debug0") { 
 
     string chrn = "chr4";
@@ -1722,12 +1772,9 @@ int main( int argc, char* argv[] )
     string line, output_line;
     //line = "chr1 162628630 162628642,162628619 2 6 3 0:483 0:517 0:473";
     line = "chr1 162628630 162628642,162628619 3 0 1 1:163";
-    if (parseline_del_tmp0(line, output_line, pdf_rg, 3, alucons_len, 2, true))
-      cout << output_line << endl;
+    parseline_ins(line, cout, pdf_rg, 3, alucons_len, 2, true);
 
     line = "chr1 162628630 162628642,162628619 3 0 0";
-    if (parseline_del_tmp0(line, output_line, pdf_rg, 3, alucons_len, 2, true))
-      cout << output_line << endl;
 
 
   } else {

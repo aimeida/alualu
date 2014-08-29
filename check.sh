@@ -12,11 +12,6 @@ if [ $version = 0 ]; then
 fi
 
 if [ $version = 1 ]; then
-    path0="/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0_noRealign/" 
-    fout0="/home/qianyuxx/faststorage/Alu/tmpi0"
-fi
-
-if [ $version = 2 ]; then
     path0="/home/qianyuxx/faststorage/AluDK/outputs/delete_alu0"
     fout0="/home/qianyuxx/faststorage/Alu/tmpd"
 fi
@@ -25,7 +20,7 @@ echo "############# checking " $path0   > $fout0
 pos2=$(( ${pos1} -1 ))
 
 cd $path0
-fn1=`ls *.vcf.txt`
+fn1=`ls *.vcf`
 
 echo `grep ${pos1} ${fn1}`              >> $fout0
 

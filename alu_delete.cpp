@@ -198,7 +198,7 @@ int main( int argc, char* argv[] )
 
     int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
     unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
-    //delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos, coverage_max, rg_to_idx);
+    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos, coverage_max, rg_to_idx);
     delete bam_fh;
     move_files(path0+"log1s/", path0 + pn + ".log1") ;
 
@@ -232,13 +232,8 @@ int main( int argc, char* argv[] )
     string path_input = path0 + "tmp2s/";
     string fn_prefix = path0 + int_to_string( pns.size()) ;
     string ref_name = cf_fh.get_conf("ref_name");
-
-    //qchisq(0.95, df=1)  [1] 3.841459 
-    float llh_th = 1.92;
+    float llh_th = 1.92; //qchisq(0.95, df=1)  [1] 3.841459 
     combine_pns_vcf(path_input, ".tmp2", fn_prefix + ".vcf", pns, chrns, chrn_aluBegin, llh_th, ref_name);  
-
-    ///write_rm2(fn_prefix + ".pos.tmp", fn_rm, chrn_aluBegin, 1.92, false); 
-    ////filtered_vcf(fn_prefix + ".vcf.tmp", fn_prefix + ".vcf", -1, chrn_aluBegin);
 
   } else if (opt == "debug1") { // manually check some regions 
     

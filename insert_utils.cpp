@@ -80,21 +80,35 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int min_midCnt, bool test_print) {
+int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int min_midCnt, bool test_print) {
   float *log10_gp = new float[3];
-  stringstream ss, ss_out;
+  stringstream ss;
   string chrn, insertMid, debugInfo, token;
   int idx, insert_len, midCnt, clipCnt, unknowCnt;
   vector < pair <int, int> > unknowInfo;
   ss.str(line0); 
-  ss >> chrn >> insertMid >> debugInfo >> midCnt >> clipCnt >> unknowCnt;
-  
-  if (midCnt < min_midCnt) return false;
+  ss >> chrn >> insertMid >> debugInfo >> midCnt;
+  string exact_left, exact_right;
+  split_by_sep(debugInfo, exact_left, exact_right, ',');  
+  if ( exact_left  == "0" ) exact_left = exact_right;
+  if ( exact_right == "0" ) exact_right = exact_left;
 
+  if (midCnt < min_midCnt) {
+    if ( midCnt < 0 ) {
+      fout << chrn << " " << exact_left << " " << exact_right << " " << midCnt << endl;
+    } else {
+      ss >> clipCnt >> unknowCnt;
+      int _cnt = midCnt + clipCnt + unknowCnt;
+      if (_cnt >= MISSING_CNT)   // otherwise consider as missing data 
+	fout << chrn << " " << exact_left << " " << exact_right << " " << - _cnt << endl;
+    }
+    return 0;
+  }
+
+  ss >> clipCnt >> unknowCnt;
   float ph0 = 0.5;
   logPE = - abs(logPE);
   float logPM = log10 ( 1 - pow(10, logPE) );
-
   float *gp = new float[3];
   for (int i = 0; i < 3; i++) log10_gp[i] = 0;
   if (clipCnt + midCnt > 0 ) {
@@ -108,10 +122,11 @@ bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalP
     getline(ss, token, ' ');
     seqan::lexicalCast2(insert_len, token);      
     float p_y, p_z;
-    if (midCnt >= 3 )
+    if (midCnt >= 3 ) // conservative 
       pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1, p_y, p_z);
     else
       pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 0.5, p_y, p_z);
+
     log10_gp[0] += log10 (p_y);
     log10_gp[1] += log10 (ph0 * p_y + (1 - ph0) * p_z) ;
     log10_gp[2] += log10 (p_z);
@@ -120,27 +135,24 @@ bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalP
 //       cout << "z: " << p_z << " " << insert_len << " " << pdf_rg[idx]->pdf_obs(insert_len) << endl;
 //     }
   }  
-  bool use_this_line = false;
+
   if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
-    string exact_left, exact_right;
-    split_by_sep(debugInfo, exact_left, exact_right, ',');
-    if ( exact_left  == "0" ) exact_left = exact_right;
-    if ( exact_right == "0" ) exact_right = exact_left;
-    ss_out << chrn << " " << exact_left << " " << exact_right << " " << estimatedAluLen << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
+    fout << chrn << " " << exact_left << " " << exact_right << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
-    ss_out << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0];  // NB: switch 00 and 11, unlike alu_delete
+    fout << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << estimatedAluLen << endl;  // NB: switch 00 and 11, unlike alu_delete
 
     if (test_print) {
       cout << log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
       cout << "phred " << phred_scaled(gp[2], gp[1], gp[0]) << endl;
     }
 
-    use_this_line = true;
-    output_line = ss_out.str();
+  } else {
+    fout << chrn << " " << exact_left << " " << exact_right << " " << -(midCnt + clipCnt + unknowCnt) << endl;
   }
+  
   delete gp;    
   delete log10_gp;
-  return use_this_line;
+  return 0;
 }
 
 int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
@@ -292,4 +304,26 @@ string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_f
 	return *si;
   }  
   return "";
+}
+
+bool covered_reads(BamFileHandler * bam_fh, string chrn, int p1, int p2, int minCnt){
+  if (! bam_fh->jump_to_region(chrn, p1, p2) ) return false;
+  seqan::BamAlignmentRecord record;
+  int cnt = 0;
+  while ( true ) {
+      string read_status = bam_fh->fetch_a_read(chrn, p1, p2, record);
+      if (read_status == "stop" ) break;
+      if (read_status == "skip" or !QC_insert_read(record)) continue; 
+      if (record.rID != record.rNextId) continue;
+      if (abs(record.tLen) > DISCORDANT_LEN ) {
+	cnt++;
+      } else {
+	int r1 = min ( record.beginPos, record.beginPos + abs(record.tLen) );
+	int r2 = max ( record.beginPos, record.beginPos + abs(record.tLen) );
+	if ( min(p2, r2) - max (r1, p1) > 0 )
+	  cnt++;
+      }
+      if ( cnt >= minCnt) return true;
+  }
+  return cnt >= minCnt;
 }

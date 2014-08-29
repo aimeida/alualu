@@ -96,13 +96,16 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileformat", "VCFv4.1"));
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileDate", "201402"));
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("reference", ref_name));  // eg: hg19
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("INFO", "<ID=NS,Number=1,Description=\"Number of Samples With Data\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("INFO", "<ID=AF,Number=A, Description=\"Allele Frequency\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=highCov, Description=\"Region coverage too high\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=chisq1, Description=\"likelihood low, failed chisq df = 1\">"));
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=Integer, Description=\"Genotype\">"));
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FORMAT", "<ID=PL,Number=3,Type=Integer, Description=\"Phred-scaled likelihoods for genotypes\">"));
-  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=highCov, Description=\"Region coverage too high\">"));
+
   seqan::VcfRecord record;    
   record.ref = ".";
   record.alt = "1";
-  record.info = ".";
   record.format = "GT:PL";
 
   ifstream fin;
@@ -113,12 +116,9 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
   float p0, p1, p2;      
   string phred_str_00 = "0,255,255";
   string phred_str_missing = ".,.,.";
-  
-  map < pair<int, int>, map<string, string> > pos_pnProb;
-  map < pair<int, int>, map<string, string> > pos_pnGeno;
+  map < pair<int, int>, map <string, GENO_PROB > > pos_pnInfo;
   for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
-    pos_pnProb.clear();
-    pos_pnGeno.clear();
+    pos_pnInfo.clear();
     for ( pi = pns.begin(); pi != pns.end(); pi++) {
       fin.open( (path0 + *pi + f_in_suffix).c_str() );
       assert(fin);
@@ -134,52 +134,74 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
 	flag = 0; 
 	ss >>  aluBegin >> aluEnd >> midCnt;
 	if ( midCnt < 0 ) {  // evidence of G00
-	  pos_pnProb[ make_pair(aluBegin, aluEnd) ][*pi] = phred_str_00;
+	  GENO_PROB one_gi = GENO_PROB(1, 0, 0, phred_str_00, 0); 
+	  pos_pnInfo[ make_pair(aluBegin, aluEnd) ].insert ( std::pair<string, GENO_PROB>(*pi, one_gi) );
 	} else {
 	  ss >> clipCnt >> unknowCnt >> p0 >> p1 >> p2 ;
 	  string phred_scaled_str = phred_scaled(p0, p1, p2);
-	  pos_pnProb[ make_pair(aluBegin, aluEnd) ][*pi] = phred_scaled_str;
-	  if (p1 > p0 or p2 > p0) {
-	    pos_pnGeno[ make_pair(aluBegin, aluEnd) ][*pi] = ( p1 > p2) ? "1" : "2"; // only G01 and G11
-	  }
+	  int _g = 0;
+	  if (p1 > p0 or p2 > p0) _g =  ( p1 > p2) ? 1 : 2;
+	  GENO_PROB one_gi = GENO_PROB(p0, p1, p2, phred_scaled_str, _g); 
+	  pos_pnInfo[ make_pair(aluBegin, aluEnd) ].insert ( std::pair<string, GENO_PROB>(*pi, one_gi) );
 	}
       }
       fin.close();
     }
     
-    // Write out the records.    
-    map < pair<int, int>, map<string, string> >::iterator pi3, pj3;
-    map<string, string>::iterator pi2, pj2;
-    for (pi3 = pos_pnProb.begin(); pi3 != pos_pnProb.end(); pi3++) {
-      pj3 = pos_pnGeno.find ( pi3->first );
-      if ( pj3 == pos_pnGeno.end() )
-	continue;
+    map < pair<int, int>, map<string, GENO_PROB> >::iterator pi3;
+    map<string, GENO_PROB>::iterator pi2;
+    for (pi3 = pos_pnInfo.begin(); pi3 != pos_pnInfo.end(); pi3++) {
+      int altCnt = 0;
+      for ( pi2 = (pi3->second).begin(); pi2 != (pi3->second).end(); pi2++ ) 
+	altCnt += (pi2->second).geno;
+      if (!altCnt) continue;
       record.beginPos = (pi3->first).first;
       record.rID = cii;   // change ???
       record.id = int_to_string((pi3->first).second);      
-      record.qual = 0;  // change ??
+      int n_missing = 0;
       for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
-	string ginfo;
 	pi2 = pi3->second.find(*pi);
-	if ( pi2 == pi3->second.end() ) { 
+	string ginfo;
+	if ( pi2 == pi3->second.end() ) {
 	  ginfo = ".:" + phred_str_missing ;
-	} else {
-	  pj2 = pj3->second.find(*pi);
-	  if ( pj2 == pj3->second.end() )
-	    ginfo = "0:" + pi2->second;
-	  else 
-	    ginfo = pj2->second + ":" + pi2->second;
+	  n_missing += 1;
+	} else { 
+	  ginfo = int_to_string( (pi2->second).geno ) + ":" + (pi2->second).phredStr;
 	}
-	appendValue(record.genotypeInfos, ginfo);
+	appendValue(record.genotypeInfos, ginfo);	  
       }
-      if ( chrn_aluBegin[*ci].find( (pi3->first).first ) == chrn_aluBegin[*ci].end() )
-	record.filter = "PASS";
-      else
+      
+      record.qual = 0;
+      record.filter = "PASS";
+      
+      if ( chrn_aluBegin[*ci].find( (pi3->first).first ) != chrn_aluBegin[*ci].end() ) {
 	record.filter = "highCov";
+	record.info = "NS=.;AF=.";
+      } else {
+	stringstream ss_record_info;
+	int n_pass = pns.size() - n_missing;
+	float altFreq = altCnt / 2./ float ( n_pass );
+	ss_record_info << "NS=" << n_pass << ";AF=" << setprecision(4) << altFreq;
+	record.info = ss_record_info.str();
+	float llh_alt = 0, llh_00 = 0;
+	float freq0 = (1 - altFreq) * (1 - altFreq);
+	float freq1 = 2 * altFreq * (1 - altFreq);
+	float freq2 = altFreq * altFreq;
+	for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
+	  pi2 = pi3->second.find(*pi);
+	  if ( pi2 == pi3->second.end() ) // missing data 
+	    continue;
+	  llh_00 +=  ( (pi2->second).g0 > 0 ? log( (pi2->second).g0 ) : ( - LOG10_GENO_PROB ) ) ;
+          llh_alt += log (freq0 * (pi2->second).g0 + freq1 * (pi2->second).g1 + freq2 * (pi2->second).g2);
+	}
+	record.qual = llh_alt - llh_00; 
+	if (record.qual  <= llh_th)  
+	  record.filter = "chisq1";
+      } 
       writeRecord(vcfout, record);  
       clear(record.genotypeInfos);
     } 
-    cout << *ci << " size " << pos_pnProb.size() << endl;
+    cout << *ci << " size " << pos_pnInfo.size() << endl;
   }  // chrn finished
   clear(record);
   seqan::close(vcfout);

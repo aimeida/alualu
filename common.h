@@ -30,14 +30,14 @@ using namespace std;
 #define COVERAGE_HIGH 90
 // macro for alu_insert
 #define DISCORDANT_LEN 2000 
-#define INS_COVERAGE_MAX 6 // a random number, remove some high coverage regions 
+#define MISSING_CNT 5      // consider as missing if reads count below this number
 #define SCAN_WIN_LEN 400   // 0.99 quantile. 450 for 0.999 quantile. only approximate,different reading group differs
 #define LEFT_PLUS_RIGHT 3  // minimum sum of left and right reads
 #define MAX_LEN_REGION 100 // max length of insert region
-#define MAX_POS_DIF 50  // combine scanned insertion loci 
-#define ALIGN_END_CUT 10 // cut the last 10 bp while realign to reference
+#define MAX_POS_DIF 50     // combine scanned insertion loci 
+#define ALIGN_END_CUT 10   // cut the last 10 bp while realign to reference
 #define CLIP_BP_LEFT 10
-#define CLIP_BP_MID 30  // include when using the mean of clipLeft and clipRight 
+#define CLIP_BP_MID 30     // include when using the mean of clipLeft and clipRight 
 
 inline int round_by_resolution(int x, int r) {
   double x1 = (double) x / r;
@@ -197,5 +197,6 @@ void parse_chrns(string s_chrns, vector<string> &chrns);
 void split_by_sep(string &str, string &m, string &n, char sep );
 int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int minInput); 
 int major_two_keys (vector <int> & ps, int & k1, int & k2, int & kf1, int & kf2, int bin_width, float freq_th, bool debugprint = false );
+void intersect_fast0(list <pair<int, int> > & query, list <pair<int, int> > & db, list <pair<int, int> > & query_no_overlap);
 
 #endif /*COMMON_H*/

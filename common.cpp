@@ -202,3 +202,18 @@ int major_two_keys (vector <int> & ps, int & k1, int & k2, int & kf1, int & kf2,
   
   return 0;
 }
+
+void intersect_fast0(list <pair<int, int> > & query, list <pair<int, int> > & db, list <pair<int, int> > & query_no_overlap){
+  query.sort();
+  db.sort();
+  query_no_overlap.clear();
+  list <pair<int, int> >::iterator d2 = db.begin();
+  for (list <pair<int, int> >::iterator d1 = query.begin(); d1 != query.end(); d1++ ) {
+    if ( (*d1).second <= 0 )  continue;
+    while ( (*d1).first >= (*d2).second and d2 != db.end() )  d2++;
+    if ( d2 != db.end() and  min ((*d2).second, (*d1).second ) - max ( (*d2).first, (*d1).first ) < 0 ) 
+      query_no_overlap.push_back( *d1 ) ;
+    else if ( d2 == db.end() ) 
+      query_no_overlap.push_back( *d1 ) ;
+  }
+}

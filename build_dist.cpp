@@ -120,7 +120,7 @@ int main( int argc, char* argv[] )
     fin.close();
   } else if ( opt == "mason_db" ) {  // write database for mason simulation
     
-    string path_input = "/home/qianyuxx/faststorage/AluDK/inputs/alu_hg19_filter/";
+    string path_input = "/home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/";
     string path_output = "/home/qianyuxx/faststorage/AluDK/inputs/alu_hg19_mason/";
     AluRefPos *alurefpos;
 

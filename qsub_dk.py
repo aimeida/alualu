@@ -14,7 +14,7 @@ def print2(pn_all, fn_path, path1, bin_path, time_sec):
                 print >>fout, "#SBATCH -t 0-0:%d:0"%time_sec
             else:
                 print >>fout, "#SBATCH -p normal"
-                print >>fout, "#SBATCH -t 0-5:0:0" 
+                print >>fout, "#SBATCH -t 0-8:0:0" 
 
             print >>fout, "#SBATCH --mem=4g" 
             print >>fout, "#SBATCH --job-name %d_%s" % (pi, pn)
@@ -63,8 +63,8 @@ def ins_del(fn, bin_path, opt):
 if __name__ == '__main__':
     path1 = '/home/qianyuxx/faststorage/Alu/'
     pn_all = map(lambda x:x.strip(), file('/home/qianyuxx/faststorage/AluDK/inputs/PN_all').readlines())
-    #print2(pn_all, path1+"q_ad/", path1, path1 + 'opt3/', 159)
-    print2(pn_all, path1+"q_ad/", path1, path1 + 'opt3/', 59)
+    print2(pn_all, path1+"q_ad/", path1, path1 + 'opt3/', 159)
+    #print2(pn_all, path1+"q_ad/", path1, path1 + 'opt3/', 59)
 
     pn_used = map(lambda x:x.strip(), file('/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used').readlines())
     #print2(pn_used, path1+"q_ai/", path1, path1 + 'opt3/', 59)

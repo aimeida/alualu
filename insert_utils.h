@@ -51,18 +51,18 @@ public:
  ALUREAD_INFO(seqan::CharString & qn, int tp, int cl, int p, int rlen, bool t) : qName(qn), this_pos(tp), clipLeft(cl), pos(p), readLen(rlen), sameRC(t){ }
 };
 
-
 bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 
 bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header);
-bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int min_midCnt, bool test_print = false);
+int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int min_midCnt, bool test_print);
 int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);  // consensus sequence is quite long 
 void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);
 bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float dif_th, string loginfo) ;
 
 bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th);
 string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th);
+bool covered_reads(BamFileHandler * bam_fh, string chrn, int p1, int p2, int minCnt); 
 
 // following, depreciated
 void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID_pn, string chrn, string file_pn_used_output, float percentage_pn_used);

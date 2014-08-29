@@ -1,3 +1,4 @@
+## old output format
 import sys
 import math
 import itertools
