@@ -28,9 +28,6 @@ ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
 ALU_INSERT_FILES_CPP = alu_insert.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
 ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
 
-ALU_INSERT2_FILES_CPP = alu_insert2.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
-ALU_INSERT2_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT2_FILES_CPP))
-
 BUILD_DIST_FILES_CPP = build_dist.cpp common.cpp utils.cpp
 BUILD_DIST_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_FILES_CPP))
 
@@ -53,9 +50,6 @@ $(OD)/alu_delete: $(OD) $(ALU_DELETE_FILES_O)
 
 $(OD)/alu_insert: $(OD) $(ALU_INSERT_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSERT_FILES_O)
-
-$(OD)/alu_insert2: $(OD) $(ALU_INSERT2_FILES_O) 
-	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(ALU_INSERT2_FILES_O)
 
 $(OD)/build_dist: $(OD) $(BUILD_DIST_FILES_O) 
 	$(CC) -o $@ $(CPPFLAGS) $(LIB) $(BUILD_DIST_FILES_O)

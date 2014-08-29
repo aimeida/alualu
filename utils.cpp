@@ -25,9 +25,24 @@ EmpiricalPdf::EmpiricalPdf(string pdf_file){
 float EmpiricalPdf::pdf_obs(int insertlen) {
   if (insertlen >= max_len || insertlen <= min_len) return min_prob;
   int nearby_pos = min_len + (insertlen-min_len)/bin_width*bin_width;
-  map<int, float >::iterator it = prob_vec.find(nearby_pos);
+  map <int, float >::iterator it = prob_vec.find(nearby_pos);
   if ( it != prob_vec.end())  return it->second;
   return min_prob;
+}   
+
+void EmpiricalPdf::ratio_obs(int y, int z, float log10_ratio_ub, float & py, float & pz) {
+  assert( y > z);
+  float min_ratio = pow(10, - abs(log10_ratio_ub));
+  if ( z < 0 ) {
+    py = 1; pz = min_ratio;
+  } else {
+    float yz_ratio = pdf_obs(y) / pdf_obs(z);
+    if ( yz_ratio >= 1 ) {
+      py = 1; pz = max(1/yz_ratio, min_ratio);
+    } else {
+      py = max(yz_ratio, min_ratio); pz = 1;
+    }
+  }
 }   
 
 void EmpiricalPdf::delete_map(map <int, EmpiricalPdf *> & epdf_rg){
@@ -126,12 +141,12 @@ bool BamFileHandler::write_a_read(seqan::BamAlignmentRecord & record) {
   return write2(outStream, record, context, seqan::Bam()) == 0;
 }
 
-BamFileHandler * BamFileHandler::openBam_24chr(string bam_input, string bai_input) {
+BamFileHandler * BamFileHandler::openBam_24chr(string bam_input, string bai_input, string bam_output) {
   vector<string> chrns;
   for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
   chrns.push_back("chrX");
   chrns.push_back("chrY");
-  return new BamFileHandler(chrns, bam_input, bai_input);
+  return new BamFileHandler(chrns, bam_input, bai_input, bam_output);
 }
 
 FastaFileHandler::FastaFileHandler(string fn_fa) {
@@ -177,6 +192,15 @@ seqan::CharString FastaFileHandler::fasta_seq(string fa_input, string seq_name,i
 AluconsHandler::AluconsHandler(string fn_fa, string sn):
   FastaFileHandler(fn_fa) {
   update_seq_name(sn);
+  ifstream fin( (fn_fa+".fai").c_str() );
+  string line, aname;
+  stringstream ss;
+  while (getline(fin, line)) {
+    ss.clear(); ss.str(line);
+    ss >> aname;
+    seq_names.push_back(aname);
+  }
+  fin.close();
 }
 
 void AluconsHandler::update_seq_name(string sn) {
@@ -343,16 +367,19 @@ bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seq
 RepMaskPos::RepMaskPos(string file_rmsk, vector<string> &chrns, int join_len){
   ifstream fin(file_rmsk.c_str());
   assert(fin);
-  string line, chrn;
+  string line, chrn, repType;
   int beginPos, endPos, beginPos_pre, endPos_pre;
   stringstream ss;  
   map<string, std::set <RepDB1> > rep_db;
   while (getline(fin, line)) {
     ss.clear(); ss.str( line );
-    ss >> chrn >> beginPos >> endPos;
-    if ( find(chrns.begin(), chrns.end(), chrn) == chrns.end() ) continue;
-    RepDB1 one_rep = RepDB1(beginPos, endPos, "");
-    rep_db[chrn].insert(one_rep);  // sorted
+    ss >> chrn >> beginPos >> endPos >> repType;
+    //    if ( repType.substr(0,3) == "Alu" or repType.substr(0,2) == "L1") {  // power low in G1000 genome
+    if ( repType.substr(0,3) == "Alu") {
+      if ( find(chrns.begin(), chrns.end(), chrn) == chrns.end() ) continue;
+      RepDB1 one_rep = RepDB1(beginPos, endPos, "");
+      rep_db[chrn].insert(one_rep);  // sorted
+    }
   }
   fin.close();    
   for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
@@ -448,6 +475,49 @@ AluRefPos::AluRefPos(string fn, int minLen_alu) {
   db_size = alu_db.size();
 }
 
+AluRefPos::AluRefPos(string fn, int minLen_alu, int minDist_neighbor) {
+  // assume input is sorted 
+  ifstream fin( fn.c_str());
+  assert(fin);
+  string chrn, at, line;
+  int bp, ep, bp_pre, ep_pre;
+  stringstream ss;
+  list <RepDB1> alu_db_list;
+  getline(fin, line);
+  ss.str(line);
+  ss >> chrn >> bp_pre >> ep_pre;
+  while ( getline(fin, line)) {
+    ss.clear(); ss.str(line);
+    ss >> chrn >> bp >> ep >> at;
+    bool flag = true;
+    if ( !alu_db_list.empty() and abs( (alu_db_list.back()).end_pos - bp ) < minDist_neighbor ) {
+      alu_db_list.pop_back();
+      flag = false;
+    } else if ( minLen_alu > 0 and ep - bp < minLen_alu) {      
+      flag = false;
+    } else if ( abs(ep_pre - bp) < minDist_neighbor ) {
+      flag = false;
+    }     
+    ///cout << flag << " " << bp << " " << alu_db_list.size() << endl;
+    if (flag ) {
+      RepDB1 one_alu = RepDB1(bp, ep, at);
+      alu_db_list.push_back( one_alu );
+    }
+    bp_pre = bp;
+    ep_pre = ep;
+  }
+  fin.close();  
+  RepDB1 one_alu = RepDB1(bp_pre, ep_pre, at);
+  alu_db_list.push_back( one_alu );
+
+  for (list <RepDB1>::iterator al = alu_db_list.begin(); al != alu_db_list.end(); al++ ) 
+    alu_db.insert(*al);
+  alu_db_list.clear();
+
+  adi = alu_db.begin(); // initialize pointer
+  db_size = alu_db.size();
+}
+
 bool AluRefPos::within_alu( int pos) {
   for (std::set <RepDB1>::iterator di = alu_db.begin(); di != alu_db.end(); di++ )  {
     if ( pos >= (*di).begin_pos and pos <= (*di).end_pos )
@@ -464,9 +534,9 @@ void AluRefPos::debug_print() {
     cout << (*di).begin_pos << " " << (*di).end_pos << endl;
 }
 
-
 string phred_scaled(float p0, float p1, float p2) {
   float pmax = max(p0, max(p1, p2));
+  //cout << p0 << " " << p1 << " " << p2 << " " << pmax << " " << p0/pmax << endl;
   string s0 =  ( p0 == pmax ) ?  "0" : phred_log(p0/pmax);
   string s1 =  ( p1 == pmax ) ?  "0" : phred_log(p1/pmax);
   string s2 =  ( p2 == pmax ) ?  "0" : phred_log(p2/pmax);

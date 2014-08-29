@@ -1,0 +1,59 @@
+###################################
+##### 1. preprocess
+   sort the alu position file
+  I changed "file_alupos_prefix" in config file, 
+  you should just copy the folder at      /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/alu_hg18/
+  to 
+  /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/alu_hg18/
+  to preprocess the input files and make folders, run:
+        "alu_delete config.decode preproces"
+        "alu_insert config.decode preprocess"
+
+###################################
+##### 2. run alu_deletion
+     (1) make opt3/alu_delete
+     (2) run "alu_delete config.decode write_tmps_pn X" 
+       (X is index of PN according to the file_pn ), eg, if we have 2000 PNs, then we will have 2000 jobs running at 2000 nodes, with X from 0 to 1999.
+        I recall that deCODE doesn't allow to submit more than 500 jobs at one go, because the crazy IO will almost destroy the clusters.
+       For each PN, estimated cpu time is about 5 hrs (some strange PN can run up to 13 hrs, if I remember it right)
+
+     (3) run "alu_delete config.dk write_vcf_pns"
+         make big vcf files     
+
+###################################
+##### 3. run alu_insertion 
+      step(2) takes a few hours to run, however, I've comment out the time consuming part (we've run it one month ago), so right now it takes a few minutes
+      all the other steps takes < 60 min, < 4G memory is safe for 99.9% samples.
+
+     (1)  make opt3/alu_insert
+     (2)  run "alu_insert config.decode write_tmps_pn X"
+          X similar to above. 
+	  ##### NB: I comment out line 1439 - 1464, because previously these steps are done one month ago, 
+                    however, we filtered too many regions ( from *tmp3 to *tmp3st files), so the function filter_location_rep() needs to be rerun.
+
+     (3)  make a file, @file_pn_used ( eg. "/nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/pn_used" in config.decode)
+     	  which is a subset of /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/PN_all, 
+	  where all failed PNs or PNs with large amount of discordant reads are excluded, otherwise, the program might run forever.
+	  I remember last time i removed 10% of them. 
+
+     (4) run "alu_insert config.decode combine_pos_pns"
+          which generate files named insert_alu1/insert_pos.chr*  
+
+     (5) run "alu_insert config.decode clipReads_pn X" for each pn
+         (X is index of PN according to the /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/PN_all/, eg, 0, 1, 2 ... )
+         if the corresponding pn name does not exist in /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/pn_used, the program will simply skip running and quit.
+
+     (6) run "alu_insert config.decode clipReads_pns chrX" for each chromosome (chr1 - chrX)
+        which generate files at  insert_alu1/clip/chr*.clip_pn and  insert_alu1/clip/chr*.clip_region
+	
+     (7) run "alu_insert config.decode write_tmp0_pn X" for each pn
+         which writes alu and clip reads for each PN, at insert_alu1/cons/chr*/*
+
+     (8) run "alu_insert config.decode clipPos_pns chrX" for each chromosome (chr1 - chrX)
+         write exact insertion breakpoints at  insert_alu1/chr*_clip_pass       
+
+     (9) run "alu_insert config.decode write_tmp2_pn X" for each pn
+         genotype calling      
+
+     (10) run "alu_insert config.decode fixed_vcf_pns" 
+         final vcf file

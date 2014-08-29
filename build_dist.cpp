@@ -118,6 +118,32 @@ int main( int argc, char* argv[] )
       write_pdf(f_count, f_prob, len_min, len_max, bin_width);    
     }
     fin.close();
+  } else if ( opt == "mason_db" ) {  // write database for mason simulation
+    
+    string path_input = "/home/qianyuxx/faststorage/AluDK/inputs/alu_hg19/";
+    string path_output = "/home/qianyuxx/faststorage/AluDK/inputs/alu_hg19_mason/";
+    AluRefPos *alurefpos;
+
+    vector<string> chrns;
+    for (int i = 1; i < 23; i++)  chrns.push_back("chr" + int_to_string(i) );
+    chrns.push_back("chrX");
+    chrns.push_back("chrY");
+    for (vector<string>::iterator ci = chrns.begin(); ci!= chrns.end(); ci++) {
+      string chrn = *ci;
+      alurefpos = new AluRefPos(path_input + "alu_" + chrn, 200, 600);  // no Alu within 600 bp 
+      ofstream fout ( (path_output + "alu_" + chrn).c_str() );
+      while ( alurefpos->nextdb() ) {
+	string at;
+	int beginPos, endPos;
+	beginPos = alurefpos->get_beginP();
+	endPos = alurefpos->get_endP();
+	at = alurefpos->get_type();
+	fout << chrn << " " << beginPos << " " << endPos << " " <<  at << endl;
+      }
+      delete alurefpos;
+      fout.close();
+    }
+    
   } else if ( opt == "debug" ) {
     
     string s1 = "apple is apple\n";

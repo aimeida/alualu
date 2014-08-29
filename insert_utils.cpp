@@ -11,19 +11,6 @@ void AlumateINFO::delete_list(list <AlumateINFO *> & alumate_list){
   alumate_list.clear();
 }
 
-// only support 4 types for now 
-string parse_alu_type(string alu_name){
-  assert ( !alu_name.empty() );
-  if ( alu_name.substr(0,4) == "AluY") return "AluY";
-  if ( alu_name.substr(0,4) == "AluS") return "AluSx";
-  if ( alu_name.substr(0,4) == "AluJ") {
-    if ( alu_name.substr(0,5) == "AluJo") return "AluJo";
-    if ( alu_name.substr(0,5) == "AluJb") return "AluJb";
-    return "AluJo";
-  }
-  return "AluY";
-}
-
 /** move read *S*M to left until can't move */
 bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len) {
   int i = 1;  // i = 0 is the last match by BWA
@@ -93,123 +80,79 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-bool parseline_del_tmp0(string line0, string & output_line, map <int, EmpiricalPdf *> & pdf_rg, int estimatedAluLen, string line1){
+int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int min_midCnt, bool test_print) {
   float *log10_gp = new float[3];
-  stringstream ss, ss_out;
-  string chrn, pos, posr, token;
-  int idx, insert_len;
-  int clipCnt = 0, unknowCnt = 0, midCnt = 0;  
+  stringstream ss;
+  string chrn, insertMid, debugInfo, token;
+  int idx, insert_len, midCnt, clipCnt, unknowCnt;
   vector < pair <int, int> > unknowInfo;
-  if ( !line0.empty() ) { 
-    ss.str(line0);
-    ss >> chrn >> pos >> posr >> clipCnt >> unknowCnt ;
-    for (int i = 0; i < unknowCnt; i++) {
-      getline(ss, token, ':');
-      seqan::lexicalCast2(idx, token);
-      getline(ss, token, ' ');
-      seqan::lexicalCast2(insert_len, token);      
-      unknowInfo.push_back( make_pair(idx, insert_len) );
+  ss.str(line0); 
+  ss >> chrn >> insertMid >> debugInfo >> midCnt;
+  string exact_left, exact_right;
+  split_by_sep(debugInfo, exact_left, exact_right, ',');  
+  if ( exact_left  == "0" ) exact_left = exact_right;
+  if ( exact_right == "0" ) exact_right = exact_left;
+
+  if (midCnt < min_midCnt) {
+    if ( midCnt < 0 ) {
+      fout << chrn << " " << exact_left << " " << exact_right << " " << midCnt << endl;
+    } else {
+      ss >> clipCnt >> unknowCnt;
+      int _cnt = midCnt + clipCnt + unknowCnt;
+      if (_cnt >= MISSING_CNT)   // otherwise consider as missing data 
+	fout << chrn << " " << exact_left << " " << exact_right << " " << - _cnt << endl;
     }
-  }
-  int _aluCnt, _clipCnt, _ukCnt;
-  if ( !line1.empty() ) { 
-    ss.clear(); ss.str(line1);
-    ss >> chrn >> pos >> _aluCnt >> _clipCnt >> _ukCnt;
-    midCnt = _aluCnt + _clipCnt;
-    unknowCnt += _ukCnt;
-    for (int i = 0; i < _ukCnt; i++) {
-      getline(ss, token, ':');
-      seqan::lexicalCast2(idx, token);
-      getline(ss, token, ' ');
-      seqan::lexicalCast2(insert_len, token);
-      unknowInfo.push_back( make_pair(idx, insert_len) );
-    }   
+    return 0;
   }
 
-  float prob_ub = pow(10, -LOG10_RATIO_UB);
-  float prob_known = (midCnt+clipCnt)/(float)(midCnt + clipCnt + unknowCnt);
+  ss >> clipCnt >> unknowCnt;
+  float ph0 = 0.5;
+  logPE = - abs(logPE);
+  float logPM = log10 ( 1 - pow(10, logPE) );
+  float *gp = new float[3];
   for (int i = 0; i < 3; i++) log10_gp[i] = 0;
-  if (prob_known) {
-    log10_gp[0] = clipCnt * log10 ( prob_known * prob_ub ) + midCnt * log10 ( prob_known * (1 - prob_ub) ); // no deletion (insertion)
-    log10_gp[1] = (midCnt + clipCnt) * log10 (prob_known * 0.5) ; 
-    log10_gp[2] = midCnt * log10 ( prob_known * prob_ub ) + clipCnt * log10 ( prob_known * (1 - prob_ub) );
+  if (clipCnt + midCnt > 0 ) {
+    log10_gp[0] = clipCnt * logPE + midCnt * logPM;
+    log10_gp[1] = midCnt * log10 (ph0) + clipCnt * log10 (1 - ph0) + (midCnt + clipCnt) * logPM  ;
+    log10_gp[2] = midCnt * logPE + clipCnt * logPM;
   }
+  for (int i = 0; i < unknowCnt; i++) {
+    getline(ss, token, ':');
+    seqan::lexicalCast2(idx, token);
+    getline(ss, token, ' ');
+    seqan::lexicalCast2(insert_len, token);      
+    float p_y, p_z;
+    if (midCnt >= 3 ) // conservative 
+      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1, p_y, p_z);
+    else
+      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 0.5, p_y, p_z);
 
-  for (vector < pair <int, int> >::iterator ui = unknowInfo.begin(); ui != unknowInfo.end(); ui++ ) {
-    int idx = (*ui).first;
-    int insert_len = (*ui).second;
-    float p_y = pdf_rg[idx]->pdf_obs(insert_len + estimatedAluLen);   // no deletion (insertion)
-    float p_z = pdf_rg[idx]->pdf_obs(insert_len);
-    //float freq0 = 0.67;  // high FP ratio      
-    float freq0 = ( midCnt + 1 )/(float)(midCnt + clipCnt + 2); // 1 and 2 are psudo count
-    log10_gp[0] += log10 (p_y * (1 - prob_known));
-    log10_gp[1] += log10 ((freq0 * p_y + (1 - freq0) * p_z) * (1 - prob_known) ) ;
-    log10_gp[2] += log10 (p_z * (1 - prob_known));
+    log10_gp[0] += log10 (p_y);
+    log10_gp[1] += log10 (ph0 * p_y + (1 - ph0) * p_z) ;
+    log10_gp[2] += log10 (p_z);
+//     if (test_print) {
+//       cout << "y: " << p_y << " " << insert_len + estimatedAluLen << " " << pdf_rg[idx]->pdf_obs(insert_len + estimatedAluLen) << endl;
+//       cout << "z: " << p_z << " " << insert_len << " " << pdf_rg[idx]->pdf_obs(insert_len) << endl;
+//     }
+  }  
+
+  if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
+    fout << chrn << " " << exact_left << " " << exact_right << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
+    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+    fout << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << estimatedAluLen << endl;  // NB: switch 00 and 11, unlike alu_delete
+
+    if (test_print) {
+      cout << log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
+      cout << "phred " << phred_scaled(gp[2], gp[1], gp[0]) << endl;
+    }
+
+  } else {
+    fout << chrn << " " << exact_left << " " << exact_right << " " << -(midCnt + clipCnt + unknowCnt) << endl;
   }
   
-  bool use_this_line = false;
-  if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
-    ss_out << chrn << " " << pos << " " << estimatedAluLen << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
-    float *gp = new float[3];
-    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
-    ss_out << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0];  // NB: switch 00 and 11, unlike alu_delete
-    delete gp;    
-    output_line = ss_out.str();
-    use_this_line = true;
-  }
+  delete gp;    
   delete log10_gp;
-  return use_this_line;
-}
-
-bool global_align_insert(const int hasRCFlag, seqan::CharString & seq_read, seqan::CharString & seq_ref, int &score, int cutEnd, float th_score, bool verbose){
-  score = 0;
-  if (verbose) {
-    cout << "verbose #1 " << seq_read << endl;
-    cout << "verbose #2 " << seq_ref << endl;
-  }
-  size_t align_len = length(seq_read);
-  if ( align_len < CLIP_BP) return false;
-  seqan::Score<int> scoringScheme(1, -2, -2, -2); // match, mismatch, gap extend, gap open
-  TAlign align;
-  resize(rows(align), 2);
-  assignSource(row(align,0), seq_read); // 2,3, true means free gap
-  assignSource(row(align,1), seq_ref);   // 1,4
-  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>()); 
-  if (score >= round(th_score * align_len)  )
-    return true;
-  // otherwise cut the end and realign
-  if (verbose)  cout << align << endl;  
-  if ( (int)align_len <= CLIP_BP + cutEnd) return false;
-  if (!hasRCFlag){
-    assignSource(row(align,0), infix(seq_read, 0, align_len - cutEnd )); 
-    assignSource(row(align,1), infix(seq_ref, 0, align_len - cutEnd ));  
-  } else {
-    assignSource(row(align,0), infix(seq_read, cutEnd, align_len)); 
-    assignSource(row(align,1), infix(seq_ref, cutEnd, align_len));      
-  }
-  score = globalAlignment(align, scoringScheme, seqan::AlignConfig<true, true, true, true>());   
-  if (verbose)  cout << align << endl;
-  return score >= round(th_score * (align_len - cutEnd)) ;
-}
-
-bool align_clip_to_ref(char left_right, int adj_clipPos,  int clipPos, int align_len, seqan::BamAlignmentRecord &record, FastaFileHandler *fasta_fh, ofstream &fout, string  header) {
-  const int ref_plus_bp = 10; // allow small indels
-  int score;
-  seqan::CharString ref_fa;
-  seqan::CharString read_clip_fa;
-  int read_len = length(record.seq);
-  if (left_right == 'R') {
-    fasta_fh->fetch_fasta_upper(adj_clipPos, adj_clipPos + align_len + ref_plus_bp, ref_fa);    
-    read_clip_fa = infix(record.seq, read_len - align_len, read_len);
-  } else if (left_right == 'L') {
-    fasta_fh->fetch_fasta_upper(adj_clipPos - align_len - ref_plus_bp, adj_clipPos, ref_fa);
-    read_clip_fa = infix(record.seq, 0, align_len);
-  }
-  if (global_align_insert( hasFlagRC(record), read_clip_fa, ref_fa, score, ALIGN_END_CUT, 0.7) ) {
-    fout << header << left_right << " " << adj_clipPos << " " << record.qName << " " << clipPos << " " <<  get_cigar(record) << endl;
-    return true;
-  }
-  return false;
+  return 0;
 }
 
 int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
@@ -323,4 +266,64 @@ void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID
   for (map < string, int >::iterator pi = pn_lineCnt.begin(); pi != pn_lineCnt.end(); pi++)
     if ( pi->second <= cnt_th) fout << pi->first << endl;
   fout.close();
+}
+
+bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th){
+  TAlign align;
+  seqan::Score<int> scoringScheme(0, -1, -1, -2); 
+  resize(rows(align), 2);
+  assignSource(row(align,0), ref_fa);  // 2,3
+  assignSource(row(align,1), alucons);   // 1,4, free gap at end
+  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
+  int align_start = max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
+  int align_end = min(toViewPosition(row(align, 0), length(ref_fa)), toViewPosition(row(align, 1), length(alucons)));
+  sim_rate = 0;
+  int align_len = align_end - align_start;
+  if ( align_len <= CLIP_BP or align_len <= sim_th * length(ref_fa))
+    return false;
+  TRow &row0 = row(align,0);
+  TRowIterator it0 = begin(row0);
+  TRow &row1 = row(align,1);
+  TRowIterator it1 = begin(row1);
+  int i = 0, dif = 0;
+  while ( i++ < align_start ) {  it0++; it1++; }
+  while ( i++ <= align_end) {
+    if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
+    it0++; it1++;
+  }
+  sim_rate = 1 - dif / (float) align_len;
+  ///if (sim_rate >= sim_th) cout << "ok " << align << endl;
+  return  sim_rate >= sim_th;
+}
+
+string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th){
+  for ( vector<string>::iterator si = (alucons_fh->seq_names).begin(); si != (alucons_fh->seq_names).end(); si++) {
+    alucons_fh->update_seq_name(*si);
+    for (int k = 1; k <= 4; k++) 
+      if (align_alu_cons(ref_fa, alucons_fh->fetch_alucons(k), sim_rate, sim_th))
+	return *si;
+  }  
+  return "";
+}
+
+bool covered_reads(BamFileHandler * bam_fh, string chrn, int p1, int p2, int minCnt){
+  if (! bam_fh->jump_to_region(chrn, p1, p2) ) return false;
+  seqan::BamAlignmentRecord record;
+  int cnt = 0;
+  while ( true ) {
+      string read_status = bam_fh->fetch_a_read(chrn, p1, p2, record);
+      if (read_status == "stop" ) break;
+      if (read_status == "skip" or !QC_insert_read(record)) continue; 
+      if (record.rID != record.rNextId) continue;
+      if (abs(record.tLen) > DISCORDANT_LEN ) {
+	cnt++;
+      } else {
+	int r1 = min ( record.beginPos, record.beginPos + abs(record.tLen) );
+	int r2 = max ( record.beginPos, record.beginPos + abs(record.tLen) );
+	if ( min(p2, r2) - max (r1, p1) > 0 )
+	  cnt++;
+      }
+      if ( cnt >= minCnt) return true;
+  }
+  return cnt >= minCnt;
 }

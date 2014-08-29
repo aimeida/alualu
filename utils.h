@@ -47,9 +47,22 @@ inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){
   unsigned i = length(record.cigar) - 1;
   return (record.cigar[i].operation == 'S') and (record.cigar[i].count >= min_bp) ;
 };
+
 inline bool has_soft_first(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
   return (record.cigar[0].operation == 'S') and (record.cigar[0].count >= min_bp); 
 };
+
+// if pair is Alu
+inline bool aluclip_RC_match(seqan::BamAlignmentRecord &record, bool s1, bool s2){
+  if ( (record.rID != record.rNextId ) or abs(record.tLen) > DISCORDANT_LEN ) {
+    if ( s1 and !hasFlagRC(record))   // left of breakpoint
+      return true;
+    if ( s2 and hasFlagRC(record))
+      return true;
+    return false;
+  }
+  return true;
+}
 
 inline int count_non_match(seqan::BamAlignmentRecord &record){ 
   int non_match_len = 0;
@@ -60,7 +73,12 @@ inline int count_non_match(seqan::BamAlignmentRecord &record){
 
 inline bool p00_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[2] - log10_p[0], log10_p[1] - log10_p[0]) <= min_log10p; }
 inline bool p11_is_dominant(float * log10_p, int min_log10p) { return  max( log10_p[0] - log10_p[2], log10_p[1] - log10_p[2]) <= min_log10p; }
-inline string phred_log (float p) { return p ? (int_to_string (-(int)(log10 (p) * 10)) ) : "255"; }
+inline string phred_log (float p) { 
+  if (!p) return "255";
+  //float tmpf = -(log10 (p) * 10); 
+  float tmpf = max( (float) 1.0, - (log10 (p) * 10)) ; 
+  return int_to_string( (int) tmpf );
+}
 
 class EmpiricalPdf
 {
@@ -70,6 +88,7 @@ class EmpiricalPdf
  public:
   EmpiricalPdf(string pdf_file);
   float pdf_obs(int insertlen);
+  void ratio_obs(int y, int z, float log10_ratio_ub, float & py, float & pz);
   static void delete_map(map <int, EmpiricalPdf *> & epdf_rg); 
 };
 
@@ -87,7 +106,7 @@ class BamFileHandler{
   bool get_chrn(int query_rid, string & pairChrn);
   void print_mapping_rID2chrn();
   bool write_a_read(seqan::BamAlignmentRecord & record);  
-  static BamFileHandler * openBam_24chr(string bam_input, string bai_input=""); // chr1 - chrY
+  static BamFileHandler * openBam_24chr(string bam_input, string bai_input="", string bam_output=""); // chr1 - chrY
 
  private:
   TNameStore  nameStore;
@@ -114,9 +133,10 @@ class FastaFileHandler {
 
 class AluconsHandler : public FastaFileHandler {
  public:
+  vector <string> seq_names;
   string seq_name;
   int seq_len;
-  AluconsHandler(string fn_fa, string sn);
+  AluconsHandler(string fn_fa, string sn = "AluY");
   void update_seq_name(string sn);
   seqan::CharString fetch_alucons(int key);
  private:
@@ -146,7 +166,8 @@ class AluRefPos   // used by alu_delete, alu_insert
 {
 public: 
   int db_size;
-  AluRefPos(string fn, int minLen_alu = 0);   
+  AluRefPos(string fn, int minLen_alu);
+  AluRefPos(string fn, int minLen_alu, int minDist_neighbor);   
   bool nextdb(){ adi++; return adi != alu_db.end();}
   int get_beginP() const { assert(adi != alu_db.end()); return (*adi).begin_pos; }
   int get_endP() const { assert(adi != alu_db.end()); return (*adi).end_pos; }
