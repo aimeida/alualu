@@ -50,23 +50,6 @@ class VCF_PARSER():
                     if j < 0:
                         continue
                     self.seqs[i] += tmp[j].split(':')[0]
-
-
-def check_vcf_freq(fn_vcf, qual_th, fn_pn_used):
-    vcf_fh = VCF_PARSER(fn_vcf, fn_pn_used)
-    id1 = vcf_fh.header.index('FILTER')
-    id2 = vcf_fh.header.index('FORMAT') + 1
-    id3 = vcf_fh.header.index('INFO')
-    with open(fn_vcf) as fin:
-        for line in fin:
-            if line.startswith('#'):
-                continue
-            tmp = line.strip().split('\t')
-            if tmp[id1] == qual_th:
-                altCnt = sum(map(lambda x:int(x.split(':')[0]), tmp[id2:]) )
-                af = tmp[id3].split('AF=')[1]
-                ns = int ( tmp[id3].split(';')[0].split('=')[1] ) 
-                print tmp[1], altCnt, ns, af, altCnt/2./float(ns), '###'
     
 def one_family(pn1, pn2, pn3, pos, allow_denovo, verbose):
     def p2c(parent):
@@ -109,16 +92,10 @@ def read_vcf(fn, qual_th, fn_pn_used):
     vcf_fh.read_content(qual_th)
     #print len(vcf_fh.seqs), len(vcf_fh.chr_pos)
     #print vcf_fh.seqs.values()[0]
-    
     for gn, v1 in vcf_fh.trio_group.items():
-#      ## debugging                                                                                                                
         if verbose:
             if gn != '1006':
                 continue                                                                                                             
-
-#        print gn, len(v1)
-#        continue
-
         if len(v1) != 3:
             continue
         pn_father = v1['F']
@@ -126,6 +103,25 @@ def read_vcf(fn, qual_th, fn_pn_used):
         pn_child = v1['C']
         print 'check family ', gn
         one_family(vcf_fh.seqs[pn_father], vcf_fh.seqs[pn_mother], vcf_fh.seqs[pn_child], vcf_fh.chr_pos, allow_denovo, verbose)
+
+
+def hwe_txt(fn_vcf, fn_pn_used, fn_txt, qual_th = 'PASS'):
+    vcf_fh = VCF_PARSER(fn_vcf, fn_pn_used)
+    id1 = vcf_fh.header.index('FILTER')
+    id2 = vcf_fh.header.index('FORMAT') + 1
+    #id3 = vcf_fh.header.index('INFO')
+    fout = file(fn_txt,'w')
+    print >>fout, '#CHROM POS', ' '.join(vcf_fh.pns)
+    with open(fn_vcf) as fin:
+        for line in fin:
+            if line.startswith('#'):
+                continue
+            tmp = line.strip().split('\t')
+            ###af = tmp[id3].split('AF=')[1]
+            if tmp[id1] == qual_th:
+                genos = map(lambda x:x.split(':')[0], tmp[id2:])
+                if '.' not in genos:
+                    print >>fout, tmp[0], tmp[1], ' '.join(genos)
 
 if __name__ == "__main__":
     
@@ -149,5 +145,5 @@ if __name__ == "__main__":
     qual_th = 'PASS'
     print 'checking vcf file of', fn_vcf
     print 'allow denovo', allow_denovo
-    #check_vcf_freq(fn_vcf, qual_th, file_pn_used)
-    read_vcf(fn_vcf, qual_th, file_pn_used)
+    #read_vcf(fn_vcf, qual_th, file_pn_used)
+    hwe_txt(fn_vcf, file_pn_used, fn_vcf.replace('.vcf', '.txt')) 
