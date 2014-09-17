@@ -1276,10 +1276,10 @@ void count_skipr(string file_input, map < int, pair <int, int> > & exact_pos, ma
   }
 }
 
-void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, string skip_mk = ""){
+void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, list <pair<int, int> > & qs, int offset, string skip_mk = ""){
   ifstream fin( fn.c_str() );
   assert (fin);
-  string line,tmpv;
+  string line, tmpv;
   int pos;
   stringstream ss;
   getline(fin, line);
@@ -1287,9 +1287,54 @@ void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, strin
     ss.clear(); ss.str( line );
     ss >> pos >> tmpv;
     if (tmpv == skip_mk) continue;
-    pos_seqs[pos].push_back( replace_str0_str(line, pn, int_to_string(pos) ));
+    pair<int, int> key = make_pair( pos - offset, pos + offset);
+    if ( std::find(qs.begin(), qs.end(), key) == qs.end() )
+      continue;
+    stringstream ss_out;
+    ss_out << pn << " " << tmpv.substr(0, 20);
+    while (ss >> tmpv) ss_out << " " << tmpv;
+    pos_seqs[pos].push_back(ss_out.str());
   }
   fin.close();
+}
+
+void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, string skip_mk = ""){
+  ifstream fin( fn.c_str() );
+  assert (fin);
+  string line, tmpv;
+  int pos;
+  stringstream ss;
+  getline(fin, line);
+  while ( getline(fin, line) ) {
+    ss.clear(); ss.str( line );
+    ss >> pos >> tmpv;
+    if (tmpv == skip_mk) continue;
+    stringstream ss_out;
+    ss_out << pn << " " << tmpv.substr(0, 20);
+    while (ss >> tmpv) ss_out << " " << tmpv;
+    pos_seqs[pos].push_back(ss_out.str());
+  }
+  fin.close();
+}
+
+
+void read_seq_pos(string fn, list <pair<int, int> > & qs, int offset, string skip_mk = "") {
+  std::set <int> qss;
+  ifstream fin( fn.c_str() );
+  assert (fin);
+  string line, tmpv;
+  int pos;
+  stringstream ss;
+  getline(fin, line);
+  while ( getline(fin, line) ) {
+    ss.clear(); ss.str( line );
+    ss >> pos >> tmpv;
+    if (tmpv == skip_mk) continue;
+    qss.insert(pos);
+  }
+  fin.close();
+  for (std::set <int>::iterator qi = qss.begin(); qi != qss.end(); qi++) 
+    qs.push_back( make_pair( *qi - offset, *qi + offset) );
 }
 
 void read_clip_pass(string fn_clip_pass, map < int, pair <int, int> > & exact_pos) {
@@ -1436,32 +1481,32 @@ int main( int argc, char* argv[] )
     map <string, int> rg_to_idx;    
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
 
-//    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input);
-//    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
-//    alu_mate_flag(bam_fh, file1, header1, rg_to_idx);
-//
-//    //// write chr*/pn.tmp1  use database to filter alu mate
-//    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
-//    MapFO fileMap;    
-//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-//      fileMap[rc->first] = new ofstream( ( path0 + rc->second + "/" + pn + ".tmp1").c_str() );
-//      assert(fileMap[rc->first]);
-//      *(fileMap[rc->first]) << header2 ;
-//    }     
-//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-//      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_prefix") + "alu_" + rc->second);           
-//    close_fhs(fileMap, bam_fh->rID_chrn);    
-//    
-//    int col_idx = 0;
-//    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-//      string file_tmp1 =  path0 + rc->second +"/" + pn + ".tmp1";
-//      if (!col_idx) col_idx = get_col_idx(file_tmp1, "this_pos"); 
-//      sort_file_by_col<int> (file_tmp1, col_idx, true);
-//    }
-//    move_files(path0+"tmp1s/", file1);    
-//   
-//    alumate_counts_filter(path0, pn, ".tmp1", ".tmp2", ".tmp3", chrns, LEFT_PLUS_RIGHT); 
-//    delete bam_fh;
+    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input);
+    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
+    alu_mate_flag(bam_fh, file1, header1, rg_to_idx);
+
+    //// write chr*/pn.tmp1  use database to filter alu mate
+    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
+    MapFO fileMap;    
+    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+      fileMap[rc->first] = new ofstream( ( path0 + rc->second + "/" + pn + ".tmp1").c_str() );
+      assert(fileMap[rc->first]);
+      *(fileMap[rc->first]) << header2 ;
+    }     
+    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
+      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_prefix") + "alu_" + rc->second);           
+    close_fhs(fileMap, bam_fh->rID_chrn);    
+    
+    int col_idx = 0;
+    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
+      string file_tmp1 =  path0 + rc->second +"/" + pn + ".tmp1";
+      if (!col_idx) col_idx = get_col_idx(file_tmp1, "this_pos"); 
+      sort_file_by_col<int> (file_tmp1, col_idx, true);
+    }
+    move_files(path0+"tmp1s/", file1);    
+   
+    alumate_counts_filter(path0, pn, ".tmp1", ".tmp2", ".tmp3", chrns, LEFT_PLUS_RIGHT); 
+    delete bam_fh;
     
     //// filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
     const int REP_MASK_JOIN = 200;
@@ -1599,15 +1644,21 @@ int main( int argc, char* argv[] )
     string chrn = argv[3];
 
     string pathCons1 = pathCons + chrn + "/" ;
-    map <int, vector<string> > _pos_seqs, pos_seqs;
-    for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
-      read_seq(*pi, pathCons1 + *pi + ".clip", _pos_seqs);  
+    map <int, vector<string> >  pos_seqs;
 
-    // filter pos near the alu region !!
     string file_alu_known = cf_fh.get_conf( "file_alu_known");
-    if (file_alu_known != "na") {
+    if (file_alu_known == "na") {
+      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
+	read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs);    
+
+    } else {
+
       const int FLANKING = 100; 
+      list <pair<int, int> > query;
       list <pair<int, int> > db;
+      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
+	read_seq_pos(pathCons1 + *pi + ".clip", query, FLANKING);
+
       file_alu_known = file_alu_known + "alu_" + chrn;
       ifstream fin(file_alu_known.c_str());
       string line, tmpv;
@@ -1619,20 +1670,29 @@ int main( int argc, char* argv[] )
 	db.push_back(make_pair(aluBegin, aluEnd));
       }
       fin.close();
-      list <pair<int, int> > query;
-      for (map <int,  vector<string> >::iterator pi = _pos_seqs.begin(); pi != _pos_seqs.end() ; pi++ ) 
-	query.push_back( make_pair( pi->first - FLANKING, pi->first + FLANKING ) );
+
+
+      cout << "debug1# " << query.size() << endl;
+      cerr << "debug1# " << query.size() << endl;
+      for (list <pair<int, int> >::iterator qi = query.begin(); qi != query.end(); qi++) {
+	cout << "query " << (*qi).first << " " << (*qi).second << endl;
+      }
+      for (list <pair<int, int> >::iterator qi = db.begin(); qi != db.end(); qi++) {
+	cout << "db " << (*qi).first << " " << (*qi).second << endl;
+      }
+
+      boost::timer clocki;    
+      clocki.restart();
       list <pair<int, int> > query_no_overlap;
       intersect_fast0(query, db, query_no_overlap);
-      //cout << "debug# " << query.size() << " " << query_no_overlap.size() << endl;
-      for (list <pair<int, int> >::iterator qi = query_no_overlap.begin(); qi != query_no_overlap.end(); qi++)  {
-	int _pos = (*qi).first + FLANKING;
-	pos_seqs[_pos] = _pos_seqs[_pos];
-      }
-    } else {
-      pos_seqs.swap(_pos_seqs);
+
+      cout << "time used " << clocki.elapsed() << endl;
+      cout << "debug2# " << query_no_overlap.size() << endl;
+
+      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
+	read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs, query_no_overlap, FLANKING);  
     }
-    _pos_seqs.clear();
+
 
     string file_clip_pass = pathCons + chrn + "_clip_pass" ;
     ofstream fout2( file_clip_pass.c_str() );
@@ -1646,9 +1706,6 @@ int main( int argc, char* argv[] )
     system( ("rm "+ pathCons2 + "*").c_str() );      
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
       //////// if ( pi->first < 13796700 or pi->first > 13797000 ) continue;
-
-      cout << "##debug0 " <<  pi->first << " " << (pi->second).size() << endl;
-
       string file_cons1 = pathCons2 + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
       ofstream fout1(file_cons1.c_str());
       for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
@@ -1658,10 +1715,6 @@ int main( int argc, char* argv[] )
     } 
     
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-
-      boost::timer clocki;    
-      clocki.restart();
-      
       int posl = pi->first;
       vector <int> clipls, cliprs;
       for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
@@ -1671,10 +1724,7 @@ int main( int argc, char* argv[] )
       int n_clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, 2);
       if (!clipl and !clipr ) continue;
       int pos_dif =  (!clipl or !clipr) ? 0 : abs(clipl - clipr);
-
-      cout << "##debug2 " << clipl << " " << n_clipl <<  " " << clipr << " " << n_clipr << endl;
-      cout << "time used " << clocki.elapsed() << endl;
-
+      ///cout << "clipl " << clipl << " " << n_clipl <<  " clipr " << clipr << " " << n_clipr << endl;
       if ( pos_dif > MAX_POS_DIF ){  
 	if ( n_clipl <= 1 and n_clipr <= 1 )   // at least 2 clip reads 
 	  continue;
