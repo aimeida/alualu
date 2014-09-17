@@ -1646,6 +1646,9 @@ int main( int argc, char* argv[] )
     system( ("rm "+ pathCons2 + "*").c_str() );      
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
       //////// if ( pi->first < 13796700 or pi->first > 13797000 ) continue;
+
+      cout << "##debug0 " <<  pi->first << " " << (pi->second).size() << endl;
+
       string file_cons1 = pathCons2 + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
       ofstream fout1(file_cons1.c_str());
       for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
@@ -1655,6 +1658,10 @@ int main( int argc, char* argv[] )
     } 
     
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
+
+      boost::timer clocki;    
+      clocki.restart();
+      
       int posl = pi->first;
       vector <int> clipls, cliprs;
       for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
@@ -1664,7 +1671,10 @@ int main( int argc, char* argv[] )
       int n_clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, 2);
       if (!clipl and !clipr ) continue;
       int pos_dif =  (!clipl or !clipr) ? 0 : abs(clipl - clipr);
-      ///cout << "clipl " << clipl << " " << n_clipl <<  " clipr " << clipr << " " << n_clipr << endl;
+
+      cout << "##debug2 " << clipl << " " << n_clipl <<  " " << clipr << " " << n_clipr << endl;
+      cout << "time used " << clocki.elapsed() << endl;
+
       if ( pos_dif > MAX_POS_DIF ){  
 	if ( n_clipl <= 1 and n_clipr <= 1 )   // at least 2 clip reads 
 	  continue;
