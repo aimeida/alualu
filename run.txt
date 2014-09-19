@@ -40,17 +40,19 @@
           which generate files named insert_alu1/insert_pos.chr*  
 
      (5) run "alu_insert config.decode clipReads_pn X" for each pn
+         write positions of clip reads at insert_alu1/clip/chr*/pn
          (X is index of PN according to the /nfs_mount/bioinfo/users/yuq/work/Alu/inputs/PN_all/, eg, 0, 1, 2 ... )
          if the corresponding pn name does not exist in /nfs/gpfs/data/pbstmp/bjarnih/Alu/140622/insert_alu1/pn_used, the program will simply skip running and quit.
 
      (6) run "alu_insert config.decode clipReads_pns chrX" for each chromosome (chr1 - chrX)
-        which generate files at  insert_alu1/clip/chr*.clip_pn and  insert_alu1/clip/chr*.clip_region
+     	 write insert_alu1/clip/chr*_pos/*
+         which generate files at  insert_alu1/clip/chr*.clip_pn and  insert_alu1/clip/chr*.clip_region
 	
      (7) run "alu_insert config.decode write_tmp0_pn X" for each pn
          which writes alu and clip reads for each PN, at insert_alu1/cons/chr*/*
 
      (8) run "alu_insert config.decode clipPos_pns chrX" for each chromosome (chr1 - chrX)
-         write exact insertion breakpoints at  insert_alu1/chr*_clip_pass       
+         write exact insertion breakpoints at  insert_alu1/cons/chr*_clip_pass       
 
      (9) run "alu_insert config.decode write_tmp2_pn X" for each pn
          genotype calling      
