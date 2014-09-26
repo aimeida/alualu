@@ -1276,7 +1276,7 @@ void count_skipr(string file_input, map < int, pair <int, int> > & exact_pos, ma
   }
 }
 
-void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, list <pair<int, int> > & qs, int offset, string skip_mk = ""){
+void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, std::set <pair<int, int> > & qs, int offset, string skip_mk = ""){
   ifstream fin( fn.c_str() );
   assert (fin);
   string line, tmpv;
@@ -1318,8 +1318,7 @@ void read_seq(string pn, string fn, map <int, vector<string> > & pos_seqs, strin
 }
 
 
-void read_seq_pos(string fn, list <pair<int, int> > & qs, int offset, string skip_mk = "") {
-  std::set <int> qss;
+void read_seq_pos(string fn, std::set <pair<int, int> > & qs, int offset, string skip_mk = "") {
   ifstream fin( fn.c_str() );
   assert (fin);
   string line, tmpv;
@@ -1330,11 +1329,9 @@ void read_seq_pos(string fn, list <pair<int, int> > & qs, int offset, string ski
     ss.clear(); ss.str( line );
     ss >> pos >> tmpv;
     if (tmpv == skip_mk) continue;
-    qss.insert(pos);
+    qs.insert( make_pair(pos - offset, pos + offset) );
   }
   fin.close();
-  for (std::set <int>::iterator qi = qss.begin(); qi != qss.end(); qi++) 
-    qs.push_back( make_pair( *qi - offset, *qi + offset) );
 }
 
 void read_clip_pass(string fn_clip_pass, map < int, pair <int, int> > & exact_pos) {
@@ -1564,7 +1561,7 @@ int main( int argc, char* argv[] )
     delete bam_fh;
     cout << "output to " << pathClip << "chr*/" << pn  << endl;
 
-  } else if ( opt == "clipReads_pns" ) { 
+  } else if ( opt == "clipReads_pns" ) {   // step 6
 
     assert (argc == 4);
     string chrn = argv[3];    
@@ -1584,7 +1581,7 @@ int main( int argc, char* argv[] )
     if ( approximate_pos_pns(tmp_path1, file_clipRegion, file_clipPos+".tmp", regionPos_set, MAX_POS_DIF))
       exact_pos_pns(tmp_path0, file_clipPos+".tmp", file_clipPos, consensus_freq);
     
-  } else if ( opt == "write_tmp0_pn" ) {   // write alu and clip reads for each PN
+  } else if ( opt == "write_tmp0_pn" ) {   // step 7, write alu and clip reads for each PN
 
     assert (argc == 4);
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
@@ -1617,10 +1614,12 @@ int main( int argc, char* argv[] )
       if ( !read_first2col( file_clipPos , insert_pos, true) ) {
 	fclip.close(); falu.close(); fskip.close(); continue;	
       }
+      cout << "number of potential insertion regions " << insert_pos.size() << endl;
+
       map < int, vector<ALUREAD_INFO>  > rid_alureads;       // info of alu reads 
+      // 1st column of output is (*pi).first
       for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) 
 	tmp0_reads(*ci, (*pi).first, (*pi).second, bam_fh, fclip, fskip, rid_alureads, rg_to_idx, pars);            
-      
       fclip.close();      
       fskip.close();
       
@@ -1654,8 +1653,9 @@ int main( int argc, char* argv[] )
     } else {
 
       const int FLANKING = 100; 
-      list <pair<int, int> > query;
       list <pair<int, int> > db;
+      std::set <pair<int, int> > query;
+      std::set <pair<int, int> > query_no_overlap;
       for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
 	read_seq_pos(pathCons1 + *pi + ".clip", query, FLANKING);
 
@@ -1670,10 +1670,8 @@ int main( int argc, char* argv[] )
 	db.push_back(make_pair(aluBegin, aluEnd));
       }
       fin.close();
-
       /*
       cout << "debug1# " << query.size() << endl;
-      cerr << "debug1# " << query.size() << endl;
       for (list <pair<int, int> >::iterator qi = query.begin(); qi != query.end(); qi++) {
 	cout << "query " << (*qi).first << " " << (*qi).second << endl;
       }
@@ -1681,21 +1679,11 @@ int main( int argc, char* argv[] )
 	cout << "db " << (*qi).first << " " << (*qi).second << endl;
       }
       */
-
-      boost::timer clocki;    
-      clocki.restart();
-
-      list <pair<int, int> > query_no_overlap;
       intersect_fast0(query, db, query_no_overlap);
-
-      //cout << "time used " << clocki.elapsed() << endl;
-      //cout << "debug2# " << query_no_overlap.size() << endl;
-
       for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
 	read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs, query_no_overlap, FLANKING);  
     }
-
-
+    
     string file_clip_pass = pathCons + chrn + "_clip_pass" ;
     ofstream fout2( file_clip_pass.c_str() );
     fout2 << "file_name clipLeft clipRight\n";
