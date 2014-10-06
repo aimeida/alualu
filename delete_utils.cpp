@@ -88,7 +88,7 @@ T_READ classify_read(seqan::BamAlignmentRecord & record, int aluBegin, int aluEn
 bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, map <string, std::set<int> > & chrn_aluBegin, float llh_th, string ref_name) {
   vector <string>::iterator ci, pi;
   //seqan::VcfStream vcfout("-", seqan::VcfStream::WRITE);
-  seqan::VcfStream vcfout(seqan::toCString(f_out), seqan::VcfStream::WRITE);
+  seqan::VcfStream vcfout(f_out.c_str(), seqan::VcfStream::WRITE);
   for ( ci = chrns.begin(); ci != chrns.end(); ci++)
     appendValue(vcfout.header.sequenceNames, *ci);
   for ( pi = pns.begin(); pi != pns.end(); pi++) 
@@ -104,7 +104,7 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
   appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FORMAT", "<ID=PL,Number=3,Type=Integer, Description=\"Phred-scaled likelihoods for genotypes\">"));
 
   seqan::VcfRecord record;    
-  record.ref = ".";
+  record.ref = "0";
   record.alt = "1";
   record.format = "GT:PL";
 
@@ -115,7 +115,7 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
   int midCnt, clipCnt, unknowCnt;
   float p0, p1, p2;      
   string phred_str_00 = "0,255,255";
-  string phred_str_missing = ".,.,.";
+  string phred_str_missing = "0,0,0";
   map < pair<int, string>, map <string, GENO_PROB > > pos_pnInfo;
   for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
     pos_pnInfo.clear();
@@ -166,10 +166,10 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
 	pi2 = pi3->second.find(*pi);
 	string ginfo;
 	if ( pi2 == pi3->second.end() ) {
-	  ginfo = ".:" + phred_str_missing ;
+	  ginfo = "0/0:" + phred_str_missing ;
 	  n_missing += 1;
 	} else { 
-	  ginfo = int_to_string( (pi2->second).geno ) + ":" + (pi2->second).phredStr;
+	  ginfo = reformat_geno( (pi2->second).geno ) + ":" + (pi2->second).phredStr;
 	}
 	appendValue(record.genotypeInfos, ginfo);	  
       }      

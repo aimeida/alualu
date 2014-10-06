@@ -44,6 +44,12 @@ inline int round_by_resolution(int x, int r) {
   return r * (int) floor ( 0.4999 + x1);
 }
 
+inline string reformat_geno(int i) {
+  if ( i == 2 ) return "1/1";
+  else if ( i == 1 ) return "0/1";
+  return "0/0";
+}
+
 typedef pair<int, string > IntString;
 inline bool compare_IntString(const IntString & a, const IntString & b) {
   return (a.first == b.first) ? (a.second < b.second) :  (a.first < b.first);
@@ -188,6 +194,7 @@ class ConfigFileHandler{
 };
 
 string int_to_string(int i);
+
 string get_pn(string pn_file, int idx_pn);
 void get_pn(string pn_file, map<int, string> &ID_pn);
 void read_file_pn_used(string fn, std::set <string> & pns_used);
