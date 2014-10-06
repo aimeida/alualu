@@ -105,7 +105,7 @@ void split_by_sep(string &str, string &m, string &n, char sep ){
 
 int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int minInput) {
   k1 = 0;
-  if ( (int) ps.size() < minInput ) return 0;
+  if ( (int) ps.size() <= minInput ) return 0;
   map <int, int> pos_cnt;  
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ )  
     addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
@@ -122,7 +122,6 @@ int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, i
       _k1 = (_k1 + _k2) / 2;
     }
   }   
-  ///cout << "_k1 " << _k1 << endl;
 
   // find most common position;
   int match_cnt = 0;
@@ -203,17 +202,16 @@ int major_two_keys (vector <int> & ps, int & k1, int & k2, int & kf1, int & kf2,
   return 0;
 }
 
-void intersect_fast0(list <pair<int, int> > & query, list <pair<int, int> > & db, list <pair<int, int> > & query_no_overlap){
-  query.sort();
+void intersect_fast0(std::set <pair<int, int> > & query, list <pair<int, int> > & db, std::set <pair<int, int> > & query_no_overlap){
   db.sort();
   query_no_overlap.clear();
   list <pair<int, int> >::iterator d2 = db.begin();
-  for (list <pair<int, int> >::iterator d1 = query.begin(); d1 != query.end(); d1++ ) {
+  for ( std::set <pair<int, int> >::iterator d1 = query.begin(); d1 != query.end(); d1++ ) {
     if ( (*d1).second <= 0 )  continue;
     while ( (*d1).first >= (*d2).second and d2 != db.end() )  d2++;
     if ( d2 != db.end() and  min ((*d2).second, (*d1).second ) - max ( (*d2).first, (*d1).first ) < 0 ) 
-      query_no_overlap.push_back( *d1 ) ;
+      query_no_overlap.insert( *d1 ) ;
     else if ( d2 == db.end() ) 
-      query_no_overlap.push_back( *d1 ) ;
+      query_no_overlap.insert( *d1 ) ;
   }
 }

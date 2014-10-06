@@ -21,10 +21,10 @@ def print2(pn_all, fn_path, path1, bin_path, time_sec):
             print >>fout, "#SBATCH -o %d_%s.o" % (pi, pn)
             print >>fout, "#SBATCH -e %d_%s.e" % (pi, pn)
             print >>fout, "echo `date`"
-            print >>fout, '%(bin_path)salu_delete ../config.dk write_tmps_pn %(pi)d'%locals()
+            #print >>fout, '%(bin_path)salu_delete ../config.dk write_tmps_pn %(pi)d'%locals()
             #print >>fout, '%(bin_path)salu_insert ../config.dk clipReads_pn %(pi)d'%locals()
             #print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp0_pn %(pi)d'%locals()
-            #print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp2_pn %(pi)d'%locals()
+            print >>fout, '%(bin_path)salu_insert ../config.dk write_tmp2_pn %(pi)d'%locals()
             print >>fout, "echo `date`"
 
         pi += 1
@@ -67,11 +67,11 @@ if __name__ == '__main__':
     #print2(pn_all, path1+"q_ad/", path1, path1 + 'opt3/', 59)
 
     pn_used = map(lambda x:x.strip(), file('/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/pn_used').readlines())
-    #print2(pn_used, path1+"q_ai/", path1, path1 + 'opt3/', 59)
+    print2(pn_used, path1+"q_ai/", path1, path1 + 'opt3/', 59)
     #print2(pn_used, path1+"q_ai/", path1, path1 + 'debug/', 159)
     
     ## run by chr
-    #print3(path1+"q_ai/", path1, path1 + 'opt3/')
+    print3(path1+"q_ai/", path1, path1 + 'opt3/')
     #print3(path1+"q_ai/", path1, path1 + 'debug/')
 
     #ins_del("ins_del.sh", path1, "opt3")

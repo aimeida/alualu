@@ -43,7 +43,7 @@ class VCF_PARSER():
                 if line.startswith('#'):
                     continue
                 tmp = line.strip().split('\t')
-                if tmp[id1] != qual_th:
+                if not tmp[id1] in qual_th:
                     continue
                 self.chr_pos.append( tmp[0]+'_'+tmp[1] )
                 for i, j in zip(self.pns, self.idx):
@@ -94,7 +94,8 @@ def read_vcf(fn, qual_th, fn_pn_used):
     #print vcf_fh.seqs.values()[0]
     for gn, v1 in vcf_fh.trio_group.items():
         if verbose:
-            if gn != '1006':
+            #if gn != '1006':
+            if gn != '1473':
                 continue                                                                                                             
         if len(v1) != 3:
             continue
@@ -105,7 +106,7 @@ def read_vcf(fn, qual_th, fn_pn_used):
         one_family(vcf_fh.seqs[pn_father], vcf_fh.seqs[pn_mother], vcf_fh.seqs[pn_child], vcf_fh.chr_pos, allow_denovo, verbose)
 
 
-def hwe_txt(fn_vcf, fn_pn_used, fn_txt, qual_th = 'PASS'):
+def hwe_txt(fn_vcf, fn_pn_used, fn_txt, qual_th):
     vcf_fh = VCF_PARSER(fn_vcf, fn_pn_used)
     id1 = vcf_fh.header.index('FILTER')
     id2 = vcf_fh.header.index('FORMAT') + 1
@@ -118,7 +119,7 @@ def hwe_txt(fn_vcf, fn_pn_used, fn_txt, qual_th = 'PASS'):
                 continue
             tmp = line.strip().split('\t')
             ###af = tmp[id3].split('AF=')[1]
-            if tmp[id1] == qual_th:
+            if tmp[id1] in qual_th:
                 genos = map(lambda x:x.split(':')[0], tmp[id2:])
                 if '.' not in genos:
                     print >>fout, tmp[0], tmp[1], ' '.join(genos)
@@ -139,11 +140,12 @@ if __name__ == "__main__":
 
     allow_denovo = True 
     #allow_denovo = False
-    verbose = False
-    #verbose = True
+    #verbose = False
+    verbose = True
+    qual_th = ['PASS']
+    #qual_th = ['PASS', 'BreakpointOneside']
 
-    qual_th = 'PASS'
     print 'checking vcf file of', fn_vcf
     print 'allow denovo', allow_denovo
-    #read_vcf(fn_vcf, qual_th, file_pn_used)
-    hwe_txt(fn_vcf, file_pn_used, fn_vcf.replace('.vcf', '.txt')) 
+    read_vcf(fn_vcf, qual_th, file_pn_used)
+    hwe_txt(fn_vcf, file_pn_used, fn_vcf.replace('.vcf', '.txt'), qual_th) 

@@ -110,13 +110,13 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
 
   ifstream fin;
   stringstream ss;
-  string line, chrn;
-  int aluBegin, aluEnd, cii, flag;
+  string line, chrn, aluEnd;
+  int aluBegin, cii, flag;
   int midCnt, clipCnt, unknowCnt;
   float p0, p1, p2;      
   string phred_str_00 = "0,255,255";
   string phred_str_missing = ".,.,.";
-  map < pair<int, int>, map <string, GENO_PROB > > pos_pnInfo;
+  map < pair<int, string>, map <string, GENO_PROB > > pos_pnInfo;
   for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
     pos_pnInfo.clear();
     for ( pi = pns.begin(); pi != pns.end(); pi++) {
@@ -132,7 +132,7 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
 	  else break;
 	}
 	flag = 0; 
-	ss >>  aluBegin >> aluEnd >> midCnt;
+	ss >> aluBegin >> aluEnd >> midCnt;
 	if ( midCnt < 0 ) {  // evidence of G00
 	  GENO_PROB one_gi = GENO_PROB(1, 0, 0, phred_str_00, 0); 
 	  pos_pnInfo[ make_pair(aluBegin, aluEnd) ].insert ( std::pair<string, GENO_PROB>(*pi, one_gi) );
@@ -148,16 +148,19 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
       fin.close();
     }
     
-    map < pair<int, int>, map<string, GENO_PROB> >::iterator pi3;
-    map<string, GENO_PROB>::iterator pi2;
+    map < pair<int, string>, map<string, GENO_PROB> >::iterator pi3;
+    map < string, GENO_PROB>::iterator pi2;
     for (pi3 = pos_pnInfo.begin(); pi3 != pos_pnInfo.end(); pi3++) {
+
       int altCnt = 0;
       for ( pi2 = (pi3->second).begin(); pi2 != (pi3->second).end(); pi2++ ) 
 	altCnt += (pi2->second).geno;
       if (!altCnt) continue;
       record.beginPos = (pi3->first).first;
       record.rID = cii;   // change ???
-      record.id = int_to_string((pi3->first).second);      
+      string debugInfo = (pi3->first).second;
+      record.id = debugInfo;
+
       int n_missing = 0;
       for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
 	pi2 = pi3->second.find(*pi);
@@ -169,10 +172,16 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
 	  ginfo = int_to_string( (pi2->second).geno ) + ":" + (pi2->second).phredStr;
 	}
 	appendValue(record.genotypeInfos, ginfo);	  
-      }
-      
+      }      
       record.qual = 0;
       record.filter = "PASS";
+
+      if ( (pi3->first).second.find(',') != string::npos ) {
+	string exact_left, exact_right;
+	split_by_sep(debugInfo, exact_left, exact_right, ',');  
+	if (exact_left == "0" or exact_right == "0")
+	  record.filter = "BreakpointOneside";
+      }
       
       if ( chrn_aluBegin[*ci].find( (pi3->first).first ) != chrn_aluBegin[*ci].end() ) {
 	record.filter = "highCov";

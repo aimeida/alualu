@@ -1388,11 +1388,10 @@ void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp
 	    fout << " " << *it;
 	}
 	fout << endl;
-      } else {  // enough unknow reads cover this region, eg. at least 5
+      } else {  // no alu clip reads, but no missing ==> enough unknow reads cover this region, eg. 5
 	if (covered_reads(bam_fh, chrn, exact_mid - 200, exact_mid + 200, MISSING_CNT) ) 
 	  fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << - MISSING_CNT << endl;
-////	else 
-////	  cout << "missing# " <<  exact_left << " " << exact_right << endl;
+	// otherwise missing data, not print out 
       }
     }
   }
@@ -1409,7 +1408,7 @@ void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
   while (getline(fin0, line)) 
-    parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 2, false);  // at least 2 counts support clip 
+    parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, false);  // at least 2 counts support clip 
   fin0.close();
   fout.close();
 }
@@ -1641,6 +1640,7 @@ int main( int argc, char* argv[] )
 
     assert (argc == 4);
     string chrn = argv[3];
+    const int minInput = 2;
 
     string pathCons1 = pathCons + chrn + "/" ;
     map <int, vector<string> >  pos_seqs;
@@ -1649,16 +1649,13 @@ int main( int argc, char* argv[] )
     if (file_alu_known == "na") {
       for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
 	read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs);    
-
     } else {
-
       const int FLANKING = 100; 
       list <pair<int, int> > db;
       std::set <pair<int, int> > query;
       std::set <pair<int, int> > query_no_overlap;
       for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
 	read_seq_pos(pathCons1 + *pi + ".clip", query, FLANKING);
-
       file_alu_known = file_alu_known + "alu_" + chrn;
       ifstream fin(file_alu_known.c_str());
       string line, tmpv;
@@ -1670,15 +1667,6 @@ int main( int argc, char* argv[] )
 	db.push_back(make_pair(aluBegin, aluEnd));
       }
       fin.close();
-      /*
-      cout << "debug1# " << query.size() << endl;
-      for (list <pair<int, int> >::iterator qi = query.begin(); qi != query.end(); qi++) {
-	cout << "query " << (*qi).first << " " << (*qi).second << endl;
-      }
-      for (list <pair<int, int> >::iterator qi = db.begin(); qi != db.end(); qi++) {
-	cout << "db " << (*qi).first << " " << (*qi).second << endl;
-      }
-      */
       intersect_fast0(query, db, query_no_overlap);
       for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
 	read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs, query_no_overlap, FLANKING);  
@@ -1692,11 +1680,9 @@ int main( int argc, char* argv[] )
       return 0;
     }
     //// rewrite reads to another folder      
-    string pathCons2 = pathCons + chrn + "_pos/" ;
-    system( ("rm "+ pathCons2 + "*").c_str() );      
+    system( ("rm "+ pathCons + chrn + "_pos/" + "*").c_str() );      
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-      //////// if ( pi->first < 13796700 or pi->first > 13797000 ) continue;
-      string file_cons1 = pathCons2 + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
+      string file_cons1 =  pathCons + chrn + "_pos/" + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
       ofstream fout1(file_cons1.c_str());
       for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
 	fout1 << *si << endl;
@@ -1705,21 +1691,41 @@ int main( int argc, char* argv[] )
     } 
     
     for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-      int posl = pi->first;
+      string file_cons1 =  pathCons + chrn + "_pos/" + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
+      map<string, int> pn_cnt; 
+      string line, tmpv;
+      stringstream ss;
+      ifstream fin1;
+      fin1.open(file_cons1.c_str());
+      while (getline(fin1, line)) {
+	ss.clear(); ss.str(line);
+	ss >> tmpv;
+	addKey(pn_cnt, tmpv);
+      }
+      fin1.close();
+
       vector <int> clipls, cliprs;
-      for ( vector<string>::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ ) 
-	parse_line1(*si, posl, MAX_POS_DIF, clipls, cliprs);   // MAX_POS_DIF instead of CLIP_BP_MID
+      fin1.open(file_cons1.c_str());
+      while (getline(fin1, line)) {
+	ss.clear(); ss.str(line);
+	ss >> tmpv;
+	if (pn_cnt[tmpv] < minInput) continue; /// pn is qualified to vote with at least 2 break reads    
+	parse_line1(line, pi->first, MAX_POS_DIF, clipls, cliprs);    /// append to vec if p is close to posl 		
+      }      
+      fin1.close();
       int clipl, clipr;
-      int n_clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq, 2);   
-      int n_clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, 2);
-      if (!clipl and !clipr ) continue;
+      /// major_key_freq() return matched count, minInput = 2, require at least 2 left(or right) reads
+      int n_clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq, minInput);   
+      int n_clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, minInput);
+
+      if (!clipl and !clipr ) continue;   // if not >= consensus_freq, clipl(r) will be 0
       int pos_dif =  (!clipl or !clipr) ? 0 : abs(clipl - clipr);
       ///cout << "clipl " << clipl << " " << n_clipl <<  " clipr " << clipr << " " << n_clipr << endl;
       if ( pos_dif > MAX_POS_DIF ){  
-	if ( n_clipl <= 1 and n_clipr <= 1 )   // at least 2 clip reads 
+	if ( n_clipl < minInput and n_clipr < minInput )  
 	  continue;
 	int nl = clipls.size();
-	int nr = cliprs.size ();
+	int nr = cliprs.size();
 	if ( nl > nr and nr <= 5)
 	  fout2 << pi->first << " " << clipl << " 0 " <<  endl;	  	
 	else if ( nr > nl and nl <= 5)
@@ -1728,10 +1734,10 @@ int main( int argc, char* argv[] )
 	  cout << "err? " << pi->first << " " << clipl << " " << clipr << " " <<  endl;	  
       } else {	
 	fout2 << pi->first << " " << clipl << " " << clipr << " " <<  endl;	  
-      }      
-    }
+      }            
+    }    
     fout2.close() ;
-    
+  
   } else if (opt == "write_tmp2_pn") { 
      assert (argc == 4);
      string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
@@ -1749,8 +1755,7 @@ int main( int argc, char* argv[] )
      get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
      
      string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
-     AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));
-     
+     AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));     
      string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
      BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
      write_tmp1(bam_fh, chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
@@ -1821,11 +1826,12 @@ int main( int argc, char* argv[] )
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     string line, output_line;
     //line = "chr1 162628630 162628642,162628619 2 6 3 0:483 0:517 0:473";
-    line = "chr1 162628630 162628642,162628619 3 0 1 1:163";
-    parseline_ins(line, cout, pdf_rg, 3, alucons_len, 2, true);
+    //line = "chr1 162628630 162628642,162628619 3 0 1 1:163";
+    //line = "chr21 9867770 0,9867770 3 35 28 1:241 1:295 1:225 0:293 0:217 0:268 0:278 1:219 0:324 2:338 2:273 2:317 2:241 2:280 2:340 3:241 3:272 3:337 3:264 4:329 4:265 4:300 4:238 4:411 4:295 4:288 4:246 4:249";
+    line = "chr3 101432378 101432386,101432370 1 6 0";
+    parseline_ins(line, cout, pdf_rg, 3, alucons_len, true);
 
-    line = "chr1 162628630 162628642,162628619 3 0 0";
-
+    //line = "chr1 162628630 162628642,162628619 3 0 0";
 
   } else {
 

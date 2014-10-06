@@ -197,6 +197,6 @@ void parse_chrns(string s_chrns, vector<string> &chrns);
 void split_by_sep(string &str, string &m, string &n, char sep );
 int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int minInput); 
 int major_two_keys (vector <int> & ps, int & k1, int & k2, int & kf1, int & kf2, int bin_width, float freq_th, bool debugprint = false );
-void intersect_fast0(list <pair<int, int> > & query, list <pair<int, int> > & db, list <pair<int, int> > & query_no_overlap);
+void intersect_fast0(std::set <pair<int, int> > & query, list <pair<int, int> > & db, std::set <pair<int, int> > & query_no_overlap);
 
 #endif /*COMMON_H*/
