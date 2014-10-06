@@ -24,10 +24,14 @@ class VCF_PARSER():
             for line in fin:
                 if line.startswith('#CHROM'):
                     header = line.strip().split('\t')
+                    if not fn_pn_used:
+                        coln = header.index('FORMAT')
+                        self.pns = header[coln+1:]
                 elif not line.startswith('#'):
                     break
         self.fn_vcf = fn_vcf
-        self.pns = map(lambda x:x.strip(), file(fn_pn_used).readlines())
+        if fn_pn_used:
+            self.pns = map(lambda x:x.strip(), file(fn_pn_used).readlines())
         self.idx = map(lambda p: header.index(p) if p in header else -1, self.pns)
         self.header = header
         self.trio_group = {}
