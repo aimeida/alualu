@@ -105,7 +105,7 @@ void split_by_sep(string &str, string &m, string &n, char sep ){
 
 int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, int minInput) {
   k1 = 0;
-  if ( (int) ps.size() < minInput ) return 0;
+  if ( (int) ps.size() <= minInput ) return 0;
   map <int, int> pos_cnt;  
   for (vector <int>::iterator pi = ps.begin(); pi != ps.end(); pi ++ )  
     addKey(pos_cnt, round_by_resolution(*pi, bin_width), 1);
@@ -122,7 +122,6 @@ int major_key_freq (vector <int> & ps, int & k1, int bin_width, float freq_th, i
       _k1 = (_k1 + _k2) / 2;
     }
   }   
-  ///cout << "_k1 " << _k1 << endl;
 
   // find most common position;
   int match_cnt = 0;

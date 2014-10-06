@@ -80,7 +80,7 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int min_midCnt, bool test_print) {
+int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, bool test_print) {
   float *log10_gp = new float[3];
   stringstream ss;
   string chrn, insertMid, debugInfo, token;
@@ -90,23 +90,22 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
   ss >> chrn >> insertMid >> debugInfo >> midCnt;
   string exact_left, exact_right;
   split_by_sep(debugInfo, exact_left, exact_right, ',');  
+  bool both_side = (exact_left != "0") and (exact_right != "0");
   if ( exact_left  == "0" ) exact_left = exact_right;
   if ( exact_right == "0" ) exact_right = exact_left;
-
-  if (midCnt < min_midCnt) {
-    if ( midCnt < 0 ) {
-      fout << chrn << " " << exact_left << " " << exact_right << " " << midCnt << endl;
-    } else {
-      ss >> clipCnt >> unknowCnt;
-      int _cnt = midCnt + clipCnt + unknowCnt;
-      if (_cnt >= MISSING_CNT)   // otherwise consider as missing data 
-	fout << chrn << " " << exact_left << " " << exact_right << " " << - _cnt << endl;
-    }
+  
+  if ( midCnt < 0 ) {
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << - MISSING_CNT << endl;
     return 0;
-  }
+  } 
 
   ss >> clipCnt >> unknowCnt;
-  float ph0 = 0.5;
+  int _cnt = midCnt + clipCnt + unknowCnt;
+  if (_cnt < MISSING_CNT)  return 0; // consider as missing data 
+
+  float ph0 = both_side ? 0.4 : 0.42;  // 0.5 too conservative
+  if ( midCnt < 2)  ph0 = 0.6; // at least 2 break reads   
+
   logPE = - abs(logPE);
   float logPM = log10 ( 1 - pow(10, logPE) );
   float *gp = new float[3];
@@ -116,13 +115,17 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
     log10_gp[1] = midCnt * log10 (ph0) + clipCnt * log10 (1 - ph0) + (midCnt + clipCnt) * logPM  ;
     log10_gp[2] = midCnt * logPE + clipCnt * logPM;
   }
+
+  if (test_print) 
+    cout << "log10_gp " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
+
   for (int i = 0; i < unknowCnt; i++) {
     getline(ss, token, ':');
     seqan::lexicalCast2(idx, token);
     getline(ss, token, ' ');
     seqan::lexicalCast2(insert_len, token);      
     float p_y, p_z;
-    if (midCnt >= 3 ) // conservative 
+    if (midCnt >= 3 ) // use less information from unknow reads
       pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1, p_y, p_z);
     else
       pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 0.5, p_y, p_z);
@@ -137,7 +140,7 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
   }  
 
   if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
-    fout << chrn << " " << exact_left << " " << exact_right << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
     fout << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << estimatedAluLen << endl;  // NB: switch 00 and 11, unlike alu_delete
 
@@ -147,7 +150,7 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
     }
 
   } else {
-    fout << chrn << " " << exact_left << " " << exact_right << " " << -(midCnt + clipCnt + unknowCnt) << endl;
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << -(midCnt + clipCnt + unknowCnt) << endl;
   }
   
   delete gp;    
