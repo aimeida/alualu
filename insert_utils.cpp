@@ -101,7 +101,7 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
 
   ss >> clipCnt >> unknowCnt;
   //if ( midCnt + clipCnt + unknowCnt < MISSING_CNT)  return 0; // consider as missing data 
-  if ( midCnt + clipCnt + unknowCnt < MISSING_CNT and clipCnt + unknowCnt > 0) return 0; // consider as missing data 
+  if ( midCnt + clipCnt + unknowCnt < MISSING_CNT and clipCnt > 0) return 0; // consider as missing data 
 
   float ph0 = both_side ? 0.4 : 0.42;  // 0.5 too conservative
   if ( midCnt < 2)  ph0 = 0.6; // at least 2 break reads   
