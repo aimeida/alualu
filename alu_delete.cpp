@@ -80,7 +80,7 @@ int delete_search(int minLen_alu_del, BamFileHandler *bam_fh, string file_fa_pre
   return 0;
 }
 
-int parseline_del(ostream & fout, string &line, map <int, EmpiricalPdf *> & pdf_rg, float logPE){
+int parseline_del(ostream & fout, string &line, map <int, EmpiricalPdf *> & pdf_rg, float logPE, float pre_ph0 = 0, bool test_print = false){
   const int read_len = 100;
   float *log10_gp = new float[3];
   stringstream ss;
@@ -92,12 +92,20 @@ int parseline_del(ostream & fout, string &line, map <int, EmpiricalPdf *> & pdf_
     fout << chrn << " " << aluBegin << " " << aluEnd << " " << totalCnt << endl;  
     return 0;
   } 
-  // G00 < 1e-5
+  // clipCnt is evidence if H1
   ss >> midCnt >> clipCnt >> unknowCnt ;
-  float bias1 = (aluEnd - aluBegin + 3. * read_len) / (3. * read_len); 
-  float ph0 = bias1 / (bias1 + 1);    
+  if ( clipCnt >= MID_COV_CNT and midCnt >= MID_COV_CNT) {
+    fout << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt << " 0 1 0\n";
+    return 0;
+  }
+  
   logPE = - abs(logPE);
   float logPM = log10 ( 1 - pow(10, logPE) );
+  float bias1 = (aluEnd - aluBegin + 3. * read_len) / (3. * read_len); 
+  float ph0;
+  if ( abs(pre_ph0) < 0.1 )  ph0 = bias1 / (bias1 + 1);   // > 0.5 
+  else ph0 = abs(pre_ph0);
+  if (test_print) cout << "ph0 "<< ph0 << endl;
   
   float *gp = new float[3];
   for (int i = 0; i < 3; i++) log10_gp[i] = 0;
@@ -106,7 +114,7 @@ int parseline_del(ostream & fout, string &line, map <int, EmpiricalPdf *> & pdf_
     log10_gp[1] = midCnt * log10 (ph0) + clipCnt * log10 (1 - ph0) + (midCnt + clipCnt) * logPM  ; 
     log10_gp[2] = midCnt * logPE + clipCnt * logPM;
   }
-  //cout << "debug1# " << log10_gp[0] << " " << log10_gp[1] << " " << log10_gp[2] << endl;   
+  if (test_print ) cout << "debug1# " << log10_gp[0] << " " << log10_gp[1] << " " << log10_gp[2] << endl;   
   if (unknowCnt) { 
     int insert_len, idx;
     string token;
@@ -116,13 +124,26 @@ int parseline_del(ostream & fout, string &line, map <int, EmpiricalPdf *> & pdf_
       getline(ss, token, ' ');
       seqan::lexicalCast2(insert_len, token);      
       float p_y, p_z;
-      pdf_rg[idx]->ratio_obs(insert_len, insert_len - aluEnd + aluBegin, abs(logPE) - 0.5, p_y, p_z);
+      if (abs(pre_ph0) < 0.1)
+	pdf_rg[idx]->ratio_obs(insert_len, insert_len - aluEnd + aluBegin, abs(logPE) - 0.5, p_y, p_z);
+      else  // use more info of unknown reads
+	pdf_rg[idx]->ratio_obs(insert_len, insert_len - aluEnd + aluBegin, abs(logPE), p_y, p_z);
+
       log10_gp[0] += log10 (p_y);
       log10_gp[1] += log10 (ph0 * p_y + (1 - ph0) * p_z) ;
       log10_gp[2] += log10 (p_z);
     }
   }  
-  //cout << "debug1# " << log10_gp[0] << " " << log10_gp[1] << " " << log10_gp[2] << endl;   
+  if (test_print ) cout << "debug2# " << log10_gp[0] << " " << log10_gp[1] << " " << log10_gp[2] << endl;   
+  if ( clipCnt >= 3 and log10_gp[0] > max(log10_gp[1], log10_gp[2]) ) { // should not happen
+    if (pre_ph0 < 0.01 ) return 1;
+    cerr << "##error1 " << line << endl;
+  }  
+  if ( midCnt >= 3 and log10_gp[2] > max(log10_gp[1], log10_gp[0]) ) { // should not happen
+    if (pre_ph0 < 0.01 ) return 2;
+    cerr << "##error2 " << line << endl;
+  }
+  
   if ( !p00_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
     fout << chrn << " " << aluBegin << " " << aluEnd << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
@@ -132,7 +153,7 @@ int parseline_del(ostream & fout, string &line, map <int, EmpiricalPdf *> & pdf_
   }
   delete gp;    
   delete log10_gp;
-  return 1;
+  return 0;
 }
 
 void read_highCov_region(string f_input, map < string, set<int> > & chrn_aluBegin) {
@@ -191,17 +212,18 @@ int main( int argc, char* argv[] )
 
     string fn_tmp1 = path0 + pn + ".tmp1";
     string fn_log1 = path0 + pn + ".log1";
-    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
-    string bai_input = bam_input + ".bai";      
-    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
-    string file_alupos = file_alupos_prefix + "alu_chr0";
-
-    int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
-    unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
-    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos, coverage_max, rg_to_idx);
-    delete bam_fh;
-    move_files(path0+"log1s/", path0 + pn + ".log1") ;
-
+//    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
+//    string bai_input = bam_input + ".bai";      
+//    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
+//    string file_alupos = file_alupos_prefix + "alu_chr0";
+//
+//    int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
+//    unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
+//    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos, coverage_max, rg_to_idx);
+//    delete bam_fh;
+//    move_files(path0+"log1s/", path0 + pn + ".log1") ;
+//    move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
+ 
     string fn_tmp2 = path0 + pn + ".tmp2";
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
@@ -210,15 +232,19 @@ int main( int argc, char* argv[] )
     ofstream fout(fn_tmp2.c_str());
     fout << "chr aluBegin aluEnd midCnt clipCnt unknowCnt 00 01 11\n";  
     string line;
+
+    fn_tmp1 = path0 + "tmp1s/" + pn + ".tmp1";
     ifstream fin(fn_tmp1.c_str());
     assert(fin);
     getline(fin, line); // read header
-    while (getline(fin, line))
-      parseline_del(fout, line, pdf_rg, log10RatioUb);
+    while (getline(fin, line)) {
+      int flagInt = parseline_del(fout, line, pdf_rg, log10RatioUb, 0);
+      if ( flagInt == 1) parseline_del(fout, line, pdf_rg, log10RatioUb, 0.85);
+      else if ( flagInt == 2) parseline_del(fout, line, pdf_rg, log10RatioUb, 0.55);
+    }
     fin.close();
     fout.close();
     EmpiricalPdf::delete_map(pdf_rg);
-    move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
     move_files(path0+"tmp2s/", path0 + pn + ".tmp2") ;
     
   } else if (opt == "write_vcf_pns") {   // write vcf for all pn
@@ -292,16 +318,12 @@ int main( int argc, char* argv[] )
     //line = "chr21 21903875 21904163 26 48 5 2 0:525 0:534";
     //line = "chr21 41931103 41931403 30 62 6 2 0:514 0:550";
     //line = "chr21 33299674 33299968 22 56 0 7 0:496 0:805 0:826 0:461 0:809 0:457 0:834";
-    line = "chr21 21903875 21904163 26 10 1 0";
-    parseline_del(cout, line, pdf_rg, log10RatioUb);
-    line = "chr21 21903875 21904163 26 1 10 0";
-    parseline_del(cout, line, pdf_rg, log10RatioUb);
-
-    line = "chr21 21903875 21904163 26 0 6 0";
-    parseline_del(cout, line, pdf_rg, log10RatioUb);
-
-    line = "chr21 21903875 21904163 26 6 0 0";
-
+    //line = "chr21 21903875 21904163 26 10 1 0";
+    //line = "chr19 22768154 22768470 487 35 4 4 0:513 0:540 2:713 2:743";
+    line = "chr1 119558781 119559091 674 82 3 1 3:740";
+    int flagInt = parseline_del(cout, line, pdf_rg, log10RatioUb, 0, true);
+    if ( flagInt == 1) parseline_del(cout, line, pdf_rg, log10RatioUb, 0.8, true);
+    
   } else {
     cout << "unknown options !\n";
   }

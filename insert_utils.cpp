@@ -80,7 +80,8 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, bool test_print) {
+int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, float pre_ph0, bool test_print) {
+  // force genotype calling if midCnt >= MID_COV_CNT
   float *log10_gp = new float[3];
   stringstream ss;
   string chrn, insertMid, debugInfo, token;
@@ -93,18 +94,34 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
   bool both_side = (exact_left != "0") and (exact_right != "0");
   if ( exact_left  == "0" ) exact_left = exact_right;
   if ( exact_right == "0" ) exact_right = exact_left;
-  
   if ( midCnt < 0 ) {
-    fout << chrn << " " << exact_left << " " << debugInfo << " " << - MISSING_CNT << endl;
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << endl;
     return 0;
   } 
 
   ss >> clipCnt >> unknowCnt;
-  //if ( midCnt + clipCnt + unknowCnt < MISSING_CNT)  return 0; // consider as missing data 
-  if ( midCnt + clipCnt + unknowCnt < MISSING_CNT and clipCnt > 0) return 0; // consider as missing data 
+  int covCnt = midCnt + clipCnt + unknowCnt;
+  if ( covCnt < 3) return 0; // at least coverage 3, otherwise considered as missing  
+  if ( covCnt > 1000 ) return 0; // coverage too high, something is wrong 
 
-  float ph0 = both_side ? 0.4 : 0.42;  // 0.5 too conservative
-  if ( midCnt < 2)  ph0 = 0.6; // at least 2 break reads   
+  if ( midCnt >= MID_COV_CNT and clipCnt >= MID_COV_CNT ) {
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << " " << clipCnt << " " << unknowCnt 
+	 << " 0 1 0 " << estimatedAluLen << endl;
+    return 0;
+  }
+  float ph0;
+  if ( abs(pre_ph0) < 0.1 ) {
+    if (both_side) {
+      if ( midCnt >= 3) ph0 = 0.3;
+      else ph0 = 0.4;
+    } else {
+      if ( midCnt >= 3) ph0 = 0.35;
+      else ph0 = 0.42;
+    }
+  } else 
+    ph0 = abs(pre_ph0);
+  
+  if (test_print) cout << "ph0 is " << ph0 << endl;
 
   logPE = - abs(logPE);
   float logPM = log10 ( 1 - pow(10, logPE) );
@@ -115,46 +132,80 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
     log10_gp[1] = midCnt * log10 (ph0) + clipCnt * log10 (1 - ph0) + (midCnt + clipCnt) * logPM  ;
     log10_gp[2] = midCnt * logPE + clipCnt * logPM;
   }
-
-  if (test_print) 
-    cout << "log10_gp " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
+  if (test_print)  {
+    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
+    cout << "log10_1 " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
+    cout << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << endl;
+  }
 
   for (int i = 0; i < unknowCnt; i++) {
     getline(ss, token, ':');
     seqan::lexicalCast2(idx, token);
+    if ( pdf_rg.find(idx) == pdf_rg.end()) idx = 0; // for debug, if idx not exists
     getline(ss, token, ' ');
     seqan::lexicalCast2(insert_len, token);      
     float p_y, p_z;
-    if (midCnt >= 3 ) // use less information from unknow reads
-      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1, p_y, p_z);
+    //cout << idx << " " << insert_len << " " << pdf_rg[idx]->pdf_obs(insert_len) << endl;
+    if (midCnt >= 3 and abs(pre_ph0) < 0.1) // use less information from unknow reads
+      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1.5, p_y, p_z);
     else
-      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 0.5, p_y, p_z);
+      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1, p_y, p_z);
 
     log10_gp[0] += log10 (p_y);
     log10_gp[1] += log10 (ph0 * p_y + (1 - ph0) * p_z) ;
     log10_gp[2] += log10 (p_z);
-//     if (test_print) {
-//       cout << "y: " << p_y << " " << insert_len + estimatedAluLen << " " << pdf_rg[idx]->pdf_obs(insert_len + estimatedAluLen) << endl;
-//       cout << "z: " << p_z << " " << insert_len << " " << pdf_rg[idx]->pdf_obs(insert_len) << endl;
-//     }
   }  
+
+  if (test_print) {
+    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  
+    cout << "log10_2 " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
+    cout << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << endl;
+  }
+
+  if (midCnt >= 3 and log10_gp[2] > max (log10_gp[1], log10_gp[0]) ) {
+    if (pre_ph0 < 0.01 ) return 1;
+    cerr << "##error1 " << line0 << endl;
+  }
+  if (clipCnt >= 3 and log10_gp[0] > max (log10_gp[1], log10_gp[2]) ) {
+    if (pre_ph0 < 0.01 ) return 2;
+    cerr << "##error2 " << line0 << endl;
+  }
 
   if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
     fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << " " << clipCnt << " " << unknowCnt ;
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
     fout << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << estimatedAluLen << endl;  // NB: switch 00 and 11, unlike alu_delete
-
-    if (test_print) {
-      cout << log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
-      cout << "phred " << phred_scaled(gp[2], gp[1], gp[0]) << endl;
-    }
-
   } else {
     fout << chrn << " " << exact_left << " " << debugInfo << " " << -(midCnt + clipCnt + unknowCnt) << endl;
   }
-  
+
   delete gp;    
   delete log10_gp;
+  return 0;
+}
+
+// used for debugging 
+int parseline_cnt(string line0) {
+  stringstream ss;
+  string chrn, insertMid, debugInfo, token;
+  int midCnt, clipCnt, unknowCnt;
+  vector < pair <int, int> > unknowInfo;
+  ss.str(line0); 
+  ss >> chrn >> insertMid >> debugInfo >> midCnt;
+  string exact_left, exact_right;
+  split_by_sep(debugInfo, exact_left, exact_right, ',');  
+  if ( exact_left  == "0" ) exact_left = exact_right;
+  if ( exact_right == "0" ) exact_right = exact_left;
+
+  if ( midCnt < 0 ) return 0;
+  ss >> clipCnt >> unknowCnt;
+  int c1 = midCnt + clipCnt + unknowCnt;
+  if ( c1 > 300 ) 
+    cout << line0 << endl;
+  if (midCnt == 0 or clipCnt == 0 )
+    cout << c1 << " # " << midCnt << " " << clipCnt << endl;
+  else 
+    cout << c1 << " & " << (midCnt+0.1)/(clipCnt + 0.1) << endl;
   return 0;
 }
 

@@ -1407,9 +1407,8 @@ void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_
   string line, output_line;
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
-  while (getline(fin0, line))  
+  while (getline(fin0, line)) 
     parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, false);  // at least 2 counts support clip 
-
   fin0.close();
   fout.close();
 }
@@ -1743,10 +1742,6 @@ int main( int argc, char* argv[] )
      assert (argc == 4);
      string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
 
-//     if ( pns_used.find(pn) == pns_used.end() ){ 
-//       cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
-//       return 0;
-//     }
      string file_clip_pass = pathCons + "chr0_clip_pass" ;
      string file_clip = pathCons + "chr0/" + pn + ".clip"; 
      string file_alu = pathCons + "chr0/" + pn + ".aludb"; 
@@ -1756,19 +1751,15 @@ int main( int argc, char* argv[] )
 
      map <int, EmpiricalPdf *> pdf_rg;    
      string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-     read_pdf_pn(file_dist_prefix, "1006-05", pdf_param, pdf_rg); // use dk data
+     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
 
      float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("LOG10_RATIO_UB"));
      write_tmp2(file_tmp1, file_tmp2, pdf_rg, log10RatioUb, alucons_len);     
      EmpiricalPdf::delete_map(pdf_rg);
 
    } else if (opt == "fixed_vcf_pns") {
-    vector <string> pns_all, pns;
-    read_file_pn_used(file_pn_used, pns_all); 
-    vector <string>::iterator pi = pns_all.begin();
-    for (int i = 0; i < 200; i++ ) {
-      pns.push_back(*pi++);
-    }
+    vector <string> pns;
+    read_file_pn_used(file_pn_used, pns); 
 
     string path_input = pathDel0 + "tmp2s/";
     string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";    
