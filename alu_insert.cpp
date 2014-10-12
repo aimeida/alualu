@@ -1756,7 +1756,7 @@ int main( int argc, char* argv[] )
      map < int, string > rid_chrn;
      get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
 
-     /*     
+
     string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
     AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));     
     string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
@@ -1764,7 +1764,7 @@ int main( int argc, char* argv[] )
     write_tmp1(bam_fh, chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
     delete bam_fh;
     delete alucons_fh;
-     */
+
 
      string file_tmp2 = pathDel0 + "tmp2/" + pn + ".tmp2";
      map <int, EmpiricalPdf *> pdf_rg;    
