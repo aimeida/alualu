@@ -1179,7 +1179,7 @@ int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map 
     }
 
     int pre_clipCnt = aluclip_cnts[(*ti).pos_key].size();
-    if ( pre_clipCnt >= MID_COV_CNT) continue; // no need to realign if there is already enough clip reads 
+    if ( pre_clipCnt >= 2 * MID_COV_CNT) continue; // no need to realign if there is already enough clip reads 
     if ( pre_count.find((*ti).pos_key) == pre_count.end())
       pre_count[(*ti).pos_key] = pre_clipCnt;  // keep track of counts
     
@@ -1190,7 +1190,7 @@ int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map 
     string alu_type = align_alu_cons_call(ref_fa, alucons_fh, sim_rate, 0.8);
     if (!alu_type.empty()) {  // aligned successful 
       aluclip_cnts[(*ti).pos_key].insert((*ti).qName);
-      cout << "##aligned " << chrn << " " << alu_type << " " << (*ti).pos_key << " " << (*ti).qName << endl;
+      //cout << "##aligned " << chrn << " " << alu_type << " " << (*ti).pos_key << " " << (*ti).qName << endl;
       addKey(added_count, (*ti).pos_key, 1);
     }
   }
@@ -1399,6 +1399,7 @@ void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp
 void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, float log10RatioUb, int fixed_len){
   ifstream fin0(fn_tmp1.c_str());
   assert(fin0);
+  cout << "@@print to " << fn_tmp2 << endl;
   ofstream fout(fn_tmp2.c_str());
   fout << "chr insertBegin insertEnd midCnt clipCnt unknowCnt 00 01 11 insertLen\n";  
   stringstream ss;
@@ -1406,11 +1407,9 @@ void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
   while (getline(fin0, line)) {
-    int flagInt = parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 0., false);  // at least 2 counts support clip 
-    if (flagInt == 1) parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 0.1, false);  
-    else if (flagInt == 2) parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 0.45, false);  
+    int flagInt = parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 0, false);  // at least 2 counts support clip 
+    if (flagInt > 0) parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, flagInt, false);  
   }
-
   fin0.close();
   fout.close();
 }
@@ -1755,18 +1754,18 @@ int main( int argc, char* argv[] )
      string file_tmp1 = pathDel0 + "tmp1s/" + pn + ".tmp1";
      map < int, string > rid_chrn;
      get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
+     
+
+       string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
+       AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));     
+       string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
+       BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
+       write_tmp1(bam_fh, chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
+       delete bam_fh;
+       delete alucons_fh;
 
 
-    string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
-    AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));     
-    string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
-    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
-    write_tmp1(bam_fh, chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
-    delete bam_fh;
-    delete alucons_fh;
-
-
-     string file_tmp2 = pathDel0 + "tmp2/" + pn + ".tmp2";
+     string file_tmp2 = pathDel0 + "tmp2s/" + pn + ".tmp2";
      map <int, EmpiricalPdf *> pdf_rg;    
      string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
      read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
@@ -1805,10 +1804,10 @@ int main( int argc, char* argv[] )
 
   } else if (opt == "debug1") {  // check a region 
     
-    string pn = "1006-02";
+    string pn = "1006-01";
     string chrn = "chr1";
-    int clipLeft = 162628642;
-    int clipRight = 162628619;
+    int clipLeft = 245347371;
+    int clipRight = 245347352;
     
     map<string, int> rg_to_idx;
     parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
@@ -1828,12 +1827,16 @@ int main( int argc, char* argv[] )
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     string line, output_line;
-    line = "chr21 9720733 9720725,9720742 3 196 205 1:336 5:344 1:289 5:316 1:346 1:253 1:311 1:276 1:321 5:323 1:292 1:340 1:361 1:314 1:350 5:325 1:290 1:302 5:359 1:343 1:261 1:371 1:353 5:327 1:301 5:296 5:302 5:328 1:276 1:315 1:343 1:266 1:376 5:302 5:343 1:315 1:326 1:354 1:287 1:311 5:279 5:316 1:272 5:378 1:312 1:311 1:316 1:288 5:301 5:327 1:360 1:342 5:349 5:300 5:332 2:260 2:336 2:331 2:277 2:332 2:316 2:333 2:327 2:262 2:286 2:322 2:323 2:325 2:264 2:338 2:315 2:278 2:303 2:299 2:299 2:289 2:292 2:328 2:334 2:309 2:334 2:318 2:321 2:306 2:325 2:311 3:312 3:322 3:378 3:357 3:293 3:291 3:337 3:293 3:284 3:318 3:265 3:351 3:310 3:338 3:335 3:370 3:266 3:352 3:332 3:311 3:291 3:310 3:288 3:294 3:316 3:343 3:311 3:330 3:284 3:328 3:319 3:301 3:394 3:339 3:326 3:333 3:359 3:349 3:332 0:346 4:295 4:343 0:279 0:312 4:258 0:324 0:331 4:372 0:308 4:280 0:326 4:283 0:319 4:304 0:355 4:327 4:281 4:335 0:311 4:325 0:322 4:262 0:344 4:335 4:287 4:369 0:288 0:299 0:281 4:366 0:256 4:289 4:300 0:309 4:351 4:288 0:295 4:337 0:331 4:331 4:286 4:312 4:344 4:456 0:326 4:309 0:335 0:370 4:290 0:361 4:345 0:322 4:334 0:308 4:323 4:275 0:327 4:288 0:337 4:303 0:324 0:350 0:347 0:277 4:277 0:320 4:316 0:294 0:280 0:287 0:286 4:286 0:306 4:267 4:284 4:344 4:370 4:305 4:318";
     //line = "chr21 9720733 9720725,9720742 3 1 0";
     //line = "chr21 9720733 9720725,9720742 3 2 0";
+    line = "chr1 245347361 245347371,245347352 5 0 31 0:481 0:500 0:497 0:492 0:494 0:473 0:495 0:488 0:485 0:458 0:512 0:500 0:476 0:506 0:523 0:482 0:437 0:502 3:742 3:764";
+
+    //parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 0, true);
+    //parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 3, true);
     
-    parseline_ins(line, cout, pdf_rg, 3, alucons_len, 0, true);
-    
+    //cout << "phred_scaled " << phred_scaled(0.99999, 0.00001, 0) << endl; // 0,49,255
+    //cout << "phred_scaled " << phred_scaled(0.9999, 0.0001, 0) << endl;   // 0,39,255
+
     /*
     //  just calculate prob
     float *log10_gp = new float[3];
@@ -1851,7 +1854,7 @@ int main( int argc, char* argv[] )
     delete log10_gp;
     delete gp;
     */
-    
+
   } else if (opt == "debug3") { 
     assert (argc == 4);
     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];

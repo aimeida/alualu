@@ -80,7 +80,7 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
   return !insert_pos.empty(); 
 }
 
-int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, float pre_ph0, bool test_print) {
+int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int err_code, bool test_print) {
   // force genotype calling if midCnt >= MID_COV_CNT
   float *log10_gp = new float[3];
   stringstream ss;
@@ -103,14 +103,24 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
   int covCnt = midCnt + clipCnt + unknowCnt;
   if ( covCnt < 3) return 0; // at least coverage 3, otherwise considered as missing  
   if ( covCnt > 1000 ) return 0; // coverage too high, something is wrong 
-
   if ( midCnt >= MID_COV_CNT and clipCnt >= MID_COV_CNT ) {
     fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << " " << clipCnt << " " << unknowCnt 
 	 << " 0 1 0 " << estimatedAluLen << endl;
     return 0;
   }
+  
+  logPE = - abs(logPE);
   float ph0;
-  if ( abs(pre_ph0) < 0.1 ) {
+  if (err_code == 1)   // err_code = 1, call 0/0 when midCnt >= 3, truth might be 0/1
+    ph0 = 0.15;
+
+  if (err_code == 2) {   // call 1/1 when clipCnt >= 3, truth might be 0/1
+    ph0 = 0.3;
+  }
+
+  // call 0/1, truth might be 1/1
+
+  if (err_code == 0) {  
     if (both_side) {
       if ( midCnt >= 3) ph0 = 0.3;
       else ph0 = 0.4;
@@ -118,12 +128,11 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
       if ( midCnt >= 3) ph0 = 0.35;
       else ph0 = 0.42;
     }
-  } else 
-    ph0 = abs(pre_ph0);
+  }
   
   if (test_print) cout << "ph0 is " << ph0 << endl;
 
-  logPE = - abs(logPE);
+
   float logPM = log10 ( 1 - pow(10, logPE) );
   float *gp = new float[3];
   for (int i = 0; i < 3; i++) log10_gp[i] = 0;
@@ -132,11 +141,7 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
     log10_gp[1] = midCnt * log10 (ph0) + clipCnt * log10 (1 - ph0) + (midCnt + clipCnt) * logPM  ;
     log10_gp[2] = midCnt * logPE + clipCnt * logPM;
   }
-  if (test_print)  {
-    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1
-    cout << "log10_1 " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
-    cout << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << endl;
-  }
+  if (test_print)   cout << "log10_1 " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
 
   for (int i = 0; i < unknowCnt; i++) {
     getline(ss, token, ':');
@@ -145,30 +150,35 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
     getline(ss, token, ' ');
     seqan::lexicalCast2(insert_len, token);      
     float p_y, p_z;
-    //cout << idx << " " << insert_len << " " << pdf_rg[idx]->pdf_obs(insert_len) << endl;
-    if (midCnt >= 3 and abs(pre_ph0) < 0.1) // use less information from unknow reads
-      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1.5, p_y, p_z);
-    else
-      pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, abs(logPE) - 1, p_y, p_z);
-
+    //cout << insert_len << " " << pdf_rg[idx]->pdf_obs(insert_len + estimatedAluLen) << " " << pdf_rg[idx]->pdf_obs(insert_len) << endl;   
+    float down_weight = abs(logPE) - 1.5;
+    if ( (midCnt >= 3 or clipCnt >= 3 ) and err_code == 0) down_weight = abs(logPE) - 2.0; // use less information from unknow reads
+    if ( err_code == 3 or err_code == 1) down_weight = 1;
+    pdf_rg[idx]->ratio_obs(insert_len + estimatedAluLen, insert_len, down_weight, p_y, p_z);
+    
     log10_gp[0] += log10 (p_y);
     log10_gp[1] += log10 (ph0 * p_y + (1 - ph0) * p_z) ;
     log10_gp[2] += log10 (p_z);
-  }  
-
+    if (test_print) cout << "log10_u " << p_y << " " << p_z << " " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
+  }
+  
   if (test_print) {
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  
     cout << "log10_2 " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
     cout << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << endl;
   }
 
-  if (midCnt >= 3 and log10_gp[2] > max (log10_gp[1], log10_gp[0]) ) {
-    if (pre_ph0 < 0.01 ) return 1;
+  if (midCnt >= 3 and log10_gp[2] > max (log10_gp[1], log10_gp[0]) ) { // call 0/0 when midCnt obs
+    if (err_code == 0 ) return 1;
     cerr << "##error1 " << line0 << endl;
   }
   if (clipCnt >= 3 and log10_gp[0] > max (log10_gp[1], log10_gp[2]) ) {
-    if (pre_ph0 < 0.01 ) return 2;
+    if (err_code == 0) return 2;
     cerr << "##error2 " << line0 << endl;
+  }
+  if ( midCnt >= 3 and (midCnt + 0.1) / (clipCnt + 0.1) > 3 and log10_gp[0] < max (log10_gp[1], log10_gp[2]) ) {
+    if (err_code == 0 ) return 3;
+    cerr << "##error3 " << line0 << endl;
   }
 
   if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
@@ -196,7 +206,6 @@ int parseline_cnt(string line0) {
   split_by_sep(debugInfo, exact_left, exact_right, ',');  
   if ( exact_left  == "0" ) exact_left = exact_right;
   if ( exact_right == "0" ) exact_right = exact_left;
-
   if ( midCnt < 0 ) return 0;
   ss >> clipCnt >> unknowCnt;
   int c1 = midCnt + clipCnt + unknowCnt;

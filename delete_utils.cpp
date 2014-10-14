@@ -114,7 +114,7 @@ bool combine_pns_vcf(string path0, string f_in_suffix, string f_out, vector <str
   int aluBegin, cii, flag;
   int midCnt, clipCnt, unknowCnt;
   float p0, p1, p2;      
-  string phred_str_00 = "0,255,255";
+  string phred_str_00 = "0,100,255";  // min allowed 
   string phred_str_missing = "0,0,0";
   map < pair<int, string>, map <string, GENO_PROB > > pos_pnInfo;
   for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
