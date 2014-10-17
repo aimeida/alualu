@@ -55,7 +55,8 @@ bool clipRight_move_left(seqan::CharString & read_seq, seqan::CharString & ref_f
 bool clipLeft_move_right(seqan::CharString & read_seq, seqan::CharString & ref_fa, list <int> & cigar_cnts, int refBegin, int & clipPos, int & align_len);
 
 bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_header);
-int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int err_code, bool test_print);
+void normalize_llh(float *loggp, float th); 
+int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int err_code, bool test_print, float *test_gp = NULL);
 int parseline_cnt(string line0);
 int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);  // consensus sequence is quite long 
 void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);

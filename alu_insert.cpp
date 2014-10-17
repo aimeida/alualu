@@ -1842,47 +1842,39 @@ int main( int argc, char* argv[] )
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     string line, output_line;
-    //line = "chr21 9720733 9720725,9720742 3 1 0";
-    //line = "chr21 9720733 9720725,9720742 3 2 0";
 
-    line = "chr1 181186642 181186644,181186641 7 0 66 1:783 1:728 1:765 1:760 1:761 1:711 1:769 1:730 1:761 1:746 1:730 1:769 1:745 1:753 1:762 1:762 1:768 1:785 1:760 1:781 1:732 1:719 1:771 1:780 1:773 1:776 1:768 1:743 1:750 1:734 1:748 1:727 1:739 1:727 1:731 1:743 1:746 1:748 1:757 0:472 0:486 0:504 0:479 0:505 0:499 0:468 0:529 0:480 0:476 0:499 0:489 0:493 0:485 0:486 0:196 0:480 0:461 0:501 0:481 0:494 0:502 0:529 0:511 0:490 0:508 0:498";
+    //line = "chr21 9720733 9720725,9720742 3 2 0";
+    //line = "chr3 28707051 28707058,28707044 16 1 6 1:561 1:556 1:493 1:544 1:570 0:237";
+    //line = "chr1 188438210 188438213,188438207 17 0 1 1:507";
+    line = "chr2 161952324 161952332,161952316 13 0 4 1:449 1:500 0:206 0:222";
     int flagInt = parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 0, true);
     //parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 3, true);
     
     cout << flagInt << endl;
     //cout << "phred_scaled " << phred_scaled(0.99999, 0.00001, 0) << endl; // 0,49,255
     //cout << "phred_scaled " << phred_scaled(0.9999, 0.0001, 0) << endl;   // 0,39,255
-
-    /*
-    //  just calculate prob
-    float *log10_gp = new float[3];
+  } else if (opt == "test2") { 
+    string pn = "1473-01";
+    map <int, EmpiricalPdf *> pdf_rg;    
+    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
+    read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
+    string line, output_line;
     float *gp = new float[3];
-    log10_gp[2] = -1;
-    log10_gp[1] = -3;  // -84
-    log10_gp[0] = -674;
-    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  
-    cout << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << endl;
-    log10_gp[2] = -2;
-    log10_gp[1] = -6;  // -84
-    log10_gp[0] = -674;
-    log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  
-    cout << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << endl;
-    delete log10_gp;
+
+    line = "chr1 188438210 188438213,188438207 17 0 1 1:507";
+    parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, -1, false, gp);
+    cout << "&&&& " << gp[2] << " " << gp[1] << " " << gp[0] << endl;    
+    assert ( gp[0] > max(gp[1], gp[2]) );
+
+    line = "chr1 181186642 181186644,181186641 7 0 66 1:783 1:728 1:765 1:760 1:761 1:711 1:769 1:730 1:761 1:746 1:730 1:769 1:745 1:753 1:762 1:762 1:768 1:785 1:760 1:781 1:732 1:719 1:771 1:780 1:773 1:776 1:768 1:743 1:750 1:734 1:748 1:727 1:739 1:727 1:731 1:743 1:746 1:748 1:757 0:472 0:486 0:504 0:479 0:505 0:499 0:468 0:529 0:480 0:476 0:499 0:489 0:493 0:485 0:486 0:196 0:480 0:461 0:501 0:481 0:494 0:502 0:529 0:511 0:490 0:508 0:498";
+    parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, -1, false, gp);
+    cout << "&&&& " << gp[2] << " " << gp[1] << " " << gp[0] << endl;    
+
+    line = "chr21 9720733 9720725,9720742 3 1 0";    
+    parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, -1, false, gp);
+    cout << "&&&& " << gp[2] << " " << gp[1] << " " << gp[0] << endl;    
+
     delete gp;
-    */
-
-  } else if (opt == "debug3") { 
-    assert (argc == 4);
-    string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
-    string line;
-    string fn_tmp1 = pathDel0 + "tmp1s/" + pn + ".tmp1";
-    ifstream fin0(fn_tmp1.c_str());
-    assert(fin0);
-    getline(fin0, line); // read header
-    while (getline(fin0, line)) 
-      parseline_cnt(line);  // at least 2 counts support clip 
-    fin0.close();
-
   } else {
 
     cout << "unknown option ! \n";
