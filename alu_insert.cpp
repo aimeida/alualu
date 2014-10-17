@@ -1165,8 +1165,8 @@ int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map 
     map <int, set <string> >::iterator aci = aluclip_cnts.find(pos);
     if ( aci != aluclip_cnts.end() and (aci->second).find(qName) != (aci->second).end() ) // checked, it's also clipread
       continue;  
-    if ( aci == aluclip_cnts.end() )  // don't bother to realign if clip read does not exists
-      continue;
+    ///if ( aci == aluclip_cnts.end() )  // don't bother to realign if clip read does not exists, check how much difference
+    ///  continue;
     int exact_left = (ei->second).first;
     int exact_right = (ei->second).second;    
     int tmpmax = max (exact_left, exact_right);
@@ -1390,25 +1390,24 @@ void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp
       int exact_right = (ei->second).second;
       int exact_mid = (!exact_left or !exact_right) ? max(exact_left, exact_right) : (exact_left + exact_right)/2;
       map <int, set <string> >::iterator ai = aluclip_cnts.find(ei->first);
-      if ( ai != aluclip_cnts.end() ) {
-	int skipCnt = 0;
-	get_mapVal( skip_cnts, ai->first, skipCnt);
-	fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << (ai->second).size()
-	     << " " << skipCnt << " ";
-	map <int, vector <string> >::iterator ui = unknow_str.find(ai->first);
-	if ( ui == unknow_str.end() ) {
-	  fout << "0";
-	} else {
-	  fout << (ui->second).size();
-	  for ( vector <string>::iterator it = (ui->second).begin(); it != (ui->second).end(); it++) 
-	    fout << " " << *it;
-	}
-	fout << endl;
-      } else {  // no alu clip reads, but no missing ==> enough unknow reads cover this region
-	if (covered_reads(bam_fh, chrn, exact_mid - 200, exact_mid + 200, COVERAGE_CNT) ) 
+      if ( ai == aluclip_cnts.end() or (ai->second).size() < 1 ) { // no alu clip reads, but no missing ==> enough unknow reads cover this region
+	if ( covered_reads(bam_fh, chrn, exact_mid - 200, exact_mid + 200, COVERAGE_CNT) )
 	  fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << - COVERAGE_CNT << endl;
 	// otherwise missing data, not print out 
+	continue;
       }
+      int skipCnt = 0;
+      get_mapVal( skip_cnts, ai->first, skipCnt);
+      fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << (ai->second).size()
+	   << " " << skipCnt << " ";
+      map <int, vector <string> >::iterator ui = unknow_str.find(ai->first);
+      if ( ui == unknow_str.end() ) {
+	fout << "0";
+      } else {
+	fout << (ui->second).size();
+	for ( vector <string>::iterator it = (ui->second).begin(); it != (ui->second).end(); it++) fout << " " << *it;
+      }
+      fout << endl;
     }
   }
   fout.close();
@@ -1771,7 +1770,7 @@ int main( int argc, char* argv[] )
      string file_tmp1 = pathDel0 + "tmp1s/" + pn + ".tmp1";
      map < int, string > rid_chrn;
      get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
-     /*
+
        string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
        AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));     
        string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
@@ -1779,7 +1778,7 @@ int main( int argc, char* argv[] )
        write_tmp1(bam_fh, chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
        delete bam_fh;
        delete alucons_fh;
-     */
+
      string file_tmp2 = pathDel0 + "tmp2s/" + pn + ".tmp2";
      map <int, EmpiricalPdf *> pdf_rg;    
      string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
