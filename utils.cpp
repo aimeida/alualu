@@ -18,8 +18,8 @@ EmpiricalPdf::EmpiricalPdf(string pdf_file){
   max_len = pos;
   fin.close();
   //cout << "read pdf dist " << pdf_file << endl;
-  cout << "min_len max_len bin_width min_prob\n";
-  cout << min_len << " " << max_len << " " << bin_width << " " << min_prob << endl;
+  //cout << "min_len max_len bin_width min_prob\n";
+  //cout << min_len << " " << max_len << " " << bin_width << " " << min_prob << endl;
 }
 
 float EmpiricalPdf::pdf_obs(int insertlen) {

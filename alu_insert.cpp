@@ -1072,12 +1072,11 @@ void alumate_reads2(string file_db, ofstream & fout, int rid,  vector<ALUREAD_IN
 }
 
 bool breakpoints_match(int exact_left, int exact_right, int clipc, int clipLen){
-  const int match_offset = 5;
   if ( clipLen < 0 ) {  // AL
-    if ( exact_left )  return abs( clipc - exact_left) <= match_offset;    
+    if ( exact_left )  return abs( clipc - exact_left) <= 2;    
     return abs( clipc - exact_right) <= MAX_POS_DIF;
   } else {      // AR
-    if ( exact_right) return abs(clipc - exact_right) <= match_offset;    
+    if ( exact_right) return abs(clipc - exact_right) <= 2;    
     return abs(clipc - exact_left) <= MAX_POS_DIF;
   }
 }
@@ -1100,6 +1099,7 @@ void count_clipr(string fn_clip, map < int, pair <int, int> > & exact_pos, map <
   stringstream ss;
   string line, tmpv1, tmpv2, rgIdx, qName;
   int pos, clipc, clipLen, p1, p2;
+  map < int, map <string, int> > br_oneside;  // only one side breakpoints is known 
   getline(fin, line); // read header
   while (getline(fin, line)) {
     ss.clear(); ss.str(line); 
@@ -1110,20 +1110,39 @@ void count_clipr(string fn_clip, map < int, pair <int, int> > & exact_pos, map <
     int exact_left = (ei->second).first;
     int exact_right = (ei->second).second;    
     ss >> tmpv1 >> clipLen >> clipc >> tmpv2 >> rgIdx >> p1 >> p2 >> qName;   // p1, p2 is pair_begin and pair_end
-    bool check_unknow = false;    
-    if ( breakpoints_match(exact_left, exact_right, clipc, clipLen) )
-      aluclip_cnts[pos].insert(qName);
-    else 
-      check_unknow = true;
-      
-    if ( check_unknow and p2 > 0 and abs(p2 - p1) < DISCORDANT_LEN ) {
+
+    if ( ( clipLen < 0 and exact_left and abs( clipc - exact_left) <= 2 ) or 
+	 ( clipLen > 0 and exact_right and abs( clipc - exact_right) <= 2 )) {									  
+      aluclip_cnts[pos].insert(qName);    
+      continue;
+    }
+    // to check later 
+    if ( ( clipLen < 0 and exact_left==0 and abs( clipc - exact_right) <= MAX_POS_DIF ) or 
+	 ( clipLen > 0 and exact_right==0 and abs( clipc - exact_left) <= MAX_POS_DIF ) ){
+      br_oneside[pos][qName] = clipc; 
+      continue;
+    }
+    // assign as unknown 
+    if (p2 > 0 and abs(p2 - p1) < DISCORDANT_LEN ) {
       int pa, pb;
       breakpoints_region(exact_left, exact_right, pa, pb);
       if ( min(p1, p2) <= pa and max(p1, p2) >= pb) {
 	string tmps = rgIdx + ":" + int_to_string( abs(p2 - p1) );
 	unknow_str[pos].push_back( tmps );
       }
-    } 
+    }
+  }
+  fin.close();
+  // if only one side is known, select the most common clip pos as truth
+  for ( map < int, map <string, int> >::iterator bi = br_oneside.begin(); bi != br_oneside.end(); bi++ ) {
+    map <int, int> pos_cnt;
+    for ( map <string, int>::iterator bi2 = (bi->second).begin(); bi2 != (bi->second).end(); bi2++ ) 
+      addKey(pos_cnt, bi2->second, 1);
+    multimap<int, int> cnt_pos = flip_map(pos_cnt);  
+    int pos_dominant = (cnt_pos.rbegin())->second;
+    for ( map <string, int>::iterator bi2 = (bi->second).begin(); bi2 != (bi->second).end(); bi2++ ) 
+      if ( abs (bi2->second - pos_dominant) <= 2)
+	aluclip_cnts[bi->first].insert(bi2->first);
   }
 }
 
@@ -1144,8 +1163,10 @@ int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map 
       continue;
     ss >> alu_type >> rid >> aluBegin >> sameRC >> read_len >> qName >> thisBegin;
     map <int, set <string> >::iterator aci = aluclip_cnts.find(pos);
-    if ( aci != aluclip_cnts.end() and (aci->second).find(qName) != (aci->second).end() )
-      continue;  // checked, it's also clipread
+    if ( aci != aluclip_cnts.end() and (aci->second).find(qName) != (aci->second).end() ) // checked, it's also clipread
+      continue;  
+    if ( aci == aluclip_cnts.end() )  // don't bother to realign if clip read does not exists
+      continue;
     int exact_left = (ei->second).first;
     int exact_right = (ei->second).second;    
     int tmpmax = max (exact_left, exact_right);
@@ -1155,14 +1176,13 @@ int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map 
       continue;    
     if ( alu_type.substr(0,3) == "Alu" ) {  // match one Alu in Database
       aluclip_cnts[pos].insert(qName); 
-    } else if ( aci !=aluclip_cnts.end() ) {  // don't bother to realign if clip read does not exists
+    } else {
       REALIGNS ra = {rid, pos, aluBegin, aluBegin + read_len, qName};
       to_realign.push_back(ra);
     } 
   }  
-  fin.close();
-  
-//  realign to reference
+  fin.close();  
+  //  realign to reference
   FastaFileHandler * fasta_fh = NULL;
   string chrn_pre = "chr0";
   map <int, int > pre_count;
@@ -1179,7 +1199,7 @@ int count_alur(string file_input, map < int, pair <int, int> > & exact_pos, map 
     }
 
     int pre_clipCnt = aluclip_cnts[(*ti).pos_key].size();
-    if ( pre_clipCnt >= 2 * MID_COV_CNT) continue; // no need to realign if there is already enough clip reads 
+    if ( pre_clipCnt >= MID_COV_CNT) continue; // no need to realign if there is already enough clip reads 
     if ( pre_count.find((*ti).pos_key) == pre_count.end())
       pre_count[(*ti).pos_key] = pre_clipCnt;  // keep track of counts
     
@@ -1362,11 +1382,9 @@ void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp
     string fn_clip = replace_str0_str(fn_clip0, chrn, "chr0");
     string fn_alu = replace_str0_str(fn_alu0, chrn, "chr0");
     string fn_su = replace_str0_str(fn_su0, chrn, "chr0");    
-
     count_clipr(fn_clip, exact_pos, aluclip_cnts, unknow_str);
     count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns);  
     count_skipr(fn_su, exact_pos, aluclip_cnts, skip_cnts, unknow_str);
-
     for (map < int, pair <int, int> >::iterator ei = exact_pos.begin(); ei != exact_pos.end(); ei++ ) {
       int exact_left = (ei->second).first;
       int exact_right = (ei->second).second;
@@ -1386,7 +1404,7 @@ void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp
 	    fout << " " << *it;
 	}
 	fout << endl;
-      } else {  // no alu clip reads, but no missing ==> enough unknow reads cover this region, eg. 5
+      } else {  // no alu clip reads, but no missing ==> enough unknow reads cover this region
 	if (covered_reads(bam_fh, chrn, exact_mid - 200, exact_mid + 200, COVERAGE_CNT) ) 
 	  fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << - COVERAGE_CNT << endl;
 	// otherwise missing data, not print out 
@@ -1399,7 +1417,6 @@ void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp
 void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, float log10RatioUb, int fixed_len){
   ifstream fin0(fn_tmp1.c_str());
   assert(fin0);
-  cout << "@@print to " << fn_tmp2 << endl;
   ofstream fout(fn_tmp2.c_str());
   fout << "chr insertBegin insertEnd midCnt clipCnt unknowCnt 00 01 11 insertLen\n";  
   stringstream ss;
@@ -1754,8 +1771,7 @@ int main( int argc, char* argv[] )
      string file_tmp1 = pathDel0 + "tmp1s/" + pn + ".tmp1";
      map < int, string > rid_chrn;
      get_chrn(cf_fh.get_conf("bam_rid_chrn"), rid_chrn);
-     
-
+     /*
        string file_fa = cf_fh.get_conf("file_fa_prefix") + "chr0.fa";
        AluconsHandler *alucons_fh = new AluconsHandler(cf_fh.get_conf("file_alu_cons"));     
        string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
@@ -1763,8 +1779,7 @@ int main( int argc, char* argv[] )
        write_tmp1(bam_fh, chrns, file_tmp1, file_clip_pass, file_clip, file_alu, file_su, rid_chrn, file_fa, alucons_fh);	    
        delete bam_fh;
        delete alucons_fh;
-
-
+     */
      string file_tmp2 = pathDel0 + "tmp2s/" + pn + ".tmp2";
      map <int, EmpiricalPdf *> pdf_rg;    
      string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
@@ -1822,18 +1837,19 @@ int main( int argc, char* argv[] )
 
   } else if (opt == "debug2") { 
 
-    string pn = "1006-01";
+    string pn = "1473-01";
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     string line, output_line;
     //line = "chr21 9720733 9720725,9720742 3 1 0";
     //line = "chr21 9720733 9720725,9720742 3 2 0";
-    line = "chr1 245347361 245347371,245347352 5 0 31 0:481 0:500 0:497 0:492 0:494 0:473 0:495 0:488 0:485 0:458 0:512 0:500 0:476 0:506 0:523 0:482 0:437 0:502 3:742 3:764";
 
-    //parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 0, true);
+    line = "chr1 181186642 181186644,181186641 7 0 66 1:783 1:728 1:765 1:760 1:761 1:711 1:769 1:730 1:761 1:746 1:730 1:769 1:745 1:753 1:762 1:762 1:768 1:785 1:760 1:781 1:732 1:719 1:771 1:780 1:773 1:776 1:768 1:743 1:750 1:734 1:748 1:727 1:739 1:727 1:731 1:743 1:746 1:748 1:757 0:472 0:486 0:504 0:479 0:505 0:499 0:468 0:529 0:480 0:476 0:499 0:489 0:493 0:485 0:486 0:196 0:480 0:461 0:501 0:481 0:494 0:502 0:529 0:511 0:490 0:508 0:498";
+    int flagInt = parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 0, true);
     //parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 3, true);
     
+    cout << flagInt << endl;
     //cout << "phred_scaled " << phred_scaled(0.99999, 0.00001, 0) << endl; // 0,49,255
     //cout << "phred_scaled " << phred_scaled(0.9999, 0.0001, 0) << endl;   // 0,39,255
 

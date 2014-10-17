@@ -1349,55 +1349,6 @@ void read_clip_pass(string fn_clip_pass, map < int, pair <int, int> > & exact_po
   fin.close();
 }
 
-void write_tmp1(BamFileHandler *bam_fh, vector <string> & chrns, string file_tmp1, string fn_clip_pass0, string fn_clip0, string fn_alu0, string fn_su0, map < int, string > & rid_chrn, string file_fa, AluconsHandler *alucons_fh) {
-  ofstream fout(file_tmp1.c_str());
-  fout << "chr insertMid debugInfo aluclipCnt skipCnt unknowCnt unknowStr\n";  
-  for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){
-    string chrn = *ci;
-    string fn_clip_pass = replace_str0_str(fn_clip_pass0, chrn, "chr0");
-    map < int, pair <int, int> > exact_pos;
-    read_clip_pass(fn_clip_pass, exact_pos);
-    map <int, set <string> > aluclip_cnts;
-    map <int, vector <string> > unknow_str;
-    map <int, int > skip_cnts;
-    string fn_clip = replace_str0_str(fn_clip0, chrn, "chr0");
-    string fn_alu = replace_str0_str(fn_alu0, chrn, "chr0");
-    string fn_su = replace_str0_str(fn_su0, chrn, "chr0");    
-
-    count_clipr(fn_clip, exact_pos, aluclip_cnts, unknow_str);
-    count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, false);  // min 2 clip reads exists 
-    ////count_alur(fn_alu, exact_pos, aluclip_cnts, rid_chrn, file_fa, alucons_fh, chrns, true);  //re_align, might be slow 
-    count_skipr(fn_su, exact_pos, aluclip_cnts, skip_cnts, unknow_str);
-
-    for (map < int, pair <int, int> >::iterator ei = exact_pos.begin(); ei != exact_pos.end(); ei++ ) {
-      int exact_left = (ei->second).first;
-      int exact_right = (ei->second).second;
-      int exact_mid = (!exact_left or !exact_right) ? max(exact_left, exact_right) : (exact_left + exact_right)/2;
-      map <int, set <string> >::iterator ai = aluclip_cnts.find(ei->first);
-      if ( ai != aluclip_cnts.end() ) {
-	int skipCnt = 0;
-	get_mapVal( skip_cnts, ai->first, skipCnt);
-	fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << (ai->second).size()
-	     << " " << skipCnt << " ";
-	map <int, vector <string> >::iterator ui = unknow_str.find(ai->first);
-	if ( ui == unknow_str.end() ) {
-	  fout << "0";
-	} else {
-	  fout << (ui->second).size();
-	  for ( vector <string>::iterator it = (ui->second).begin(); it != (ui->second).end(); it++) 
-	    fout << " " << *it;
-	}
-	fout << endl;
-      } else {  // no alu clip reads, but no missing ==> enough unknow reads cover this region, eg. 5
-	if (covered_reads(bam_fh, chrn, exact_mid - 200, exact_mid + 200, MISSING_CNT) ) 
-	  fout << chrn << " " << exact_mid << " " << exact_left << "," << exact_right << " " << - MISSING_CNT << endl;
-	// otherwise missing data, not print out 
-      }
-    }
-  }
-  fout.close();
-}
-
 void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_rg, float log10RatioUb, int fixed_len){
   ifstream fin0(fn_tmp1.c_str());
   assert(fin0);
@@ -1408,7 +1359,7 @@ void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
   while (getline(fin0, line)) 
-    parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, false);  // at least 2 counts support clip 
+    parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 2, false);  // at least 2 counts support clip 
   fin0.close();
   fout.close();
 }
@@ -1423,350 +1374,64 @@ int main( int argc, char* argv[] )
   ConfigFileHandler cf_fh = ConfigFileHandler(config_file);
   
   int alucons_len = seqan::lexicalCast<int> (cf_fh.get_conf("alucons_len"));
-  float consensus_freq = seqan::lexicalCast<float> (cf_fh.get_conf("consensus_freq"));
-
   vector<string> chrns;
   string s_chrns = cf_fh.get_conf("chrns");
   parse_chrns(s_chrns, chrns);
   string path0 = cf_fh.get_conf( "file_alu_insert0") ;    
-  check_folder_exists(path0);
   string path1 = cf_fh.get_conf( "file_alu_insert1") ;    
-  check_folder_exists(path1);
   string pathClip = path1 + "clip/";
-  check_folder_exists(pathClip);     
   string pathCons = path1 + "cons/";
-  check_folder_exists(pathCons);
-  string pathDel0 = path1 + "fixed_delete0/";
-  check_folder_exists(pathDel0);    
 
   map <int, string> ID_pn;
   get_pn(cf_fh.get_conf( "file_pn"), ID_pn);
   string file_dist_prefix = cf_fh.get_conf("file_dist_prefix");
   string file_pn_used = cf_fh.get_conf( "file_pn_used");
-  std::set <string> pns_used;
-  
-  if ( opt != "preprocess" and opt != "write_tmps_pn" ) read_file_pn_used( file_pn_used, pns_used); // some pn is ignored, due to too many reads
+  if (opt == "write1") { 
+    int posc = 41713099;
 
-  if ( opt == "preprocess" ) {
-    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
-      check_folder_exists(path0 + *ci +  "/" );
-      check_folder_exists(pathClip + *ci +  "/");
-      check_folder_exists(pathClip + *ci + "_pos/");
-      check_folder_exists(pathCons + *ci);
-      check_folder_exists(pathCons + *ci + "_pos/");
-    } 
+    string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
+    map <int, EmpiricalPdf *> pdf_rg;    
+    read_pdf_pn(file_dist_prefix, "1006-01", pdf_param, pdf_rg);
+    float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("LOG10_RATIO_UB"));
 
-    string bam_input = cf_fh.get_conf( "file_bam_prefix") + ID_pn[0] + ".bam";
-    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
-    string bam_rid_chrn = cf_fh.get_conf("bam_rid_chrn");
-    if ( check_file_size(bam_rid_chrn) <= 0 ) {
-      ofstream fmap(bam_rid_chrn.c_str());
-      for ( map<int, string>::iterator bi = bam_fh->rID_chrn.begin(); bi !=  bam_fh->rID_chrn.end(); bi++) 
-	fmap << bi->first << " " << bi->second << endl;
-      fmap.close();
-    }
-    delete bam_fh;
-    
-  } else if (opt == "write_tmps_pn") {     // write tmp0 files 
-    assert (argc == 4);
-    string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
-    string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
-    string file1 = path0 + pn + ".tmp1";
-    map<int, string>::iterator rc ;
-    //// write pn.tmp1.
-    map <string, int> rg_to_idx;    
-    parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
-
-    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input);
-    string header1 = "qname A_chr B_chr A_beginPos B_beginPos A_isRC B_isRC len_read rgIdx\n";
-    alu_mate_flag(bam_fh, file1, header1, rg_to_idx);
-
-    //// write chr*/pn.tmp1  use database to filter alu mate
-    string header2 = "qname this_rID this_pos this_isRC len_read alu_rID alu_pos alu_isRC rgIdx alu_type\n";
-    MapFO fileMap;    
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      fileMap[rc->first] = new ofstream( ( path0 + rc->second + "/" + pn + ".tmp1").c_str() );
-      assert(fileMap[rc->first]);
-      *(fileMap[rc->first]) << header2 ;
-    }     
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) 
-      keep_alu_mate(bam_fh, rc->first,  file1, fileMap, cf_fh.get_conf( "file_alupos_prefix") + "alu_" + rc->second);           
-    close_fhs(fileMap, bam_fh->rID_chrn);    
-    
-    int col_idx = 0;
-    for (rc = bam_fh->rID_chrn.begin(); rc != bam_fh->rID_chrn.end(); rc++) {
-      string file_tmp1 =  path0 + rc->second +"/" + pn + ".tmp1";
-      if (!col_idx) col_idx = get_col_idx(file_tmp1, "this_pos"); 
-      sort_file_by_col<int> (file_tmp1, col_idx, true);
-    }
-    move_files(path0+"tmp1s/", file1);    
-   
-    alumate_counts_filter(path0, pn, ".tmp1", ".tmp2", ".tmp3", chrns, LEFT_PLUS_RIGHT); 
-    delete bam_fh;
-    
-    //// filter out rep regions,  combine rep regions(dist < REP_MASK_JOIN bp)
-    const int REP_MASK_JOIN = 200;
-    RepMaskPos *repmaskPos;
-    std::set < string > skip_type;
-    repmaskPos = new RepMaskPos(cf_fh.get_conf( "file_repeatMask"), chrns, REP_MASK_JOIN); 
-    filter_location_rep( path0, pn, ".tmp3", ".tmp3st", chrns, repmaskPos);    
-    delete repmaskPos;
-    
-  }  else if (opt == "combine_pos_pns") { // combine positions from multiple individuals
-
-    const int NUM_PN_JOIN = 10;  // max number of pns to sort and join, only matters how fast it runs
-    ifstream fin(file_pn_used.c_str());
-    if (!fin) {
-      cerr << "which individuals should be used for further analysis?\n";
-      cerr << "please write this information should be in file " << file_pn_used << endl;
-      return 1;
-    }
-    map<int, string> id_pn_map;   
+    cout << "chr insertBegin insertEnd midCnt clipCnt unknowCnt 00 01 11 insertLen\n";  
     int i = 0;
-    string _pn;
-    while (fin >> _pn) id_pn_map[i++] = _pn;
-    fin.close();              
-    cout << id_pn_map.size() << " individuals out of " << ID_pn.size() << " individuals are used, change "
-	 << file_pn_used << " if you want to modify\n";
-
-    string output_prefix = path1 + "insert_pos.";
-    /// output "sum_LR_alumate regionBegin regionEnd pns"    
-    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {
-      ////combine_pn_pos(*ci, id_pn_map, ".tmp3", output_prefix, NUM_PN_JOIN, path0);  // used for simulation data 
-      combine_pn_pos(*ci, id_pn_map, ".tmp3st", output_prefix, NUM_PN_JOIN, path0);  // takes about 12 mins to run !   
-      system( ("rm " + output_prefix + *ci + "*tmp?").c_str()  );      
-    }        
-    
-  } else if (opt == "clipReads_pn") { // clip reads for each pn
-    assert (argc == 4);
-    string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];    
-    if ( pns_used.find(pn) == pns_used.end() ){
-      cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
-      return 0;
-    }
-    string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
-    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");
-    string file_fa = cf_fh.get_conf("file_fa_prefix");    
-    int CLIP_Q = seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q"));
-    for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++) {      
-      string fin_pos = path1 + "insert_pos." + *ci; // eg: 10181 positions for chr1      
-      string fout_reads = pathClip + *ci + "/" + pn;
-      FastaFileHandler * fasta_fh = new FastaFileHandler(file_fa + *ci + ".fa", *ci);
-      // move clip pos such that matched length is maximized 
-      clipreads_at_insertPos(pn, *ci, bam_fh, fasta_fh, fin_pos, fout_reads, CLIP_Q);  
-      filter_noise(fout_reads, MAX_POS_DIF, 2);
-      delete fasta_fh;
-    }
-    delete bam_fh;
-    cout << "output to " << pathClip << "chr*/" << pn  << endl;
-
-  } else if ( opt == "clipReads_pns" ) {   // step 6
-
-    assert (argc == 4);
-    string chrn = argv[3];    
-    string tmp_path0 = pathClip + chrn + "/";
-    string tmp_path1 = pathClip + chrn + "_pos/";
-    string file_clipRegion = pathClip + chrn + ".clip_region";
-    string file_clipPos = pathClip + chrn + ".clip_pn";
-    string tmp_path2 = pathCons + chrn + "/";  // to be used in next step 
-
-    system( ("rm "+ tmp_path1 + "*").c_str() );      
-    system( ("rm "+ tmp_path2 + "*").c_str() );      
-    combine_clipreads_by_pos(pns_used, tmp_path0, tmp_path1);
-    std::set < pair<int, int> > regionPos_set;    
-    assert( nonempty_files_sorted( tmp_path1, regionPos_set) );
-    if (regionPos_set.empty()) return 0;
-    regions_pos_vote(tmp_path1, regionPos_set, file_clipRegion);   
-    if ( approximate_pos_pns(tmp_path1, file_clipRegion, file_clipPos+".tmp", regionPos_set, MAX_POS_DIF))
-      exact_pos_pns(tmp_path0, file_clipPos+".tmp", file_clipPos, consensus_freq);
-    
-  } else if ( opt == "write_tmp0_pn" ) {   // step 7, write alu and clip reads for each PN
-
-    assert (argc == 4);
-    string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
-    if ( pns_used.find(pn) == pns_used.end() ){ 
-      cerr << pn << " is not used due to high(strange) coverage in potential regions\n";
-      return 0;
-    }
-    string bam_input = cf_fh.get_conf( "file_bam_prefix") + pn + ".bam";
-    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bam_input+".bai");    
-    map<string, int> rg_to_idx;
-    parse_reading_group( get_name_rg(file_dist_prefix, pn), rg_to_idx );    
-    PAR_DELETE0 pars = { seqan::lexicalCast<int> (cf_fh.get_conf("CLIP_Q")) };
-    
-    for (vector <string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++){      
-      vector< pair<int, int> > insert_pos;      
-      string file_clipPos = pathClip + *ci + ".clip_pn";      
-      // write down clip reads 
-      string file_clip2 = pathCons + *ci + "/" + pn + ".clip";
-      ofstream fclip ( file_clip2.c_str());  
-      fclip << "clipPos seq clipLen clipPos_by_cigar cigar rgIdx beginPos pairEnd qName\n";   
-      // use database, faster, also discard half of the reads
-      string file_alu2 = pathCons + *ci + "/" + pn + ".aludb";
-      ofstream falu ( file_alu2.c_str());  
-      falu << "clipPos alu_type rid aluBegin sameRC read_len qName thisBegin\n";      
-      // mapping span insertion breakpoint
-      string file_skip = pathCons + *ci + "/" + pn + ".skip";  
-      ofstream fskip ( file_skip.c_str());  
-      fskip << "clipPos thisBegin(UR) thisEnd(Cnt) qName(Str)\n";
-
-      if ( !read_first2col( file_clipPos , insert_pos, true) ) {
-	fclip.close(); falu.close(); fskip.close(); continue;	
-      }
-      cout << "number of potential insertion regions " << insert_pos.size() << endl;
-
-      map < int, vector<ALUREAD_INFO>  > rid_alureads;       // info of alu reads 
-      // 1st column of output is (*pi).first
-      for (vector< pair<int, int> >::iterator pi = insert_pos.begin(); pi != insert_pos.end(); pi++) 
-	tmp0_reads(*ci, (*pi).first, (*pi).second, bam_fh, fclip, fskip, rid_alureads, rg_to_idx, pars);            
-      fclip.close();      
-      fskip.close();
-      
-      if ( !rid_alureads.empty() ) {
-	for ( map < int, vector<ALUREAD_INFO> >::iterator ri = rid_alureads.begin(); ri != rid_alureads.end(); ri++) {
-	  string chrn, file_db;
-	  if ( bam_fh->get_chrn(ri->first, chrn) ) file_db =  path0 + chrn +"/" + pn + ".tmp1";	    
-	  else file_db = "";
-	  alumate_reads2(file_db, falu, ri->first,  ri->second, "na");
+    for (map <int, string>::iterator pi = ID_pn.begin(); pi != ID_pn.end(), i < 200; pi++, i++ ) {
+      string pn = pi->second;
+      string fn_tmp1 = "/home/qianyuxx/faststorage/AluDebug/oct14/tmp1s/" + pn + ".tmp1";
+      ifstream fin0(fn_tmp1.c_str());
+      assert(fin0);
+      stringstream ss;
+      string line, v1, v2;
+      int posm;
+      getline(fin0, line); // read header
+      map<string, map<int, string> > tmp1_info;
+      while (getline(fin0, line)) {
+	ss.clear(); ss.str(line);
+	ss >> v1 >> posm;
+	if ( abs( posm - posc ) <= 60) {
+	  cout << pn << " ## ";
+	  parseline_ins(line, cout, pdf_rg, log10RatioUb, alucons_len, 2, false);  
+	  break;
 	}
-	falu.close();
-	sort_file_by_col<int> (file_alu2, 1, true);  // sort by clip pos      
-      } else 
-	falu.close();
-    }   
-    delete bam_fh;
-
-  } else if (opt == "clipPos_pns" ) {  // make sure each insertion has exact breakpoint 
-
-    assert (argc == 4);
-    string chrn = argv[3];
-    const int minInput = 2;
-
-    string pathCons1 = pathCons + chrn + "/" ;
-    map <int, vector<string> >  pos_seqs;
-
-    string file_alu_known = cf_fh.get_conf( "file_alu_known");
-    if (file_alu_known == "na") {
-      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
-	read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs);    
-    } else {
-      const int FLANKING = 100; 
-      list <pair<int, int> > db;
-      std::set <pair<int, int> > query;
-      std::set <pair<int, int> > query_no_overlap;
-      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
-	read_seq_pos(pathCons1 + *pi + ".clip", query, FLANKING);
-      file_alu_known = file_alu_known + "alu_" + chrn;
-      ifstream fin(file_alu_known.c_str());
-      string line, tmpv;
-      stringstream ss;
-      int aluBegin, aluEnd;
-      while (getline(fin, line)) {
-	ss.clear(); ss.str(line);
-	ss >> tmpv >> aluBegin >> aluEnd;
-	db.push_back(make_pair(aluBegin, aluEnd));
+	if ( posm  - posc > 100 ) 
+	  break;
       }
-      fin.close();
-      intersect_fast0(query, db, query_no_overlap);
-      for (std::set <string>::iterator pi = pns_used.begin(); pi != pns_used.end(); pi ++ ) 
-	read_seq(*pi, pathCons1 + *pi + ".clip", pos_seqs, query_no_overlap, FLANKING);  
     }
     
-    string file_clip_pass = pathCons + chrn + "_clip_pass" ;
-    ofstream fout2( file_clip_pass.c_str() );
-    fout2 << "file_name clipLeft clipRight\n";
-    if (pos_seqs.empty()) {
-      fout2.close(); 
-      return 0;
-    }
-    //// rewrite reads to another folder      
-    system( ("rm "+ pathCons + chrn + "_pos/" + "*").c_str() );      
-    for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-      string file_cons1 =  pathCons + chrn + "_pos/" + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
-      ofstream fout1(file_cons1.c_str());
-      for ( vector< string > ::iterator si = (pi->second).begin(); si != (pi->second).end(); si++ )
-	fout1 << *si << endl;
-      sort_file_by_col<string> (file_cons1, 1, true); // sort by pn
-      fout1.close();		
-    } 
-    
-    for (map <int,  vector<string> >::iterator pi = pos_seqs.begin(); pi != pos_seqs.end() ; pi++ ) {
-      string file_cons1 =  pathCons + chrn + "_pos/" + int_to_string(pi->first) + ".clip" ;  // rewrite clip reads 
-      map<string, int> pn_cnt; 
-      string line, tmpv;
-      stringstream ss;
-      ifstream fin1;
-      fin1.open(file_cons1.c_str());
-      while (getline(fin1, line)) {
-	ss.clear(); ss.str(line);
-	ss >> tmpv;
-	addKey(pn_cnt, tmpv);
-      }
-      fin1.close();
-
-      vector <int> clipls, cliprs;
-      fin1.open(file_cons1.c_str());
-      while (getline(fin1, line)) {
-	ss.clear(); ss.str(line);
-	ss >> tmpv;
-	if (pn_cnt[tmpv] < minInput) continue; /// pn is qualified to vote with at least 2 break reads    
-	parse_line1(line, pi->first, MAX_POS_DIF, clipls, cliprs);    /// append to vec if p is close to posl 		
-      }      
-      fin1.close();
-      int clipl, clipr;
-      /// major_key_freq() return matched count, minInput = 2, require at least 2 left(or right) reads
-      int n_clipl = major_key_freq(clipls, clipl, CLIP_BP_LEFT, consensus_freq, minInput);   
-      int n_clipr = major_key_freq(cliprs, clipr, CLIP_BP_LEFT, consensus_freq, minInput);
-
-      if (!clipl and !clipr ) continue;   // if not >= consensus_freq, clipl(r) will be 0
-      int pos_dif =  (!clipl or !clipr) ? 0 : abs(clipl - clipr);
-      ///cout << "clipl " << clipl << " " << n_clipl <<  " clipr " << clipr << " " << n_clipr << endl;
-      if ( pos_dif > MAX_POS_DIF ){  
-	if ( n_clipl < minInput and n_clipr < minInput )  
-	  continue;
-	int nl = clipls.size();
-	int nr = cliprs.size();
-	if ( nl > nr and nr <= 5)
-	  fout2 << pi->first << " " << clipl << " 0 " <<  endl;	  	
-	else if ( nr > nl and nl <= 5)
-	  fout2 << pi->first << " 0 " << clipr << " " <<  endl;	  	
-	else
-	  cout << "err? " << pi->first << " " << clipl << " " << clipr << " " <<  endl;	  
-      } else {	
-	fout2 << pi->first << " " << clipl << " " << clipr << " " <<  endl;	  
-      }            
-    }    
-    fout2.close() ;
-  
-  } else if (opt == "write_tmp2_pn") { 
-     assert (argc == 4);
-     string pn = ID_pn[seqan::lexicalCast<int> (argv[3])];
-
-     string file_clip_pass = pathCons + "chr0_clip_pass" ;
-     string file_clip = pathCons + "chr0/" + pn + ".clip"; 
-     string file_alu = pathCons + "chr0/" + pn + ".aludb"; 
-     string file_su = pathCons + "chr0/" + pn + ".skip"; // include skip and unknown reads
-     string file_tmp1 = pathDel0 + "tmp1s/" + pn + ".tmp1";
-     string file_tmp2 = pathDel0 + "tmp2s/" + pn + ".tmp2";
-
-     map <int, EmpiricalPdf *> pdf_rg;    
-     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
-     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
-
-     float log10RatioUb = seqan::lexicalCast<float> (cf_fh.get_conf("LOG10_RATIO_UB"));
-     write_tmp2(file_tmp1, file_tmp2, pdf_rg, log10RatioUb, alucons_len);     
-     EmpiricalPdf::delete_map(pdf_rg);
-
-   } else if (opt == "fixed_vcf_pns") {
+  } else if (opt == "write2") {
     vector <string> pns;
     read_file_pn_used(file_pn_used, pns); 
 
-    string path_input = pathDel0 + "tmp2s/";
+    //string path_input = "/home/qianyuxx/faststorage/AluDebug/oct16/tmp2s/";
+    string path_input = "/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/oct16/tmp2s/";
     string tmp_file_pn = path_input + *(pns.begin()) + ".tmp2";    
+    cout << "read " << tmp_file_pn << endl;
     int col_idx =  get_col_idx(tmp_file_pn, "00");
     cout << "col_idx " << col_idx << endl;
     
-    string vcf_prefix = pathDel0 + int_to_string( pns.size());
+    //string vcf_prefix = "/home/qianyuxx/faststorage/AluDebug/oct16/debug";
+    string vcf_prefix = "/home/qianyuxx/faststorage/AluDK/outputs/insert_alu1/fixed_delete0/oct16/debug";
     map <string, std::set<int> > chrn_aluBegin;
     string ref_name = cf_fh.get_conf("ref_name");
     float llh_th = 1.92; //qchisq(0.95, df=1)  [1] 3.841459 
@@ -1805,18 +1470,16 @@ int main( int argc, char* argv[] )
 
   } else if (opt == "debug2") { 
 
-    string pn = "1006-01";
+    string pn = "1304-04";
     map <int, EmpiricalPdf *> pdf_rg;    
     string pdf_param = cf_fh.get_conf("pdf_param"); // 100_1000_5  
     read_pdf_pn(file_dist_prefix, pn, pdf_param, pdf_rg);
     string line, output_line;
     //line = "chr1 162628630 162628642,162628619 2 6 3 0:483 0:517 0:473";
     //line = "chr1 162628630 162628642,162628619 3 0 1 1:163";
-    //line = "chr21 9867770 0,9867770 3 35 28 1:241 1:295 1:225 0:293 0:217 0:268 0:278 1:219 0:324 2:338 2:273 2:317 2:241 2:280 2:340 3:241 3:272 3:337 3:264 4:329 4:265 4:300 4:238 4:411 4:295 4:288 4:246 4:249";
-    line = "chr3 101432378 101432386,101432370 1 6 0";
-    parseline_ins(line, cout, pdf_rg, 3, alucons_len, true);
-
-    //line = "chr1 162628630 162628642,162628619 3 0 0";
+    line = "chr21 24437266 24437266,24437266 8 0 34 4:163 0:445 0:448 0:446 0:375 0:470 0:467 0:228 2:146 2:157 1:719 1:761 1:690 1:717 1:772 1:744 1:745 1:761 1:744 1:719 1:758 1:708 1:708 1:742 1:678 1:700 1:689 1:737 1:781 1:811 1:709 1:779 1:742 1:774";
+    parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 0, true);
+    //parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 3, true);
 
   } else {
 
