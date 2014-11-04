@@ -109,9 +109,10 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
   const float ratioMax = 6.; 
   const float maxLh = 40.;
   float ph0 = 0.3;
+  if (errCode == 3) ph0 = 1. / (1. + ratioMax); 
   if (errCode == 1) ph0 = 1. / (1. + ratioMax); 
-  if (test_print) cout << "ph0 is " << ph0 << endl;
 
+  if (test_print) cout << "ph0 is " << ph0 << endl;
   float *log10_gp = new float[3];
   float *log10_gpu = new float[3];
   float *gp = new float[3];
@@ -155,7 +156,7 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
     if (test_print)   cout << log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
   }
   if ( unknowCnt > 0) {
-    if (errCode == 4 ) estimatedAluLen = 180; // reduce to minume
+    if (errCode == 4 ) estimatedAluLen = 180; // reduce to min
     for (int i = 0; i < unknowCnt; i++) {
       getline(ss, token, ':');
       seqan::lexicalCast2(idx, token);
@@ -178,23 +179,19 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
   if (test_print)   cout << "logAll " <<  log10_gp[2] << " " << log10_gp[1] << " " << log10_gp[0] << endl;
   
   if (midCnt >= 3 and log10_gp[2] > max (log10_gp[1], log10_gp[0]) ) { // call 0/0 when midCnt obs                     
-    if (errCode == 0 ) return 1;
-    if (errCode == -1) cerr << "##errCode1\n" ;
+    if (errCode == -1 ) return 1;
     else cerr << "##errCode1 " << line0 << endl;
   }
   if (clipCnt >= 3 and log10_gp[0] > max (log10_gp[1], log10_gp[2]) ) {
-    ///////if (errCode == 0) return 2;
-    if (errCode == -1) cerr << "##errCode2\n" ;
+    if (errCode == -1) return 2;
     else cerr << "##errCode2 " << line0 << endl;
   }
   if ( clipCnt <= 2 and midCnt > 3 * max(clipCnt,2) and log10_gp[0] < max (log10_gp[1], log10_gp[2]) ) {
-    ///////if (errCode == 0 ) return 3;
-    if (errCode == -1) cerr << "##errCode3\n" ;
+    if (errCode == -1) return 3;
     else cerr << "##errCode3 " << line0 << endl;
   }
   if ( log10_gp[0] > max(log10_gp[1], log10_gp[2]) and log10_gpu[2] > max(log10_gpu[0], log10_gpu[1]) ) {
-    if (errCode == 0 ) return 4;
-    if (errCode == -1) cerr << "##errCode4\n" ;
+    if (errCode == -1) return 4;
     else cerr  << "##errCode4 " << line0 << endl;
   }
 
@@ -206,7 +203,7 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
     fout << chrn << " " << exact_left << " " << debugInfo << " " << -(midCnt + clipCnt + unknowCnt) << endl;
 
   if ( test_print ) cout << gp[2] << " " << gp[1] << " " << gp[0] << endl;
-  if ( errCode == -1 )  for (int i = 0; i < 3; i++ ) test_gp[i] = gp[i];
+  if ( test_gp != NULL )  for (int i = 0; i < 3; i++ ) test_gp[i] = gp[i];
 
   delete log10_gp;
   delete log10_gpu;

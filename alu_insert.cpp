@@ -1423,7 +1423,7 @@ void write_tmp2(string fn_tmp1, string fn_tmp2, map <int, EmpiricalPdf *> & pdf_
   getline(fin0, line); // read header
   map<string, map<int, string> > tmp1_info;
   while (getline(fin0, line)) {
-    int flagInt = parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, 0, false);  // at least 2 counts support clip 
+    int flagInt = parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, -1, false);  // at least 2 counts support clip 
     if (flagInt > 0) parseline_ins(line, fout, pdf_rg, log10RatioUb, fixed_len, flagInt, false);  
   }
   fin0.close();
@@ -1846,7 +1846,7 @@ int main( int argc, char* argv[] )
     //line = "chr3 28707051 28707058,28707044 16 1 6 1:561 1:556 1:493 1:544 1:570 0:237";
     //line = "chr1 188438210 188438213,188438207 17 0 1 1:507";
     line = "chr2 161952324 161952332,161952316 13 0 4 1:449 1:500 0:206 0:222";
-    int flagInt = parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 0, true);
+    int flagInt = parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, -1, true);
     //parseline_ins(line, cout, pdf_rg, 3.5, alucons_len, 3, true);
     
     cout << flagInt << endl;

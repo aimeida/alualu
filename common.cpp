@@ -1,13 +1,15 @@
 #include "common.h"
 
 ConfigFileHandler::ConfigFileHandler(string config_file) {
+  if ( config_file.size() < 2 ) {
+    cerr << "config file is empty!\n";
+    exit(0);
+  }
   ifstream fin(config_file.c_str());
-  if (!fin) 
-    try {
-      throw 1;    
-    } catch(int e) {
-      cerr << "#### ERROR #### file: "<< config_file << " not exists!!!" << endl;
-    }   
+  if (!fin) {
+    cerr << "config file: " << config_file << " does not exist!\n";
+    exit(0);
+  }
   stringstream ss;
   string line, key, value;
   while (getline(fin, line)) {
