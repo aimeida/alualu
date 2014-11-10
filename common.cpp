@@ -21,9 +21,9 @@ ConfigFileHandler::ConfigFileHandler(string config_file) {
   fin.close();
 }
 
-string ConfigFileHandler::get_conf(string key) {
+string ConfigFileHandler::get_conf(string key, bool required) {
   map <string, string>::iterator ci;
-  if ( (ci = configs.find(key)) == configs.end() ) {
+  if ( (ci = configs.find(key)) == configs.end() and required) {
     cerr << "#### ERROR #### key: " << key <<" doesn't exist\n";
     exit(1);
   }

@@ -24,6 +24,12 @@ inline pair<int, int> get_valid_pair(int pa, int pb) {
   return  make_pair(pa, pb);
 }
 
+inline void add3key(map<int, int> & confidentPos, int k) {
+  confidentPos[k] = 1;
+  confidentPos[k-1] = 1;
+  confidentPos[k+1] = 1;
+}
+
 class AlumateINFO {
  public:
   string qname;
@@ -58,12 +64,11 @@ bool read_first2col(string fn, vector < pair<int, int> > & insert_pos, bool has_
 void normalize_llh(float *loggp, float th); 
 int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_rg, float logPE, int estimatedAluLen, int err_code, bool test_print, float *test_gp = NULL);
 int parseline_cnt(string line0);
-int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);  // consensus sequence is quite long 
 void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd, int clipLen);
 bool align_alu_to_consRef(const string & shortSeq, const string & longSeq, float dif_th, string loginfo) ;
 
-bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th);
-string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th);
+bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th, bool read_is_clipped);
+string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th, bool read_is_clipped = false);
 bool covered_reads(BamFileHandler * bam_fh, string chrn, int p1, int p2, int minCnt); 
 
 // following, depreciated

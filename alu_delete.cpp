@@ -216,17 +216,16 @@ int main( int argc, char* argv[] )
 
     string fn_tmp1 = path0 + pn + ".tmp1";
     string fn_log1 = path0 + pn + ".log1";
-//    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
-//    string bai_input = bam_input + ".bai";      
-//    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
-//    string file_alupos = file_alupos_prefix + "alu_chr0";
-//
-//    int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
-//    unsigned coverage_max = seqan::lexicalCast<unsigned> (cf_fh.get_conf("coverage_max"));
-//    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos, coverage_max, rg_to_idx);
-//    delete bam_fh;
-//    move_files(path0+"log1s/", path0 + pn + ".log1") ;
-//    move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
+    string bam_input = cf_fh.get_conf("file_bam_prefix") + pn + ".bam";
+    string bai_input = bam_input + ".bai";      
+    BamFileHandler *bam_fh = BamFileHandler::openBam_24chr(bam_input, bai_input);
+    string file_alupos = file_alupos_prefix + "alu_chr0";
+
+    int minLen_alu_del = seqan::lexicalCast <int> (cf_fh.get_conf("minLen_alu_del"));
+    delete_search(minLen_alu_del, bam_fh, file_fa_prefix, chrns, fn_tmp1, fn_log1, file_alupos, COVERAGE_HIGH, rg_to_idx);
+    delete bam_fh;
+    move_files(path0+"log1s/", path0 + pn + ".log1") ;
+    move_files(path0+"tmp1s/", path0 + pn + ".tmp1") ;
  
     string fn_tmp2 = path0 + "tmp2s/" + pn + ".tmp2";
     map <int, EmpiricalPdf *> pdf_rg;    

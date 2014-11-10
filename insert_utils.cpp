@@ -235,39 +235,6 @@ int parseline_cnt(string line0) {
   return 0;
 }
 
-int align_clip_to_LongConsRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
-  const int max_diff_cnt = 6;
-  refBegin = 0, refEnd = 0; // initial 
-  int shortLen = shortSeq.size();
-  TAlign align;
-  seqan::Score<int> scoringScheme(1, -1, -2, -3); 
-  resize(rows(align), 2);
-  assignSource(row(align,0), shortSeq);  // 2,3
-  assignSource(row(align,1), longSeq);   // 1,4, free gap at end
-  globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
-  int l0 = toViewPosition(row(align, 1), 0);
-  int l1 = toViewPosition(row(align, 1), longSeq.size());
-  int s0 = toViewPosition(row(align, 0), 0);
-  int s1 = toViewPosition(row(align, 0), shortLen);
-  if ( (s0 < l0) or (s1 > l1) or ( s1 - s0 - shortLen >= max_diff_cnt ) )
-    return 0;
-  TRow &row0 = row(align,0);
-  TRowIterator it0 = begin(row0);
-  TRow &row1 = row(align,1);
-  TRowIterator it1 = begin(row1);
-  int i = 0, dif = 0;
-  while ( i++ < s0 ) {  it0++; it1++; }
-  while ( i++ <= s1 ) {
-    if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
-    it0++; it1++;
-  }
-  if ( dif <= max_diff_cnt) {
-    if ( clipLen > 0 )  refEnd = s0 + clipLen;
-    else if ( clipLen < 0 )  refBegin = s1 + clipLen;
-  }    
-  return 0;
-}
-
 void align_clip_to_consRef(string shortSeq, string longSeq, int & refBegin, int & refEnd,  int clipLen){
   const float dif_th = 0.2;
   int shortLen = shortSeq.size();
@@ -348,39 +315,43 @@ void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID
   fout.close();
 }
 
-bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th){
+bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float & sim_rate,float sim_th, bool read_is_clipped){
   TAlign align;
-  seqan::Score<int> scoringScheme(0, -1, -1, -2); 
+  int gapP = read_is_clipped ? 2 : 1;
+  seqan::Score<int> scoringScheme(0, -1, - gapP, -2 * gapP);   
   resize(rows(align), 2);
   assignSource(row(align,0), ref_fa);  // 2,3
   assignSource(row(align,1), alucons);   // 1,4, free gap at end
   globalAlignment(align, scoringScheme, seqan::AlignConfig<true, false, false, true>());
-  int align_start = max(toViewPosition(row(align, 0), 0), toViewPosition(row(align, 1), 0));
-  int align_end = min(toViewPosition(row(align, 0), length(ref_fa)), toViewPosition(row(align, 1), length(alucons)));
+  int l0 = toViewPosition(row(align, 1), 0);
+  int l1 = toViewPosition(row(align, 1), length(alucons));
+  int s0 = toViewPosition(row(align, 0), 0);
+  int s1 = toViewPosition(row(align, 0), length(ref_fa));
   sim_rate = 0;
-  int align_len = align_end - align_start;
-  if ( align_len <= CLIP_BP or align_len <= sim_th * length(ref_fa))
+  int align_len = min(l1, s1) - max(l0, s0);
+  //cout << align << " " << align_len << endl;
+  if ( align_len <= CLIP_BP or align_len <= length(ref_fa) * sim_th or align_len >= length(ref_fa) / sim_th )
     return false;
   TRow &row0 = row(align,0);
   TRowIterator it0 = begin(row0);
   TRow &row1 = row(align,1);
   TRowIterator it1 = begin(row1);
   int i = 0, dif = 0;
-  while ( i++ < align_start ) {  it0++; it1++; }
-  while ( i++ <= align_end) {
+  while ( i++ < max(l0, s0) ) {  it0++; it1++; }
+  while ( i++ <= min(l1, s1) ) {
     if ( (*it0) != (*it1) ) dif++;     ////if(isGap(it1))
     it0++; it1++;
   }
   sim_rate = 1 - dif / (float) align_len;
-  ///if (sim_rate >= sim_th) cout << "ok " << align << endl;
+  //if (sim_rate) cout << dif << " " << align << endl;
   return  sim_rate >= sim_th;
 }
 
-string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th){
+string align_alu_cons_call(seqan::CharString & ref_fa, AluconsHandler *alucons_fh, float & sim_rate, float sim_th, bool read_is_clipped) {
   for ( vector<string>::iterator si = (alucons_fh->seq_names).begin(); si != (alucons_fh->seq_names).end(); si++) {
     alucons_fh->update_seq_name(*si);
     for (int k = 1; k <= 4; k++) 
-      if (align_alu_cons(ref_fa, alucons_fh->fetch_alucons(k), sim_rate, sim_th))
+      if (align_alu_cons(ref_fa, alucons_fh->fetch_alucons(k), sim_rate, sim_th, read_is_clipped))
 	return *si;
   }  
   return "";

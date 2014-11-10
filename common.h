@@ -40,6 +40,10 @@ using namespace std;
 #define CLIP_BP_LEFT 10
 #define CLIP_BP_MID 30     // include when using the mean of clipLeft and clipRight 
 
+inline int round_by_division(int x, int r) {
+  return (int) ((double) x / r);
+}
+
 inline int round_by_resolution(int x, int r) {
   double x1 = (double) x / r;
   return r * (int) floor ( 0.4999 + x1);
@@ -191,7 +195,7 @@ class ConfigFileHandler{
  public:
   map <string, string> configs;
   ConfigFileHandler(string config_file);
-  string get_conf(string key);
+  string get_conf(string key, bool required = true);
 };
 
 string int_to_string(int i);

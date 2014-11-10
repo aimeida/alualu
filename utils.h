@@ -41,6 +41,10 @@ inline bool QC_insert_read( seqan::BamAlignmentRecord &record){
   return QC_read(record) and (!hasFlagUnmapped(record)) and (!hasFlagNextUnmapped(record));
 };
 
+inline bool qname_match( seqan::BamAlignmentRecord &record, string qn){  
+  return qn == toCString(record.qName);
+};
+
 inline int qualToInt( char c ){ return (int) c -33; };
 
 inline bool has_soft_last(seqan::BamAlignmentRecord &record, unsigned min_bp){ 
@@ -52,7 +56,7 @@ inline bool has_soft_first(seqan::BamAlignmentRecord &record, unsigned min_bp){
   return (record.cigar[0].operation == 'S') and (record.cigar[0].count >= min_bp); 
 };
 
-// if pair is Alu
+// check if the RC flag is valid, if a pair of reads span insertion region
 inline bool aluclip_RC_match(seqan::BamAlignmentRecord &record, bool s1, bool s2){
   if ( (record.rID != record.rNextId ) or abs(record.tLen) > DISCORDANT_LEN ) {
     if ( s1 and !hasFlagRC(record))   // left of breakpoint
@@ -62,6 +66,21 @@ inline bool aluclip_RC_match(seqan::BamAlignmentRecord &record, bool s1, bool s2
     return false;
   }
   return true;
+}
+
+inline bool is_aluflag_cnt(seqan::BamAlignmentRecord &record){ 
+  int nc = length(record.cigar);
+  if ( has_soft_last(record, CLIP_BP) and has_soft_first(record, CLIP_BP))
+    return false;
+  if ( record.cigar[0].operation == 'S' and record.cigar[0].count > length( record.seq ) - 50)
+    return false;
+  if ( record.cigar[nc-1].operation == 'S' and record.cigar[nc-1].count > length( record.seq ) - 50)
+    return false;
+  int non_match_len = 0;
+  for (int i = 1; i < nc - 1 ; i++) 
+    if (record.cigar[i].operation != 'M' ) 
+      non_match_len += record.cigar[i].count; 
+  return non_match_len <= 5;
 }
 
 inline int count_non_match(seqan::BamAlignmentRecord &record){ 
@@ -189,6 +208,9 @@ class RepMaskPos
   ~RepMaskPos(void);
 };
 
+seqan::Pair<seqan::CigarElement<>::TCount> mappedInterval(seqan::String<seqan::CigarElement<> > & cigar);
+double avgQuality(seqan::CharString & qual, seqan::Pair<seqan::CigarElement<>::TCount> & interval);
+bool QC_insert_read_qual( seqan::BamAlignmentRecord &record);
 string replace_str0_str(string fn, string chrn, string chr0="chr0");
 void read_pdf_pn( string prefix, string pn, string pdf_param,  map <int, EmpiricalPdf *> & pdf_rg);
 void get_min_value(map <int, float> & m, float & min_val, int & min_key);
@@ -202,7 +224,7 @@ string get_cigar(seqan::BamAlignmentRecord &record);
 void debug_print_read(seqan::BamAlignmentRecord &record, ostream & os = cout);
 bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_qName, int this_pos, seqan::BamAlignmentRecord &that_record, int flank_region);
 
-void get_trim_length( seqan::BamAlignmentRecord & record, int & trimb, int & trime, int bpQclip);
+bool get_trim_length( seqan::BamAlignmentRecord & record, int & trimb, int & trime, int bpQclip);
 bool trim_clip_soft_first( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip);  
 bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip);
 

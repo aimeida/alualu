@@ -322,12 +322,13 @@ bool find_read(string &bam_input, string &bai_input, string &chrn, string &this_
   return false;
 }
 
-void get_trim_length( seqan::BamAlignmentRecord & record, int & trimb, int & trime, int bpQclip){  
+bool get_trim_length( seqan::BamAlignmentRecord & record, int & trimb, int & trime, int bpQclip){  
   int beg, end;
   for( beg = 0; (beg < (int)length( record.seq )) && ( qualToInt( record.qual[beg] ) < bpQclip ); beg++ ){}
   for( end = length( record.seq )-1; (end > 0) && ( qualToInt( record.qual[end] ) < bpQclip ) ; end-- ) {}
   trimb = beg;
   trime = length( record.seq) - end - 1;  
+  return end - beg > 20;  // at least 20 bp
 }
 
 bool trim_clip_soft_first( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip){  
@@ -339,14 +340,14 @@ bool trim_clip_soft_first( seqan::BamAlignmentRecord & record, int & clipLen, se
   int cut_beg = beg;
   int cut_end = length( record.seq) - end - 1;
   clipLen = record.cigar[0].count - cut_beg; // positive, right clip 
-  if ( end - beg >= CLIP_BP and clipLen >= CLIP_BP and length(record) - record.cigar[0].count - cut_end >= CLIP_BP ) {
+  if ( end - beg >= CLIP_BP and clipLen >= CLIP_BP and (int)( length(record.seq) - record.cigar[0].count) >= cut_end + CLIP_BP ) {
     clipSeq = infix( record.seq, beg, end+1 );
     return true;
   }
   return false;
 }
 
-bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip){  
+bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seqan::CharString & clipSeq, int bpQclip){  // *M*S
   int idx = length(record.cigar) - 1;
   assert(record.cigar[idx].operation == 'S');
   int beg, end;
@@ -356,34 +357,37 @@ bool trim_clip_soft_last( seqan::BamAlignmentRecord & record, int & clipLen, seq
   int cut_beg = beg;
   int cut_end = length( record.seq) - end - 1;
   clipLen = record.cigar[idx].count - cut_end; 
-  if ( end - beg >= CLIP_BP and clipLen >= CLIP_BP and length(record) - record.cigar[idx].count - cut_beg >= CLIP_BP) {
+  if ( end - beg >= CLIP_BP and clipLen >= CLIP_BP and (int)(length(record.seq) - record.cigar[idx].count) >= cut_beg + CLIP_BP) {
     clipSeq = infix( record.seq, beg, end+1 );
     clipLen = - clipLen;  // negative, left clip
+    //cout << "err " << cut_beg << " "  << cut_end << " " <<  length(record) << " " << record.cigar[idx].count << " " << cut_beg << endl;
     return true;
   }
   return false;
 }
 
 RepMaskPos::RepMaskPos(string file_rmsk, vector<string> &chrns, int join_len){
-  ifstream fin(file_rmsk.c_str());
-  assert(fin);
-  string line, chrn, repType;
-  int beginPos, endPos, beginPos_pre, endPos_pre;
-  stringstream ss;  
-  map<string, std::set <RepDB1> > rep_db;
-  while (getline(fin, line)) {
-    ss.clear(); ss.str( line );
-    ss >> chrn >> beginPos >> endPos >> repType;
-    //    if ( repType.substr(0,3) == "Alu" or repType.substr(0,2) == "L1") {  // power low in G1000 genome
-    if ( repType.substr(0,3) == "Alu") {
-      if ( find(chrns.begin(), chrns.end(), chrn) == chrns.end() ) continue;
+  for (vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci ++ ) {
+    string file_alu = file_rmsk + "alu_" + *ci;
+    ifstream fin( file_alu.c_str() );
+    if (!fin) {
+      cerr << "file " << file_alu << " not exist!\n";
+      exit(1);
+    }
+    string line, chrn, repType;
+    int beginPos, endPos, beginPos_pre, endPos_pre;
+    stringstream ss;  
+    map<string, std::set <RepDB1> > rep_db;
+    while (getline(fin, line)) {
+      ss.clear(); ss.str( line );
+      ss >> chrn >> beginPos >> endPos >> repType;
+      assert(repType.substr(0,3) == "Alu");
+      assert(chrn == *ci );
       RepDB1 one_rep = RepDB1(beginPos, endPos, "");
       rep_db[chrn].insert(one_rep);  // sorted
     }
-  }
-  fin.close();    
-  for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
-    chrn = *ci;
+    fin.close();    
+    // combine two blocks if they are nearby
     std::set <RepDB1> ::iterator pi = rep_db[chrn].begin();
     beginPos_pre = (*pi).begin_pos;
     endPos_pre = (*pi).end_pos;
@@ -402,13 +406,6 @@ RepMaskPos::RepMaskPos(string file_rmsk, vector<string> &chrns, int join_len){
     endP[chrn].push_back(endPos_pre);	
     assert(beginP[chrn].size() == endP[chrn].size() );
   }   
-  /* debug print
-     for ( vector<string>::iterator ci = chrns.begin(); ci != chrns.end(); ci++ ) {
-     vector<int>::iterator bi, ei;
-     for ( bi=beginP[chrn].begin(), ei = endP[chrn].begin(); bi !=  beginP[chrn].end(); bi++, ei++)
-     cout << *bi << " " << *ei << endl;
-     }
-  */
 }
 
 RepMaskPos::~RepMaskPos(void){
@@ -533,6 +530,52 @@ void AluRefPos::debug_print() {
   for (std::set <RepDB1>::iterator di = alu_db.begin(); di != alu_db.end(); di++ ) 
     cout << (*di).begin_pos << " " << (*di).end_pos << endl;
 }
+
+seqan::Pair<seqan::CigarElement<>::TCount> mappedInterval(seqan::String<seqan::CigarElement<> > & cigar) {
+  typedef seqan::CigarElement<>::TCount TSize;
+  TSize len = 0;
+  TSize beginPos = 0;
+  TSize endPos = 0;
+  seqan::Iterator<seqan::String<seqan::CigarElement<> > >::Type itEnd = end(cigar);
+  for (seqan::Iterator<seqan::String<seqan::CigarElement<> > >::Type it = begin(cigar); it < itEnd; ++it) {
+    len += (*it).count;
+    switch ((*it).operation) {
+    case 'S': case 'H':
+      if (it == begin(cigar))
+	beginPos += (*it).count;
+      break;
+    case 'D':
+      len -= (*it).count;
+      break;
+    case 'M': case 'I':
+      endPos = len;
+      break;
+    }
+  }
+  return seqan::Pair<TSize>(beginPos, endPos);
+}
+
+double avgQuality(seqan::CharString & qual, seqan::Pair<seqan::CigarElement<>::TCount> & interval) {
+  if (interval.i1 >= interval.i2) return 0;
+  if (length(qual) == 0) return 50; // Accept undefined quality strings ('*' in sam format).    
+  seqan::Iterator<seqan::CharString>::Type it = begin(qual);
+  seqan::Iterator<seqan::CharString>::Type itEnd = begin(qual);
+  it += interval.i1;
+  itEnd += interval.i2;    
+  unsigned totalQual = 0;
+  while (it != itEnd) {
+    totalQual += *it;
+    ++it;
+  }
+  return totalQual/(interval.i2-interval.i1);
+}
+
+bool QC_insert_read_qual( seqan::BamAlignmentRecord &record){  
+  seqan::Pair<seqan::CigarElement<>::TCount> mi = mappedInterval(record.cigar);
+  if (avgQuality(record.qual, mi) < 20)  // min average quality should be 20
+    return false;
+  return QC_insert_read(record);
+};
 
 string phred_scaled(float p0, float p1, float p2) {
   float pmax = max(p0, max(p1, p2));
