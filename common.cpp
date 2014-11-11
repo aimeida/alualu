@@ -23,11 +23,11 @@ ConfigFileHandler::ConfigFileHandler(string config_file) {
 
 string ConfigFileHandler::get_conf(string key, bool required) {
   map <string, string>::iterator ci;
-  if ( (ci = configs.find(key)) == configs.end() and required) {
-    cerr << "#### ERROR #### key: " << key <<" doesn't exist\n";
-    exit(1);
-  }
-  return ci->second;
+  if ( (ci = configs.find(key)) != configs.end() )
+    return ci->second;
+  if (!required) return "";
+  cerr << "#### ERROR #### key: " << key <<" doesn't exist\n";
+  exit(1);
 }
 
 string int_to_string(int i) {
