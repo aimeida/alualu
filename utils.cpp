@@ -660,3 +660,4 @@ void get_chrn(string fn, map<int, string> & rid_chrn) {
     rid_chrn[rid] = chrn;
   fin.close();
 }
+

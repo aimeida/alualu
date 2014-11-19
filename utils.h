@@ -27,6 +27,7 @@ struct MyUpper : public unary_function<char,char> {
 inline string get_name_rg(string prefix, string pn){ return prefix + "RG." + pn;}
 inline string get_name_rg_pdf(string prefix, string pn, string rg, string pdf_param){ return prefix + pn + ".count." + rg + "." + pdf_param; }
 
+// !RC
 inline bool left_read( seqan::BamAlignmentRecord &record){return (record.beginPos < record.pNext);}
 
 inline bool QC_read( seqan::BamAlignmentRecord &record){  

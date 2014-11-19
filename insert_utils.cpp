@@ -343,7 +343,9 @@ bool align_alu_cons(seqan::CharString &ref_fa, seqan::CharString alucons, float 
     it0++; it1++;
   }
   sim_rate = 1 - dif / (float) align_len;
+
   //if (sim_rate) cout << dif << " " << align << endl;
+
   return  sim_rate >= sim_th;
 }
 
@@ -369,8 +371,8 @@ bool covered_reads(BamFileHandler * bam_fh, string chrn, int p1, int p2, int min
       if (abs(record.tLen) > DISCORDANT_LEN ) {
 	cnt++;
       } else {
-	int r1 = min ( record.beginPos, record.beginPos + abs(record.tLen) );
-	int r2 = max ( record.beginPos, record.beginPos + abs(record.tLen) );
+	int r1 = min ( record.beginPos, record.pNext);
+	int r2 = r1 + abs(record.tLen) ;
 	if ( min(p2, r2) - max (r1, p1) > 0 )
 	  cnt++;
       }
