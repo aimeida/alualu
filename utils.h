@@ -17,6 +17,15 @@ typedef seqan::Align<seqan::CharString, seqan::ArrayGaps> TAlign;
 typedef seqan::Row<TAlign>::Type TRow; 
 typedef seqan::Iterator<TRow>::Type TRowIterator;
 
+class GENO_PROB {
+ public:
+  float g0, g1, g2;
+  string phredStr;
+  int geno;
+ GENO_PROB(float g0, float g1, float g2) : g0(g0), g1(g1), g2(g2), phredStr(""), geno(0) {}
+ GENO_PROB(float g0, float g1, float g2, string ps, int _g) : g0(g0), g1(g1), g2(g2), phredStr(ps), geno(_g) {}
+};
+
 struct MyUpper : public unary_function<char,char> {
   inline char operator()(char x) const  {
     if (('a' <= x) && (x <= 'z')) return (x + ('A' - 'a'));

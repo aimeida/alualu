@@ -19,18 +19,15 @@ GTEST_DIR = /home/qianyuxx/faststorage/Alu/misc/gtest-1.7.0
 CPPFLAGS += -isystem $(GTEST_DIR)/include # Flags passed to the preprocessor.
 CXXFLAGS += -g -Wall -Wextra -pthread # Flags passed to the C++ compiler.
 
-UNITTEST_INSERT_FILES_CPP = unittest_insert.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
+UNITTEST_INSERT_FILES_CPP = unittest_insert.cpp common.cpp utils.cpp insert_utils.cpp 
 UNITTEST_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(UNITTEST_INSERT_FILES_CPP))
 ##UNITTEST_INSERT_FILES_O = $(patsubst %.cpp,$(TEST_DIR)/%.o,$(UNITTEST_INSERT_FILES_CPP))
 
 ALU_DELETE_FILES_CPP = utils.cpp alu_delete.cpp common.cpp delete_utils.cpp
 ALU_DELETE_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_DELETE_FILES_CPP))
 
-ALU_INSERT_FILES_CPP = alu_insert.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp
+ALU_INSERT_FILES_CPP = alu_insert.cpp common.cpp utils.cpp insert_utils.cpp 
 ALU_INSERT_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_INSERT_FILES_CPP))
-
-ALU_TMP_FILES_CPP = alu_tmp.cpp common.cpp utils.cpp insert_utils.cpp delete_utils.cpp 
-ALU_TMP_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(ALU_TMP_FILES_CPP))
 
 BUILD_DIST_FILES_CPP = build_dist.cpp common.cpp utils.cpp
 BUILD_DIST_FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(BUILD_DIST_FILES_CPP))
@@ -40,7 +37,7 @@ FILES_O = $(patsubst %.cpp,$(OD)/%.o,$(FILES_CPP))
 
 $(OD) :
 	mkdir $(OD)
-	
+
 $(OD)/%.o : %.cpp
 	$(CC) -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 

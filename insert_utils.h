@@ -73,5 +73,5 @@ bool covered_reads(BamFileHandler * bam_fh, string chrn, int p1, int p2, int min
 
 // following, depreciated
 void filter_outlier_pn(string path_input, string fn_suffix, map<int, string> &ID_pn, string chrn, string file_pn_used_output, float percentage_pn_used);
-
+bool combine_pns_vcf(float read_dist_th, string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, map <string, std::set<int> > & chrn_aluBegin, float llh_th, string ref_name);
 #endif /*INSERT_UTILS_H*/

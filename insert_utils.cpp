@@ -119,26 +119,27 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
   for (int i = 0; i < 3; i++) { log10_gp[i] = 0; log10_gpu[i] = 0; gp[i] = 0; }
   stringstream ss;
   string chrn, insertMid, debugInfo, token;
-  int idx, insert_len, midCnt, clipCnt, unknowCnt;
+  int idx, insert_len, midCnt, midCnt_alu, midCnt_clip, clipCnt, unknowCnt;
   vector < pair <int, int> > unknowInfo;
   ss.str(line0); 
-  ss >> chrn >> insertMid >> debugInfo >> midCnt;
+  ss >> chrn >> insertMid >> debugInfo >> midCnt_alu;
   string exact_left, exact_right;
   split_by_sep(debugInfo, exact_left, exact_right, ',');  
   //bool both_side = (exact_left != "0") and (exact_right != "0");
   if ( exact_left  == "0" ) exact_left = exact_right;
   if ( exact_right == "0" ) exact_right = exact_left;
-  if ( midCnt < 0 ) {
-    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << endl;
+  if ( midCnt_alu < 0 ) {
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt_alu << endl;
     return 0;
   } 
-  ss >> clipCnt >> unknowCnt;
+  ss >> midCnt_clip >> clipCnt >> unknowCnt;
+  midCnt = midCnt_alu + midCnt_clip;   // sum of the two 
   int cntCnt = midCnt + clipCnt;
   int covCnt = cntCnt + unknowCnt;
   if ( covCnt < 3 or covCnt > 1000 ) return 0; // considered as missing  
   if ( min(midCnt, clipCnt) >= MID_COV_CNT ) {
     //if ( midCnt * ratioMax < clipCnt) 
-    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << " " << clipCnt << " " << unknowCnt 
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt_alu << " " << midCnt_clip << " " << clipCnt << " " << unknowCnt 
 	 << " 0 1 0 " << estimatedAluLen << endl;
     return 0;
   }
@@ -197,7 +198,7 @@ int parseline_ins(string line0, ostream & fout, map <int, EmpiricalPdf *> & pdf_
 
   if ( !p11_is_dominant(log10_gp, - LOG10_GENO_PROB) ) {
     log10P_to_P(log10_gp, gp, LOG10_GENO_PROB);  // normalize such that sum is 1  
-    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt << " " << clipCnt << " " << unknowCnt
+    fout << chrn << " " << exact_left << " " << debugInfo << " " << midCnt_alu << " " << midCnt_clip << " " << clipCnt << " " << unknowCnt
 	 << " " << setprecision(6) << gp[2] << " " << gp[1] << " " << gp[0] << " " << estimatedAluLen << endl;  // NB: switch 00 and 11
   } else 
     fout << chrn << " " << exact_left << " " << debugInfo << " " << -(midCnt + clipCnt + unknowCnt) << endl;
@@ -379,4 +380,148 @@ bool covered_reads(BamFileHandler * bam_fh, string chrn, int p1, int p2, int min
       if ( cnt >= minCnt) return true;
   }
   return cnt >= minCnt;
+}
+
+
+bool combine_pns_vcf(float read_dist_th, string path0, string f_in_suffix, string f_out, vector <string> &pns, vector <string> & chrns, map <string, std::set<int> > & chrn_aluBegin, float llh_th, string ref_name) {
+  vector <string>::iterator ci, pi;
+  //seqan::VcfStream vcfout("-", seqan::VcfStream::WRITE);
+  seqan::VcfStream vcfout(f_out.c_str(), seqan::VcfStream::WRITE);
+  for ( ci = chrns.begin(); ci != chrns.end(); ci++)
+    appendValue(vcfout.header.sequenceNames, *ci);
+  for ( pi = pns.begin(); pi != pns.end(); pi++) 
+    appendValue(vcfout.header.sampleNames, *pi);
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileformat", "VCFv4.1"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("fileDate", "201402"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("reference", ref_name));  // eg: hg19
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("INFO", "<ID=NS,Number=1,Description=\"Number of Samples With Data\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("INFO", "<ID=AF,Number=A, Description=\"Allele Frequency\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("INFO", "<ID=PA,Number=A, Description=\"Evidence of insertions based on alu mate (otherwise from clip reads)\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=highCov, Description=\"Region coverage too high\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FILTER", "<ID=chisq1, Description=\"likelihood low, failed chisq df = 1\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=Integer, Description=\"Genotype\">"));
+  appendValue(vcfout.header.headerRecords, seqan::VcfHeaderRecord("FORMAT", "<ID=PL,Number=3,Type=Integer, Description=\"Phred-scaled likelihoods for genotypes\">"));
+
+  seqan::VcfRecord record;    
+  record.ref = "0";
+  record.alt = "1";
+  record.format = "GT:PL";
+
+  ifstream fin;
+  stringstream ss;
+  string line, chrn, aluEnd;
+  int aluBegin, cii, flag;
+  int _midCnt_alu, _midCnt_clip, clipCnt, unknowCnt;
+  map <int, int> midCnts_alu, midCnts_clip; 
+  float p0, p1, p2;      
+  string phred_str_00 = "0,100,255";  // min allowed 
+  string phred_str_missing = "0,0,0";
+  map < pair<int, string>, map <string, GENO_PROB > > pos_pnInfo;
+  for ( cii = 0, ci = chrns.begin(); ci != chrns.end(); ci++, cii++) {
+    pos_pnInfo.clear();
+    for ( pi = pns.begin(); pi != pns.end(); pi++) {
+      fin.open( (path0 + *pi + f_in_suffix).c_str() );
+      assert(fin);
+      getline(fin, line); 
+      flag = 1;
+      while ( getline(fin, line) ) {
+	ss.clear(); ss.str( line );
+	ss >> chrn;
+	if (chrn != *ci) {
+	  if (flag) continue;
+	  else break;
+	}
+	flag = 0; 
+	ss >> aluBegin >> aluEnd >> _midCnt_alu;
+	if ( _midCnt_alu < 0 ) {  // evidence of G00
+	  GENO_PROB one_gi = GENO_PROB(1, 0, 0, phred_str_00, 0); 
+	  pos_pnInfo[ make_pair(aluBegin, aluEnd) ].insert ( std::pair<string, GENO_PROB>(*pi, one_gi) );
+	} else {
+	  ss >> _midCnt_clip >> clipCnt >> unknowCnt >> p0 >> p1 >> p2 ;
+	  if ( !key_exists(midCnts_alu, aluBegin) ){
+	    midCnts_alu[aluBegin] = 0;
+	    midCnts_clip[aluBegin] = 0;
+	  }
+	  midCnts_alu[aluBegin] += _midCnt_alu;
+	  midCnts_clip[aluBegin] += _midCnt_clip;
+	  string phred_scaled_str = phred_scaled(p0, p1, p2);
+	  int _g = 0;
+	  if (p1 > p0 or p2 > p0) _g =  ( p1 > p2) ? 1 : 2;
+	  GENO_PROB one_gi = GENO_PROB(p0, p1, p2, phred_scaled_str, _g); 
+	  pos_pnInfo[ make_pair(aluBegin, aluEnd) ].insert ( std::pair<string, GENO_PROB>(*pi, one_gi) );
+	}
+      }
+      fin.close();
+    }
+    
+    map < pair<int, string>, map<string, GENO_PROB> >::iterator pi3;
+    map < string, GENO_PROB>::iterator pi2;
+    for (pi3 = pos_pnInfo.begin(); pi3 != pos_pnInfo.end(); pi3++) {
+      int altCnt = 0;
+      for ( pi2 = (pi3->second).begin(); pi2 != (pi3->second).end(); pi2++ ) 
+	altCnt += (pi2->second).geno;
+      if (!altCnt) continue;
+      int _pos = (pi3->first).first;
+      int _tcnt = midCnts_clip[_pos] + midCnts_alu[_pos];
+      if ( _tcnt < 5 ) continue;  // if total evidence is too small, ignore this position. fixme: comment this line if sample size small 
+      float alu_evidence =  (float) midCnts_alu[_pos] / (float) _tcnt;
+      if ( alu_evidence < read_dist_th or 1 - alu_evidence < read_dist_th ) 
+	continue;
+      ////cout << (pi3->first).first << " " << altCnt << " " << alu_evidence << " "  << _tcnt << endl;      
+      record.beginPos = (pi3->first).first;
+      record.rID = cii;   // change ???
+      string debugInfo = (pi3->first).second;
+      record.id = debugInfo;
+      int n_missing = 0;
+      for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
+	pi2 = pi3->second.find(*pi);
+	string ginfo;
+	if ( pi2 == pi3->second.end() ) {
+	  ginfo = "0/0:" + phred_str_missing ;
+	  n_missing += 1;
+	} else { 
+	  ginfo = reformat_geno( (pi2->second).geno ) + ":" + (pi2->second).phredStr;
+	}
+	appendValue(record.genotypeInfos, ginfo);	  
+      }      
+      record.qual = 0;
+      record.filter = "PASS";
+      if ( (pi3->first).second.find(',') != string::npos ) {
+	string exact_left, exact_right;
+	split_by_sep(debugInfo, exact_left, exact_right, ',');  
+	if (exact_left == "0" or exact_right == "0")
+	  record.filter = "BreakpointOneside";
+      }      
+      if ( chrn_aluBegin[*ci].find( (pi3->first).first ) != chrn_aluBegin[*ci].end() ) {
+	record.filter = "highCov";
+	record.info = "NS=.;AF=.;PA=.";
+      } else {
+	stringstream ss_record_info;
+	int n_pass = pns.size() - n_missing;
+	float altFreq = altCnt / 2./ float ( n_pass );
+	ss_record_info << "NS=" << n_pass << ";AF=" << setprecision(4) << altFreq << ";PA=" << setprecision(4) << alu_evidence;
+	record.info = ss_record_info.str();
+	float llh_alt = 0, llh_00 = 0;
+	float freq0 = (1 - altFreq) * (1 - altFreq);
+	float freq1 = 2 * altFreq * (1 - altFreq);
+	float freq2 = altFreq * altFreq;
+	for (vector <string>::iterator pi = pns.begin(); pi != pns.end(); pi++) {
+	  pi2 = pi3->second.find(*pi);
+	  if ( pi2 == pi3->second.end() ) // missing data 
+	    continue;
+	  llh_00 +=  ( (pi2->second).g0 > 0 ? log( (pi2->second).g0 ) : ( - LOG10_GENO_PROB ) ) ;
+          llh_alt += log (freq0 * (pi2->second).g0 + freq1 * (pi2->second).g1 + freq2 * (pi2->second).g2);
+	}
+	record.qual = llh_alt - llh_00; 
+	if (record.qual  <= llh_th)  
+	  record.filter = "chisq1";
+      } 
+      writeRecord(vcfout, record);  
+      clear(record.genotypeInfos);
+    }
+    cout << *ci << " size " << pos_pnInfo.size() << endl;
+  }  // chrn finished
+  clear(record);
+  seqan::close(vcfout);
+  return true;
 }

@@ -30,7 +30,7 @@ using namespace std;
 #define COVERAGE_HIGH 90
 // macro for alu_insert
 #define DISCORDANT_LEN 2000 
-#define COVERAGE_CNT 10      // if coverage >=10, no clip reads ==> force genotype 00
+#define COVERAGE_CNT 5      // if coverage >= COVERAGE_CNT, no clip reads ==> force genotype 00
 #define MID_COV_CNT 10  // if clip reads >= this number, no need to align to consensus alu
 #define SCAN_WIN_LEN 400   // 0.99 quantile. 450 for 0.999 quantile. only approximate,different reading group differs
 #define LEFT_PLUS_RIGHT 3  // minimum sum of left and right reads
